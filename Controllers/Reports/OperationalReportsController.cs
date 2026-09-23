@@ -5344,6 +5344,8 @@ public class OperationalReportsController : ControllerBase
         // ════════════════════════════════════════════════════════════════════════
         var inShippingOrdersAmount = allOrders.Where(o => o.Status == OrderStatus.OutForDelivery || o.Status == OrderStatus.ReturnInShipping).Sum(o => o.SubTotal);
         var reconciliationInShippingCount = allOrders.Count(o => o.Status == OrderStatus.OutForDelivery || o.Status == OrderStatus.ReturnInShipping);
+        var pendingOrdersCount = allOrders.Count(o => o.Status == OrderStatus.Pending);
+        var confirmedProcessingCount = allOrders.Count(o => o.Status == OrderStatus.Confirmed || o.Status == OrderStatus.Processing);
         var pendingOrConfirmedOrdersAmount = allOrders.Where(o => o.Status == OrderStatus.Pending || o.Status == OrderStatus.Confirmed || o.Status == OrderStatus.Processing).Sum(o => o.SubTotal);
         var pendingOrConfirmedOrdersCount = allOrders.Count(o => o.Status == OrderStatus.Pending || o.Status == OrderStatus.Confirmed || o.Status == OrderStatus.Processing);
         var deliveredOrdersAmount = allOrders.Where(o => o.Status == OrderStatus.Delivered).Sum(o => o.SubTotal);
@@ -5355,6 +5357,8 @@ public class OperationalReportsController : ControllerBase
             varianceAmount = grossProductSales - glGrossSales,
             inShippingAmount = inShippingOrdersAmount,
             inShippingCount = reconciliationInShippingCount,
+            pendingOrdersCount,
+            confirmedProcessingCount,
             pendingOrConfirmedAmount = pendingOrConfirmedOrdersAmount,
             pendingOrConfirmedCount = pendingOrConfirmedOrdersCount,
             deliveredAmount = deliveredOrdersAmount,
