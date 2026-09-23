@@ -31,6 +31,7 @@ public class ProductDiscount : BaseEntity
 
     public string? Label { get; set; } // e.g. "عرض العيد", "Black Friday"
     public DiscountApplyTo ApplyTo { get; set; } = DiscountApplyTo.All;
+    public string? ExcludedCategoryIds { get; set; }
 }
 
 public enum DiscountApplyTo

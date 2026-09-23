@@ -715,6 +715,11 @@ public class OrderService : IOrderService
                             // 🌐 Fallback: Store-wide discount
                             if (disc == null) disc = activeDiscounts.FirstOrDefault(d => d.ProductId == null && d.CategoryId == null && d.BrandId == null);
 
+                            if (disc != null && IsCategoryExcluded(disc.ExcludedCategoryIds, product.CategoryId, allCategories))
+                            {
+                                disc = null;
+                            }
+
                             if (disc != null && item.Quantity >= disc.MinQty)
                             {
                                 unitPrice = disc.DiscountType == DiscountType.Percentage 
@@ -3629,6 +3634,23 @@ public class OrderService : IOrderService
         item.ReviewRequested = true;
         await _db.SaveChangesAsync();
         return true;
+    }
+
+    private static bool IsCategoryExcluded(string? excludedCategoryIds, int? productCatId, Dictionary<int, int?> allCategories)
+    {
+        if (string.IsNullOrWhiteSpace(excludedCategoryIds) || !productCatId.HasValue) return false;
+        var ids = excludedCategoryIds.Split(new[] { ',', ';', ' ', '[', ']', '"' }, StringSplitOptions.RemoveEmptyEntries)
+                                     .Select(s => int.TryParse(s.Trim(), out int id) ? id : 0)
+                                     .Where(id => id > 0)
+                                     .ToHashSet();
+        if (ids.Count == 0) return false;
+        int? current = productCatId;
+        while (current.HasValue)
+        {
+            if (ids.Contains(current.Value)) return true;
+            current = allCategories.GetValueOrDefault(current.Value);
+        }
+        return false;
     }
 }
 

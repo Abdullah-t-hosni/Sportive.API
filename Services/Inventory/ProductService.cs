@@ -297,6 +297,11 @@ public class ProductService : IProductService
                 .Where(x => x.ApplyTo == DiscountApplyTo.All || (source.HasValue ? x.ApplyTo == source.Value : x.ApplyTo == DiscountApplyTo.Store))
                 .OrderByDescending(x => x.ProductId != null ? 4 : (x.CategoryId != null ? 3 : (x.BrandId != null ? 2 : 1)))
                 .FirstOrDefaultAsync();
+
+            if (d != null && IsCategoryExcluded(d.ExcludedCategoryIds, p.CategoryId, new[] { p.Category?.ParentId, p.Category?.Parent?.ParentId }.Where(x => x.HasValue).Select(x => x!.Value)))
+            {
+                d = null;
+            }
         }
 
         ProductSummaryDto? linkedSummary = null;
@@ -382,6 +387,11 @@ public class ProductService : IProductService
                 .Where(x => x.ApplyTo == DiscountApplyTo.All || (source.HasValue ? x.ApplyTo == source.Value : x.ApplyTo == DiscountApplyTo.Store))
                 .OrderByDescending(x => x.ProductId != null ? 4 : (x.CategoryId != null ? 3 : (x.BrandId != null ? 2 : 1)))
                 .FirstOrDefaultAsync();
+
+            if (d != null && IsCategoryExcluded(d.ExcludedCategoryIds, p.CategoryId, new[] { p.Category?.ParentId, p.Category?.Parent?.ParentId }.Where(x => x.HasValue).Select(x => x!.Value)))
+            {
+                d = null;
+            }
         }
 
         ProductSummaryDto? linkedSummary = null;
@@ -1024,6 +1034,19 @@ public class ProductService : IProductService
             .FirstOrDefaultAsync();
     }
 
+    private static bool IsCategoryExcluded(string? excludedCategoryIds, int? productCatId, IEnumerable<int>? ancestors)
+    {
+        if (string.IsNullOrWhiteSpace(excludedCategoryIds) || !productCatId.HasValue) return false;
+        var ids = excludedCategoryIds.Split(new[] { ',', ';', ' ', '[', ']', '"' }, StringSplitOptions.RemoveEmptyEntries)
+                                     .Select(s => int.TryParse(s.Trim(), out int id) ? id : 0)
+                                     .Where(id => id > 0)
+                                     .ToHashSet();
+        if (ids.Count == 0) return false;
+        if (ids.Contains(productCatId.Value)) return true;
+        if (ancestors != null && ancestors.Any(a => ids.Contains(a))) return true;
+        return false;
+    }
+
     private ProductDetailDto MapToDetail(Product p, ProductDiscount? d = null, ProductSummaryDto? linkedProduct = null, List<ReviewListItemDto>? reviewDtos = null, DiscountApplyTo? source = null, bool rawPricing = false)
     {
         bool isStoreSource = source != DiscountApplyTo.POS;
@@ -1185,6 +1208,7 @@ public class ProductService : IProductService
             }
 
             var pDiscount = discounts
+                .Where(d => !IsCategoryExcluded(d.ExcludedCategoryIds, p.CategoryId, pCategoryAncestors))
                 .Where(d => 
                     (d.ProductId == p.Id) ||
                     (p.CategoryId.HasValue && d.CategoryId.HasValue && (d.CategoryId.Value == p.CategoryId.Value || pCategoryAncestors.Contains(d.CategoryId.Value))) ||

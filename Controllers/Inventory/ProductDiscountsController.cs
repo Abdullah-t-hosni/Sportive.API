@@ -56,6 +56,7 @@ public class ProductDiscountsController : ControllerBase
                 BrandNameEn = d.Brand != null ? d.Brand.NameEn : null,
                 d.DiscountType, d.DiscountValue, d.MinQty,
                 d.ValidFrom, d.ValidTo, d.IsActive, d.Label, d.ApplyTo,
+                d.ExcludedCategoryIds,
                 IsCurrentlyActive = d.IsActive && d.ValidFrom <= now && d.ValidTo >= now
             })
             .ToListAsync();
@@ -85,7 +86,8 @@ public class ProductDiscountsController : ControllerBase
                 BrandNameAr = d.Brand != null ? d.Brand.NameAr : null,
                 BrandNameEn = d.Brand != null ? d.Brand.NameEn : null,
                 d.DiscountType, d.DiscountValue, d.MinQty,
-                d.ValidFrom, d.ValidTo, d.Label, d.ApplyTo
+                d.ValidFrom, d.ValidTo, d.Label, d.ApplyTo,
+                d.ExcludedCategoryIds
             })
             .ToListAsync();
 
@@ -114,17 +116,18 @@ public class ProductDiscountsController : ControllerBase
 
         var discount = new ProductDiscount
         {
-            ProductId     = dto.ProductId,
-            CategoryId    = dto.CategoryId,
-            BrandId       = dto.BrandId,
-            DiscountType  = dto.DiscountType,
-            DiscountValue = dto.DiscountValue,
-            MinQty        = dto.MinQty,
-            ValidFrom     = dto.ValidFrom,
-            ValidTo       = dto.ValidTo,
-            IsActive      = dto.IsActive,
-            Label         = dto.Label,
-            ApplyTo       = dto.ApplyTo
+            ProductId           = dto.ProductId,
+            CategoryId          = dto.CategoryId,
+            BrandId             = dto.BrandId,
+            DiscountType        = dto.DiscountType,
+            DiscountValue       = dto.DiscountValue,
+            MinQty              = dto.MinQty,
+            ValidFrom           = dto.ValidFrom,
+            ValidTo             = dto.ValidTo,
+            IsActive            = dto.IsActive,
+            Label               = dto.Label,
+            ApplyTo             = dto.ApplyTo,
+            ExcludedCategoryIds = dto.ExcludedCategoryIds
         };
 
         _db.ProductDiscounts.Add(discount);
@@ -138,18 +141,19 @@ public class ProductDiscountsController : ControllerBase
         var discount = await _db.ProductDiscounts.FindAsync(id);
         if (discount == null) return NotFound();
 
-        discount.ProductId     = dto.ProductId;
-        discount.CategoryId    = dto.CategoryId;
-        discount.BrandId       = dto.BrandId;
-        discount.DiscountType  = dto.DiscountType;
-        discount.DiscountValue = dto.DiscountValue;
-        discount.MinQty        = dto.MinQty;
-        discount.ValidFrom     = dto.ValidFrom;
-        discount.ValidTo       = dto.ValidTo;
-        discount.IsActive      = dto.IsActive;
-        discount.Label         = dto.Label;
-        discount.ApplyTo       = dto.ApplyTo;
-        discount.UpdatedAt     = TimeHelper.GetEgyptTime();
+        discount.ProductId           = dto.ProductId;
+        discount.CategoryId          = dto.CategoryId;
+        discount.BrandId             = dto.BrandId;
+        discount.DiscountType        = dto.DiscountType;
+        discount.DiscountValue       = dto.DiscountValue;
+        discount.MinQty              = dto.MinQty;
+        discount.ValidFrom           = dto.ValidFrom;
+        discount.ValidTo             = dto.ValidTo;
+        discount.IsActive            = dto.IsActive;
+        discount.Label               = dto.Label;
+        discount.ApplyTo             = dto.ApplyTo;
+        discount.ExcludedCategoryIds = dto.ExcludedCategoryIds;
+        discount.UpdatedAt           = TimeHelper.GetEgyptTime();
 
         await _db.SaveChangesAsync();
         return Ok(discount);
@@ -178,5 +182,6 @@ public record ProductDiscountDto(
     DateTime ValidTo,
     bool IsActive,
     string? Label,
-    DiscountApplyTo ApplyTo
+    DiscountApplyTo ApplyTo,
+    string? ExcludedCategoryIds = null
 );

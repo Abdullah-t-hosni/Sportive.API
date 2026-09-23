@@ -185,7 +185,11 @@ public class CartService : ICartService
             // 🌐 Fallback: Store-wide discount
             if (disc == null) disc = discounts.FirstOrDefault(d => d.ProductId == null && d.CategoryId == null && d.BrandId == null);
 
-            
+            if (disc != null && IsCategoryExcluded(disc.ExcludedCategoryIds, c.Product?.CategoryId, allCategories))
+            {
+                disc = null;
+            }
+
             decimal price;
             if (disc != null && c.Quantity >= disc.MinQty)
             {
@@ -221,5 +225,22 @@ public class CartService : ICartService
         var appliedFee = subTotal >= freeAt ? 0m : deliveryFee;
 
         return new CartSummaryDto(dtos, subTotal, appliedFee, subTotal + appliedFee, dtos.Sum(d => d.Quantity));
+    }
+
+    private static bool IsCategoryExcluded(string? excludedCategoryIds, int? productCatId, Dictionary<int, int?> allCategories)
+    {
+        if (string.IsNullOrWhiteSpace(excludedCategoryIds) || !productCatId.HasValue) return false;
+        var ids = excludedCategoryIds.Split(new[] { ',', ';', ' ', '[', ']', '"' }, StringSplitOptions.RemoveEmptyEntries)
+                                     .Select(s => int.TryParse(s.Trim(), out int id) ? id : 0)
+                                     .Where(id => id > 0)
+                                     .ToHashSet();
+        if (ids.Count == 0) return false;
+        int? current = productCatId;
+        while (current.HasValue)
+        {
+            if (ids.Contains(current.Value)) return true;
+            current = allCategories.GetValueOrDefault(current.Value);
+        }
+        return false;
     }
 }
