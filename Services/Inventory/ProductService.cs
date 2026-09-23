@@ -538,9 +538,9 @@ public class ProductService : IProductService
         product.DescriptionAr = dto.DescriptionAr;
         product.DescriptionEn = dto.DescriptionEn;
         product.Price = dto.Price.Value;
-        product.DiscountPrice = dto.DiscountPrice;
+        product.DiscountPrice = (dto.DiscountPrice.HasValue && dto.DiscountPrice.Value < product.Price && dto.DiscountPrice.Value > 0) ? dto.DiscountPrice : null;
         product.OnlinePrice = dto.OnlinePrice;
-        product.OnlineDiscountPrice = dto.OnlineDiscountPrice;
+        product.OnlineDiscountPrice = (dto.OnlineDiscountPrice.HasValue && product.OnlinePrice.HasValue && dto.OnlineDiscountPrice.Value < product.OnlinePrice.Value && dto.OnlineDiscountPrice.Value > 0) ? dto.OnlineDiscountPrice : null;
         product.CostPrice = dto.CostPrice;
         product.BrandId = dto.BrandId;
         product.SKU = dto.SKU;
@@ -1274,8 +1274,8 @@ public class ProductService : IProductService
             }
             else
             {
-                effectiveBasePrice = onlineBasePrice;
-                finalPrice = onlineFinalPrice;
+                effectiveBasePrice = posBasePrice;
+                finalPrice = posFinalPrice;
             }
 
             int totalStock = warehouseId.HasValue

@@ -54,10 +54,6 @@ public class UpdateProductValidator : AbstractValidator<UpdateProductDto>
         RuleFor(x => x.NameEn).NotEmpty().MaximumLength(200);
         RuleFor(x => x.SKU).NotEmpty().MaximumLength(50);
         RuleFor(x => x.Price).GreaterThan(0);
-        RuleFor(x => x.DiscountPrice)
-            .LessThan(x => x.Price)
-            .When(x => x.DiscountPrice.HasValue && x.DiscountPrice > 0)
-            .WithMessage(translator.Get("Products.DiscountPriceTooHigh"));
         RuleFor(x => x.CategoryId).GreaterThan(0);
         RuleFor(x => x.ReorderLevel).GreaterThanOrEqualTo(0);
     }
