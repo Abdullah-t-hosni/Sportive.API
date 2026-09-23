@@ -1,4 +1,4 @@
-﻿namespace Sportive.API.Models;
+namespace Sportive.API.Models;
 
 public enum OrderStatus
 {
@@ -189,6 +189,7 @@ public class OrderStatusHistory : BaseEntity
     public OrderStatus Status { get; set; }
     public string? Note { get; set; }
     public string? ChangedByUserId { get; set; }
+    public string? ChangedByName { get; set; }
 }
 
 public class CartItem : BaseEntity

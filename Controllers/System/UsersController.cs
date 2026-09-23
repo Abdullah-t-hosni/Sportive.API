@@ -210,35 +210,43 @@ public class UsersController : ControllerBase
 
         if (permanent)
         {
-            // 1. Check for Customer profile
             var customer = await _db.Customers
                 .FirstOrDefaultAsync(c => c.AppUserId == id);
 
+            // فحص هل المستخدم يمتلك أي سجلات تاريخية (طلبات، مسارات حالات، تدقيق، قيود يومية)
+            var hasActivity = await _db.Orders.AnyAsync(o => (customer != null && o.CustomerId == customer.Id) || o.SalesPersonId == id)
+                || await _db.OrderStatusHistories.AnyAsync(h => h.ChangedByUserId == id)
+                || await _db.AuditLogs.AnyAsync(a => a.UserId == id)
+                || await _db.JournalEntries.AnyAsync(j => j.CreatedByUserId == id);
+
+            if (hasActivity)
+            {
+                user.IsActive = false;
+                user.RefreshTokenHash = null;
+                user.RefreshTokenExpiry = null;
+                var res = await _userManager.UpdateAsync(user);
+                if (!res.Succeeded) return BadRequest(res.Errors);
+
+                try { await _audit.LogAsync("DeactivateUser", "User", user.Id, $"Deactivated user {user.FullName} due to historical records", User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value); } catch { }
+
+                return Ok(new { message = _t.Get("Staff.DeactivatedDueToOrders") });
+            }
+
             if (customer != null)
             {
-                // 2. Check for Orders (Foreign Key Constraint)
-                var hasOrders = await _db.Orders
-                    .AnyAsync(o => o.CustomerId == customer.Id || o.SalesPersonId == id);
-
-                if (hasOrders)
-                {
-                    return BadRequest(new { 
-                        message = _t.Get("Users.DeleteErrorHasOrders")
-                    });
-                }
-
-                // 3. Delete associated records that might not be cascaded or cause issues
                 _db.Customers.Remove(customer);
                 await _db.SaveChangesAsync();
             }
 
-            // 4. Delete the Identity User
+            // Delete the Identity User
             var result = await _userManager.DeleteAsync(user);
             if (!result.Succeeded) return BadRequest(result.Errors);
         }
         else
         {
             user.IsActive = false;
+            user.RefreshTokenHash = null;
+            user.RefreshTokenExpiry = null;
             var result = await _userManager.UpdateAsync(user);
             if (!result.Succeeded) return BadRequest(result.Errors);
         }

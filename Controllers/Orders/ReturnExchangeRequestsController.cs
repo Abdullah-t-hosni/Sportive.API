@@ -1061,6 +1061,7 @@ public class ReturnExchangeRequestsController : ControllerBase
                 Status = OrderStatus.ReturnInShipping,
                 Note = $"تم الموافقة المبدئية على المرتجع، الشحنة الآن مرتجع لدى شركة الشحن (طلب #{req.Id})",
                 ChangedByUserId = User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier) ?? "system",
+                ChangedByName = User.FindFirstValue(System.Security.Claims.ClaimTypes.Name) ?? "System",
                 CreatedAt = TimeHelper.GetEgyptTime()
             });
         }
@@ -1233,6 +1234,7 @@ public class ReturnExchangeRequestsController : ControllerBase
                 ? $"[مرتجع كامل]: تم تأكيد استلام الشحنة وإعادة الأصناف للمخزن (طلب استرجاع #{req.Id})" 
                 : $"[مرتجع جزئي]: تم تأكيد استلام المرتجع بالمخزن (طلب استرجاع #{req.Id})",
             ChangedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "system",
+            ChangedByName = User.FindFirstValue(ClaimTypes.Name) ?? "System",
             CreatedAt = TimeHelper.GetEgyptTime()
         });
 
@@ -1510,6 +1512,7 @@ public class ReturnExchangeRequestsController : ControllerBase
                         ? $"[مرتجع كامل]: تم تأكيد استلام الشحنة وإعادة الأصناف للمخزن (طلب استرجاع #{req.Id})" 
                         : $"[مرتجع جزئي]: تم تأكيد استلام المرتجع بالمخزن (طلب استرجاع #{req.Id})",
                     ChangedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "system",
+                    ChangedByName = User.FindFirstValue(ClaimTypes.Name) ?? "System",
                     CreatedAt = TimeHelper.GetEgyptTime()
                 });
             }

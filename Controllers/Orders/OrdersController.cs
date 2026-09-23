@@ -681,12 +681,24 @@ public class OrdersController : ControllerBase
 
         if (!string.IsNullOrEmpty(dto.Note))
         {
+            var changedUserId = dto.PerformedByEmployeeId?.ToString() ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            string? changedUserName = null;
+            if (dto.PerformedByEmployeeId.HasValue)
+            {
+                changedUserName = (await _db.Employees.AsNoTracking().FirstOrDefaultAsync(e => e.Id == dto.PerformedByEmployeeId.Value))?.Name;
+            }
+            if (string.IsNullOrEmpty(changedUserName))
+            {
+                changedUserName = User.FindFirst(ClaimTypes.Name)?.Value;
+            }
+
             _db.OrderStatusHistories.Add(new OrderStatusHistory
             {
                 OrderId          = id,
                 Status           = order.Status,
                 Note             = _translator.Get("Orders.PaymentStatusUpdateNote", dto.PaymentStatus, dto.Note),
-                ChangedByUserId  = dto.PerformedByEmployeeId?.ToString() ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+                ChangedByUserId  = changedUserId,
+                ChangedByName    = changedUserName,
                 CreatedAt        = TimeHelper.GetEgyptTime()
             });
         }

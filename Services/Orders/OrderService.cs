@@ -143,7 +143,7 @@ public class OrderService : IOrderService
                 o.JournalEntries.Where(j => j.Type == JournalEntryType.SalesInvoice && j.Status != JournalEntryStatus.Reversed).Select(j => (int?)j.Id).FirstOrDefault(),
                 o.Items.Any(i => i.ReviewRequested), // HasReviewRequested column added via startup migration
                 o.StatusHistory.Where(h => h.Status == o.Status).OrderByDescending(h => h.CreatedAt).Select(h => (DateTime?)h.CreatedAt).FirstOrDefault() ?? o.UpdatedAt ?? o.CreatedAt,
-                o.StatusHistory.OrderByDescending(h => h.CreatedAt).Select(h => new OrderStatusHistoryDto(h.Status.ToString(), h.Note, h.CreatedAt, null)).ToList(),
+                o.StatusHistory.OrderByDescending(h => h.CreatedAt).Select(h => new OrderStatusHistoryDto(h.Status.ToString(), h.Note, h.CreatedAt, h.ChangedByName)).ToList(),
                 o.LoyaltyDiscountAmount,
                 o.LoyaltyPointsRedeemed
             ))
@@ -187,6 +187,21 @@ public class OrderService : IOrderService
             {
                 var sp = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == o.SalesPersonId);
                 salesPersonName = sp?.FullName ?? "";
+            }
+
+            if (string.IsNullOrEmpty(salesPersonName))
+            {
+                var emp = await _db.Employees.AsNoTracking().FirstOrDefaultAsync(e => e.AppUserId == o.SalesPersonId);
+                salesPersonName = emp?.Name ?? "";
+            }
+
+            if (string.IsNullOrEmpty(salesPersonName))
+            {
+                salesPersonName = await _db.AuditLogs.AsNoTracking()
+                    .Where(a => a.UserId == o.SalesPersonId && !string.IsNullOrEmpty(a.UserName))
+                    .OrderByDescending(a => a.CreatedAt)
+                    .Select(a => a.UserName)
+                    .FirstOrDefaultAsync() ?? "";
             }
         }
 
@@ -233,17 +248,40 @@ public class OrderService : IOrderService
         // 💡 FETCH HISTORY WITH NAMES
         var historyDtos = new List<OrderStatusHistoryDto>();
         var allUsers = await _db.Users.AsNoTracking().Select(u => new { u.Id, u.FullName }).ToListAsync();
-        var allEmps = await _db.Employees.AsNoTracking().Select(e => new { e.Id, e.Name }).ToListAsync();
+        var allEmps = await _db.Employees.AsNoTracking().Select(e => new { e.Id, e.Name, e.AppUserId }).ToListAsync();
 
         foreach (var h in o.StatusHistory.OrderByDescending(h => h.CreatedAt))
         {
-            string? name = null;
-            if (!string.IsNullOrEmpty(h.ChangedByUserId))
+            string? name = h.ChangedByName;
+            if (string.IsNullOrEmpty(name) && !string.IsNullOrEmpty(h.ChangedByUserId))
             {
-                name = allUsers.FirstOrDefault(u => u.Id == h.ChangedByUserId)?.FullName;
-                if (string.IsNullOrEmpty(name) && int.TryParse(h.ChangedByUserId, out var eid))
+                if (h.ChangedByUserId.Equals("system", StringComparison.OrdinalIgnoreCase) || h.ChangedByUserId.Equals("system-fix", StringComparison.OrdinalIgnoreCase))
                 {
-                    name = allEmps.FirstOrDefault(e => e.Id == eid)?.Name;
+                    name = "النظام";
+                }
+                else if (h.ChangedByUserId.Equals("BostaWebhook", StringComparison.OrdinalIgnoreCase))
+                {
+                    name = "شركة الشحن (بوسطة)";
+                }
+                else
+                {
+                    name = allUsers.FirstOrDefault(u => u.Id == h.ChangedByUserId)?.FullName;
+                    if (string.IsNullOrEmpty(name) && int.TryParse(h.ChangedByUserId, out var eid))
+                    {
+                        name = allEmps.FirstOrDefault(e => e.Id == eid)?.Name;
+                    }
+                    if (string.IsNullOrEmpty(name))
+                    {
+                        name = allEmps.FirstOrDefault(e => e.AppUserId == h.ChangedByUserId)?.Name;
+                    }
+                    if (string.IsNullOrEmpty(name))
+                    {
+                        name = await _db.AuditLogs.AsNoTracking()
+                            .Where(a => a.UserId == h.ChangedByUserId && !string.IsNullOrEmpty(a.UserName))
+                            .OrderByDescending(a => a.CreatedAt)
+                            .Select(a => a.UserName)
+                            .FirstOrDefaultAsync();
+                    }
                 }
             }
             if (string.IsNullOrEmpty(name) && h.Note != null && (h.Note.Contains(_t.Get("Orders.StatusCreated")) || h.Note.Contains("Order Created")))
@@ -1145,11 +1183,13 @@ public class OrderService : IOrderService
                      // Stock specifically already checked for each item, but we double-check here if it was a website order with no stock
                 }
                 _db.Orders.Add(order);
+                var createdByName = await ResolveUserNameAsync(dto.SalesPersonId);
                 order.StatusHistory.Add(new OrderStatusHistory { 
                     Status = order.Status, 
                     CreatedAt = TimeHelper.GetEgyptTime(), 
                     Note = _t.Get("Orders.StatusCreated"),
-                    ChangedByUserId = dto.SalesPersonId
+                    ChangedByUserId = dto.SalesPersonId,
+                    ChangedByName = createdByName
                 });
 
                 // 🏷️ MARK ABANDONED CART AS RECOVERED
@@ -1723,12 +1763,14 @@ public class OrderService : IOrderService
                     ? "تعديل الفاتورة: " + string.Join(" | ", diffLines)
                     : "تحديث وحفظ بيانات الفاتورة";
 
+                var updaterName = await ResolveUserNameAsync(updatedByUserId);
                 order.UpdatedAt = now;
                 order.StatusHistory.Add(new OrderStatusHistory 
                 { 
                     Status = order.Status, 
                     Note = editNote, 
                     ChangedByUserId = updatedByUserId, 
+                    ChangedByName = updaterName,
                     CreatedAt = now 
                 });
 
@@ -2027,6 +2069,35 @@ public class OrderService : IOrderService
         }
     }
 
+    private async Task<string?> ResolveUserNameAsync(string? userId)
+    {
+        if (string.IsNullOrWhiteSpace(userId)) return null;
+        if (userId.Equals("system", StringComparison.OrdinalIgnoreCase) || userId.Equals("system-fix", StringComparison.OrdinalIgnoreCase))
+            return "النظام";
+        if (userId.Equals("BostaWebhook", StringComparison.OrdinalIgnoreCase))
+            return "شركة الشحن (بوسطة)";
+
+        if (int.TryParse(userId, out var empId))
+        {
+            var emp = await _db.Employees.AsNoTracking().FirstOrDefaultAsync(e => e.Id == empId);
+            if (emp != null) return emp.Name;
+        }
+
+        var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
+        if (user != null) return user.FullName;
+
+        var empByUser = await _db.Employees.AsNoTracking().FirstOrDefaultAsync(e => e.AppUserId == userId);
+        if (empByUser != null) return empByUser.Name;
+
+        var auditName = await _db.AuditLogs.AsNoTracking()
+            .Where(a => a.UserId == userId && !string.IsNullOrEmpty(a.UserName))
+            .OrderByDescending(a => a.CreatedAt)
+            .Select(a => a.UserName)
+            .FirstOrDefaultAsync();
+
+        return auditName;
+    }
+
     public async Task<OrderDetailDto> UpdateOrderStatusAsync(int orderId, UpdateOrderStatusDto dto, string updatedByUserId)
     {
         var order = await _db.Orders.Include(o => o.StatusHistory).Include(o => o.Payments).FirstOrDefaultAsync(o => o.Id == orderId);
@@ -2035,10 +2106,13 @@ public class OrderService : IOrderService
         var oldStatus = order.Status;
         order.Status = dto.Status;
         order.UpdatedAt = TimeHelper.GetEgyptTime();
+        var statusUpdaterId = dto.PerformedByEmployeeId?.ToString() ?? updatedByUserId;
+        var statusUpdaterName = await ResolveUserNameAsync(statusUpdaterId);
         order.StatusHistory.Add(new OrderStatusHistory {
             Status = dto.Status, 
             Note = dto.Note, 
-            ChangedByUserId = dto.PerformedByEmployeeId?.ToString() ?? updatedByUserId, 
+            ChangedByUserId = statusUpdaterId, 
+            ChangedByName = statusUpdaterName,
             CreatedAt = TimeHelper.GetEgyptTime()
         });
 
@@ -2629,10 +2703,13 @@ public class OrderService : IOrderService
                 if (!returnedOrderItems.Any()) throw new InvalidOperationException("No items selected for return.");
 
                 // 5. Status History
+                var returnUserId = dto.PerformedByEmployeeId?.ToString() ?? updatedByUserId;
+                var returnUserName = await ResolveUserNameAsync(returnUserId);
                 order.StatusHistory.Add(new OrderStatusHistory {
                     Status = order.Status,
                     Note = $"[مرتجع جزئي] {dto.Reason}: {dto.Note}",
-                    ChangedByUserId = dto.PerformedByEmployeeId?.ToString() ?? updatedByUserId,
+                    ChangedByUserId = returnUserId,
+                    ChangedByName = returnUserName,
                     CreatedAt = TimeHelper.GetEgyptTime()
                 });
 
@@ -3080,11 +3157,13 @@ public class OrderService : IOrderService
                     }
                 }
 
+                var costUpdaterName = await ResolveUserNameAsync(updatedByUserId);
                 order.StatusHistory.Add(new OrderStatusHistory
                 {
                     Status = order.Status,
                     Note = $"[تحويل لسعر التكلفة] تم تحويل أسعار الفاتورة لسعر التكلفة وإرجاع الفرق ({difference:N2} جنيه) بطريقة: {(refundMethod == "cash" ? "استرداد نقدي" : "إضافة لرصيد الحساب")}",
                     ChangedByUserId = updatedByUserId,
+                    ChangedByName = costUpdaterName,
                     CreatedAt = TimeHelper.GetEgyptTime()
                 });
 
@@ -3187,11 +3266,13 @@ public class OrderService : IOrderService
                     order.AdminNotes = order.AdminNotes.Replace("[CostSale]", "").Trim();
                 }
 
+                var revertUpdaterName = await ResolveUserNameAsync(updatedByUserId);
                 order.StatusHistory.Add(new OrderStatusHistory
                 {
                     Status = order.Status,
                     Note = $"[استعادة السعر الأساسي] تم إرجاع الفاتورة لأسعار الكتالوج الأساسية (بزيادة {difference:N2} جنيه في الإجمالي)",
                     ChangedByUserId = updatedByUserId,
+                    ChangedByName = revertUpdaterName,
                     CreatedAt = TimeHelper.GetEgyptTime()
                 });
 
@@ -3340,10 +3421,12 @@ public class OrderService : IOrderService
                         order.Status = OrderStatus.PartiallyReturned;
                     }
 
+                    var editReturnUser1 = await ResolveUserNameAsync(updatedByUserId);
                     order.StatusHistory.Add(new OrderStatusHistory {
                         Status = order.Status,
                         Note = $"[حذف مرتجع] {dto.Reason}: {dto.Note}",
                         ChangedByUserId = updatedByUserId,
+                        ChangedByName = editReturnUser1,
                         CreatedAt = now
                     });
                     order.UpdatedAt = now;
@@ -3425,10 +3508,12 @@ public class OrderService : IOrderService
                             order.PaymentStatus = PaymentStatus.Paid;
                         }
 
+                        var editReturnUser2 = await ResolveUserNameAsync(updatedByUserId);
                         order.StatusHistory.Add(new OrderStatusHistory {
                             Status = order.Status,
                             Note = $"[تعديل مرتجع] {dto.Reason}: {dto.Note}",
                             ChangedByUserId = updatedByUserId,
+                            ChangedByName = editReturnUser2,
                             CreatedAt = returnDate
                         });
 
@@ -3501,10 +3586,12 @@ public class OrderService : IOrderService
                     {
                         order.Status = order.Source == OrderSource.POS ? OrderStatus.Confirmed : OrderStatus.Delivered;
                         order.PaymentStatus = PaymentStatus.Paid;
+                        var cancelReturnUser = await ResolveUserNameAsync(updatedByUserId);
                         order.StatusHistory.Add(new OrderStatusHistory {
                             Status = order.Status,
                             Note = $"[إلغاء المرتجع بالكامل]: {dto.Note}",
                             ChangedByUserId = updatedByUserId,
+                            ChangedByName = cancelReturnUser,
                             CreatedAt = now
                         });
                         await _db.SaveChangesAsync();

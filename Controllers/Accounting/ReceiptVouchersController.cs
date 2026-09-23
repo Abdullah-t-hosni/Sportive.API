@@ -222,12 +222,24 @@ public class ReceiptVouchersController : ControllerBase
                 order.PaymentStatus = order.PaidAmount >= order.TotalAmount - 0.01m ? PaymentStatus.Paid : PaymentStatus.Pending;
                 order.UpdatedAt = TimeHelper.GetEgyptTime();
 
+                var changedUserId = dto.EmployeeId?.ToString() ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                string? changedUserName = null;
+                if (dto.EmployeeId.HasValue)
+                {
+                    changedUserName = (await _db.Employees.AsNoTracking().FirstOrDefaultAsync(e => e.Id == dto.EmployeeId.Value))?.Name;
+                }
+                if (string.IsNullOrEmpty(changedUserName))
+                {
+                    changedUserName = User.FindFirst(ClaimTypes.Name)?.Value;
+                }
+
                 _db.OrderStatusHistories.Add(new OrderStatusHistory
                 {
                     OrderId = order.Id,
                     Status = order.Status,
                     Note = _t.Get("Accounting.ReceiptVoucher.DebtCollectionLog", dto.Amount, dto.PaymentMethod),
-                    ChangedByUserId = dto.EmployeeId?.ToString() ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
+                    ChangedByUserId = changedUserId,
+                    ChangedByName = changedUserName,
                     CreatedAt = TimeHelper.GetEgyptTime()
                 });
             }

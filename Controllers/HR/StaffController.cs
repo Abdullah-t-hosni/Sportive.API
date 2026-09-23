@@ -327,26 +327,48 @@ public class StaffController : ControllerBase
         if (user.Email == "admin@sportive.com")
             return BadRequest(new { message = _t.Get("Staff.CannotDeleteRootAdmin") });
 
-        // نفضل التعطيل (Soft Delete) لو كان هناك سجلات مرتبطة به
-        var hasOrders = await _db.Orders.AnyAsync(o => o.SalesPersonId == id);
-        if (hasOrders)
+        // نفضل التعطيل (Soft Delete) لو كان هناك سجلات مرتبطة به للحفاظ على أسماء وتاريخ العمليات
+        var hasActivity = await _db.Orders.AnyAsync(o => o.SalesPersonId == id)
+            || await _db.OrderStatusHistories.AnyAsync(h => h.ChangedByUserId == id)
+            || await _db.AuditLogs.AnyAsync(a => a.UserId == id)
+            || await _db.JournalEntries.AnyAsync(j => j.CreatedByUserId == id);
+
+        if (hasActivity)
         {
             user.IsActive = false;
+            user.RefreshTokenHash = null;
+            user.RefreshTokenExpiry = null;
             await _users.UpdateAsync(user);
+
+            // تحديث حالة الموظف لغير نشط مع الحفاظ على الربط لحماية السجلات والأسماء التاريخية
+            var linkedEmployee = await _db.Employees.FirstOrDefaultAsync(e => e.AppUserId == id);
+            if (linkedEmployee != null)
+            {
+                linkedEmployee.Status = EmployeeStatus.Inactive;
+                linkedEmployee.UpdatedAt = TimeHelper.GetEgyptTime();
+            }
+
+            // حذف الصلاحيات النشطة
+            var perms = await _db.UserModulePermissions.Where(p => p.UserAccountID == id).ToListAsync();
+            _db.UserModulePermissions.RemoveRange(perms);
+            await _db.SaveChangesAsync();
+
+            try { await _audit.LogAsync("DeactivateUser", "User", id, $"Deactivated user {user.FullName} due to historical records", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
+
             return Ok(new { message = _t.Get("Staff.DeactivatedDueToOrders") });
         }
 
         // فك الربط مع سجل الـ HR (مع الحفاظ على السجل)
-        var linkedEmployee = await _db.Employees.FirstOrDefaultAsync(e => e.AppUserId == id);
-        if (linkedEmployee != null)
+        var unlinkedEmployee = await _db.Employees.FirstOrDefaultAsync(e => e.AppUserId == id);
+        if (unlinkedEmployee != null)
         {
-            linkedEmployee.AppUserId = null;
-            linkedEmployee.UpdatedAt = TimeHelper.GetEgyptTime();
+            unlinkedEmployee.AppUserId = null;
+            unlinkedEmployee.UpdatedAt = TimeHelper.GetEgyptTime();
         }
 
         // حذف الصلاحيات
-        var perms = await _db.UserModulePermissions.Where(p => p.UserAccountID == id).ToListAsync();
-        _db.UserModulePermissions.RemoveRange(perms);
+        var permissions = await _db.UserModulePermissions.Where(p => p.UserAccountID == id).ToListAsync();
+        _db.UserModulePermissions.RemoveRange(permissions);
         await _db.SaveChangesAsync();
 
         var result = await _users.DeleteAsync(user);
