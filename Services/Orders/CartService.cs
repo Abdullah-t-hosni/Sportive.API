@@ -19,6 +19,7 @@ public class CartService : ICartService
         var productIds = items.Select(i => i.ProductId).Distinct().ToList();
         var now = Utils.TimeHelper.GetEgyptTime();
         var discounts = await _db.ProductDiscounts
+            .AsNoTracking()
             .Where(d => d.IsActive && d.ValidFrom <= now && d.ValidTo >= now)
             .Where(d => d.ApplyTo == DiscountApplyTo.All || d.ApplyTo == DiscountApplyTo.Store)
             .ToListAsync();
@@ -182,8 +183,8 @@ public class CartService : ICartService
             }
             if (disc == null) disc = discounts.FirstOrDefault(d => d.BrandId == c.Product?.BrandId);
             
-            // 🌐 Fallback: Store-wide discount
-            if (disc == null) disc = discounts.FirstOrDefault(d => d.ProductId == null && d.CategoryId == null && d.BrandId == null);
+            // Strict Offers Page Resolution: Product -> Category Tree -> Brand
+            // Products ONLY receive discounts if they, their category, or their brand are explicitly targeted in the Offers Page.
 
             if (disc != null && IsCategoryExcluded(disc.ExcludedCategoryIds, c.Product?.CategoryId, allCategories))
             {

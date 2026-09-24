@@ -106,7 +106,8 @@ public class ProductDiscountsController : ControllerBase
         if (dto.BrandId.HasValue && !await _db.Brands.AnyAsync(b => b.Id == dto.BrandId))
             return BadRequest(new { message = _t.Get("Brands.NotFound") });
 
-        // Store-wide discount is allowed (all IDs null)
+        if (!dto.ProductId.HasValue && !dto.CategoryId.HasValue && !dto.BrandId.HasValue)
+            return BadRequest(new { message = "يجب تحديد المنتج أو القسم أو الماركة لتطبيق الخصم" });
 
         if (dto.ValidFrom >= dto.ValidTo)
             return BadRequest(new { message = _t.Get("Discounts.StartDateBeforeEndDate") });
@@ -140,6 +141,9 @@ public class ProductDiscountsController : ControllerBase
     {
         var discount = await _db.ProductDiscounts.FindAsync(id);
         if (discount == null) return NotFound();
+
+        if (!dto.ProductId.HasValue && !dto.CategoryId.HasValue && !dto.BrandId.HasValue)
+            return BadRequest(new { message = "يجب تحديد المنتج أو القسم أو الماركة لتطبيق الخصم" });
 
         discount.ProductId           = dto.ProductId;
         discount.CategoryId          = dto.CategoryId;

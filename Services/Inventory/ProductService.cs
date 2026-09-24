@@ -291,8 +291,7 @@ public class ProductService : IProductService
             d = await _db.ProductDiscounts
                 .Where(x => (x.ProductId == id || 
                              (p.CategoryId != null && (x.CategoryId == p.CategoryId || x.CategoryId == p.Category!.ParentId || (p.Category!.Parent != null && x.CategoryId == p.Category!.Parent!.ParentId))) || 
-                             (p.BrandId != null && x.BrandId == p.BrandId) ||
-                             (x.ProductId == null && x.CategoryId == null && x.BrandId == null)) 
+                             (p.BrandId != null && x.BrandId == p.BrandId)) 
                         && x.IsActive && x.ValidFrom <= now && x.ValidTo >= now)
                 .Where(x => x.ApplyTo == DiscountApplyTo.All || (source.HasValue ? x.ApplyTo == source.Value : x.ApplyTo == DiscountApplyTo.Store))
                 .OrderByDescending(x => x.ProductId != null ? 4 : (x.CategoryId != null ? 3 : (x.BrandId != null ? 2 : 1)))
@@ -381,8 +380,7 @@ public class ProductService : IProductService
             d = await _db.ProductDiscounts
                 .Where(x => (x.ProductId == p.Id || 
                              (p.CategoryId != null && (x.CategoryId == p.CategoryId || x.CategoryId == p.Category!.ParentId || (p.Category!.Parent != null && x.CategoryId == p.Category!.Parent!.ParentId))) || 
-                             (p.BrandId != null && x.BrandId == p.BrandId) ||
-                             (x.ProductId == null && x.CategoryId == null && x.BrandId == null)) 
+                             (p.BrandId != null && x.BrandId == p.BrandId)) 
                         && x.IsActive && x.ValidFrom <= now && x.ValidTo >= now)
                 .Where(x => x.ApplyTo == DiscountApplyTo.All || (source.HasValue ? x.ApplyTo == source.Value : x.ApplyTo == DiscountApplyTo.Store))
                 .OrderByDescending(x => x.ProductId != null ? 4 : (x.CategoryId != null ? 3 : (x.BrandId != null ? 2 : 1)))
@@ -1155,7 +1153,6 @@ public class ProductService : IProductService
             .Where(d => d.IsActive && d.ValidFrom <= now && d.ValidTo >= now)
             .Where(d => source.HasValue ? (d.ApplyTo == DiscountApplyTo.All || d.ApplyTo == source.Value) : true)
             .Where(d => 
-                (d.ProductId == null && d.CategoryId == null && d.BrandId == null) ||
                 (d.ProductId != null && productIds.Contains(d.ProductId.Value)) ||
                 (d.CategoryId != null && (categoryIds.Contains(d.CategoryId.Value) || ancestorCategoryIds.Contains(d.CategoryId.Value))) ||
                 (d.BrandId != null && brandIds.Contains(d.BrandId.Value))

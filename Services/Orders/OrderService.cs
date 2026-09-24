@@ -633,6 +633,7 @@ public class OrderService : IOrderService
                 };
 
                 var activeDiscounts = await _db.ProductDiscounts
+                    .AsNoTracking()
                     .Where(d => d.IsActive && d.ValidFrom <= now && d.ValidTo >= now)
                     .Where(d => d.ApplyTo == DiscountApplyTo.All || 
                                (actualSource == OrderSource.POS && d.ApplyTo == DiscountApplyTo.POS) ||
@@ -714,8 +715,8 @@ public class OrderService : IOrderService
                             }
                             if (disc == null) disc = activeDiscounts.FirstOrDefault(d => d.BrandId == product.BrandId);
                             
-                            // 🌐 Fallback: Store-wide discount
-                            if (disc == null) disc = activeDiscounts.FirstOrDefault(d => d.ProductId == null && d.CategoryId == null && d.BrandId == null);
+                            // Strict Offers Page Resolution: Product -> Category Tree -> Brand
+                            // Products ONLY receive discounts if they, their category, or their brand are explicitly targeted in the Offers Page.
 
                             if (disc != null && IsCategoryExcluded(disc.ExcludedCategoryIds, product.CategoryId, allCategories))
                             {
@@ -843,8 +844,8 @@ public class OrderService : IOrderService
                             }
                             if (disc == null) disc = activeDiscounts.FirstOrDefault(d => d.BrandId == ci.Product.BrandId);
                             
-                            // 🌐 Fallback: Store-wide discount
-                            if (disc == null) disc = activeDiscounts.FirstOrDefault(d => d.ProductId == null && d.CategoryId == null && d.BrandId == null);
+                            // Strict Offers Page Resolution: Product -> Category Tree -> Brand
+                            // Products ONLY receive discounts if they, their category, or their brand are explicitly targeted in the Offers Page.
 
                             decimal unitPrice;
                             if (disc != null && ci.Quantity >= disc.MinQty)
