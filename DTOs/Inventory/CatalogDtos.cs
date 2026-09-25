@@ -123,7 +123,15 @@ public record ProductSummaryDto(
     [property: JsonPropertyName("images")] List<ProductImageDto>? Images = null,
     [property: JsonPropertyName("secondaryCategoryIds")] List<int>? SecondaryCategoryIds = null,
     [property: JsonPropertyName("onlinePrice")] decimal? OnlinePrice = null,
-    [property: JsonPropertyName("onlineDiscountPrice")] decimal? OnlineDiscountPrice = null
+    [property: JsonPropertyName("onlineDiscountPrice")] decimal? OnlineDiscountPrice = null,
+    [property: JsonPropertyName("bundleQuantity")] int BundleQuantity = 1,
+    [property: JsonPropertyName("bundleVariantId")] int? BundleVariantId = null
+);
+
+public record BundleItemConfigDto(
+    [property: JsonPropertyName("productId")] int ProductId,
+    [property: JsonPropertyName("quantity")] int Quantity = 1,
+    [property: JsonPropertyName("productVariantId")] int? ProductVariantId = null
 );
 
 public record ProductDetailDto(
@@ -166,6 +174,12 @@ public record ProductDetailDto(
     [property: JsonPropertyName("sizeChartJson")] string? SizeChartJson = null,
     [property: JsonPropertyName("linkedProductId")] int? LinkedProductId = null,
     [property: JsonPropertyName("linkedProduct")] ProductSummaryDto? LinkedProduct = null,
+    [property: JsonPropertyName("bundleProductIds")] List<int>? BundleProductIds = null,
+    [property: JsonPropertyName("bundleItems")] List<BundleItemConfigDto>? BundleItems = null,
+    [property: JsonPropertyName("bundleDiscountType")] int BundleDiscountType = 0,
+    [property: JsonPropertyName("bundleDiscountValue")] decimal BundleDiscountValue = 0,
+    [property: JsonPropertyName("bundleTitle")] string? BundleTitle = null,
+    [property: JsonPropertyName("bundleProducts")] List<ProductSummaryDto>? BundleProducts = null,
     [property: JsonPropertyName("egyptianProductCode")] string? EgyptianProductCode = null,
     [property: JsonPropertyName("saudiProductCode")] string? SaudiProductCode = null,
     [property: JsonPropertyName("rawDiscountPrice")] decimal? RawDiscountPrice = null,
@@ -215,6 +229,11 @@ public record CreateProductDto(
     [property: JsonPropertyName("sizeChartImageUrl")] string? SizeChartImageUrl = null,
     [property: JsonPropertyName("sizeChartJson")] string? SizeChartJson = null,
     [property: JsonPropertyName("linkedProductId")] int? LinkedProductId = null,
+    [property: JsonPropertyName("bundleProductIds")] List<int>? BundleProductIds = null,
+    [property: JsonPropertyName("bundleItems")] List<BundleItemConfigDto>? BundleItems = null,
+    [property: JsonPropertyName("bundleDiscountType")] int BundleDiscountType = 0,
+    [property: JsonPropertyName("bundleDiscountValue")] decimal BundleDiscountValue = 0,
+    [property: JsonPropertyName("bundleTitle")] string? BundleTitle = null,
     [property: JsonPropertyName("egyptianProductCode")] string? EgyptianProductCode = null,
     [property: JsonPropertyName("saudiProductCode")] string? SaudiProductCode = null,
     [property: JsonPropertyName("secondaryCategoryIds")] List<int>? SecondaryCategoryIds = null,
@@ -245,6 +264,11 @@ public record UpdateProductDto(
     [property: JsonPropertyName("sizeChartImageUrl")] string? SizeChartImageUrl = null,
     [property: JsonPropertyName("sizeChartJson")] string? SizeChartJson = null,
     [property: JsonPropertyName("linkedProductId")] int? LinkedProductId = null,
+    [property: JsonPropertyName("bundleProductIds")] List<int>? BundleProductIds = null,
+    [property: JsonPropertyName("bundleItems")] List<BundleItemConfigDto>? BundleItems = null,
+    [property: JsonPropertyName("bundleDiscountType")] int BundleDiscountType = 0,
+    [property: JsonPropertyName("bundleDiscountValue")] decimal BundleDiscountValue = 0,
+    [property: JsonPropertyName("bundleTitle")] string? BundleTitle = null,
     [property: JsonPropertyName("egyptianProductCode")] string? EgyptianProductCode = null,
     [property: JsonPropertyName("saudiProductCode")] string? SaudiProductCode = null,
     [property: JsonPropertyName("secondaryCategoryIds")] List<int>? SecondaryCategoryIds = null,

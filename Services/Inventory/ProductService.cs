@@ -303,14 +303,9 @@ public class ProductService : IProductService
             }
         }
 
-        ProductSummaryDto? linkedSummary = null;
-        if (p.LinkedProduct != null && p.LinkedProduct.Id != id)
-        {
-            var linkedList = await MapToSummaryListAsync(new List<Product> { p.LinkedProduct }, source, warehouseId);
-            linkedSummary = linkedList.FirstOrDefault();
-        }
+        var (bundleSummaries, bundleIds, bundleConfigs, linkedSummary) = await LoadBundleSummariesAsync(p, source, warehouseId);
 
-        return MapToDetail(p, d, linkedSummary, reviewDtos, source, rawPricing);
+        return MapToDetail(p, d, linkedSummary, reviewDtos, source, rawPricing, bundleSummaries, bundleIds, bundleConfigs);
     }
 
     public async Task<ProductDetailDto?> GetProductBySlugAsync(string slug, DiscountApplyTo? source = null, int? warehouseId = null, bool rawPricing = false)
@@ -392,14 +387,9 @@ public class ProductService : IProductService
             }
         }
 
-        ProductSummaryDto? linkedSummary = null;
-        if (p.LinkedProduct != null)
-        {
-            var linkedList = await MapToSummaryListAsync(new List<Product> { p.LinkedProduct }, source, warehouseId);
-            linkedSummary = linkedList.FirstOrDefault();
-        }
+        var (bundleSummaries, bundleIds, bundleConfigs, linkedSummary) = await LoadBundleSummariesAsync(p, source, warehouseId);
 
-        return MapToDetail(p, d, linkedSummary, reviewDtos, source, rawPricing);
+        return MapToDetail(p, d, linkedSummary, reviewDtos, source, rawPricing, bundleSummaries, bundleIds, bundleConfigs);
     }
 
     public async Task<ProductDetailDto> CreateProductAsync(CreateProductDto dto)
@@ -410,6 +400,8 @@ public class ProductService : IProductService
 
         if (!dto.Price.HasValue || dto.Price <= 0)
             throw new ArgumentException(_t.Get("Products.PriceRequired"));
+
+        var (bundleJson, linkedId) = await ProcessAndValidateBundleItemsAsync(dto.BundleItems, dto.BundleProductIds, dto.LinkedProductId, 0);
 
         var product = new Product
         {
@@ -436,7 +428,11 @@ public class ProductService : IProductService
             SizeChartJson = dto.SizeChartJson,
             Status = dto.Status ?? ProductStatus.Active,
             Slug = GenerateSlug(dto.NameEn ?? dto.NameAr) + "-" + Guid.NewGuid().ToString().Substring(0, 4),
-            LinkedProductId = dto.LinkedProductId
+            LinkedProductId = linkedId,
+            BundleProductIds = bundleJson,
+            BundleDiscountType = dto.BundleDiscountType,
+            BundleDiscountValue = dto.BundleDiscountValue,
+            BundleTitle = dto.BundleTitle
         };
 
         if (dto.SecondaryCategoryIds != null && dto.SecondaryCategoryIds.Any())
@@ -553,7 +549,12 @@ public class ProductService : IProductService
         product.SizeGroupId = dto.SizeGroupId;
         product.SizeChartImageUrl = dto.SizeChartImageUrl;
         product.SizeChartJson = dto.SizeChartJson;
-        product.LinkedProductId = dto.LinkedProductId;
+        var (bundleJson, linkedId) = await ProcessAndValidateBundleItemsAsync(dto.BundleItems, dto.BundleProductIds, dto.LinkedProductId, id);
+        product.BundleProductIds = bundleJson;
+        product.LinkedProductId = linkedId;
+        product.BundleDiscountType = dto.BundleDiscountType;
+        product.BundleDiscountValue = dto.BundleDiscountValue;
+        product.BundleTitle = dto.BundleTitle;
         product.UpdatedAt = TimeHelper.GetEgyptTime();
 
         // تحديث الأقسام الإضافية للمنتج
@@ -1047,7 +1048,157 @@ public class ProductService : IProductService
         return false;
     }
 
-    private ProductDetailDto MapToDetail(Product p, ProductDiscount? d = null, ProductSummaryDto? linkedProduct = null, List<ReviewListItemDto>? reviewDtos = null, DiscountApplyTo? source = null, bool rawPricing = false)
+    public static List<BundleItemConfigDto> ParseBundleConfigs(string? json, int? fallbackLinkedId = null)
+    {
+        var result = new List<BundleItemConfigDto>();
+        if (!string.IsNullOrWhiteSpace(json))
+        {
+            try
+            {
+                var parsedObjects = System.Text.Json.JsonSerializer.Deserialize<List<BundleItemConfigDto>>(json, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (parsedObjects != null && parsedObjects.Any() && parsedObjects.First().ProductId > 0)
+                {
+                    result.AddRange(parsedObjects.Where(x => x.ProductId > 0).Select(x => new BundleItemConfigDto(x.ProductId, x.Quantity <= 0 ? 1 : x.Quantity)));
+                }
+            }
+            catch { }
+
+            if (result.Count == 0)
+            {
+                try
+                {
+                    var parsedInts = System.Text.Json.JsonSerializer.Deserialize<List<int>>(json);
+                    if (parsedInts != null && parsedInts.Any())
+                    {
+                        result.AddRange(parsedInts.Where(id => id > 0).Distinct().Select(id => new BundleItemConfigDto(id, 1)));
+                    }
+                }
+                catch { }
+            }
+        }
+
+        if (result.Count == 0 && fallbackLinkedId.HasValue && fallbackLinkedId.Value > 0)
+        {
+            result.Add(new BundleItemConfigDto(fallbackLinkedId.Value, 1));
+        }
+
+        return result;
+    }
+
+    private async Task<(string? json, int? linkedId)> ProcessAndValidateBundleItemsAsync(
+        List<BundleItemConfigDto>? items, List<int>? legacyIds, int? fallbackLinkedId, int currentProductId)
+    {
+        var rawConfigs = items != null && items.Any()
+            ? items
+            : (legacyIds != null && legacyIds.Any()
+                ? legacyIds.Distinct().Select(id => new BundleItemConfigDto(id, 1)).ToList()
+                : (fallbackLinkedId.HasValue ? new List<BundleItemConfigDto> { new BundleItemConfigDto(fallbackLinkedId.Value, 1) } : new List<BundleItemConfigDto>()));
+
+        rawConfigs = rawConfigs.Where(c => c.ProductId != currentProductId && c.Quantity > 0).ToList();
+        if (!rawConfigs.Any()) return (null, null);
+
+        var pids = rawConfigs.Select(c => c.ProductId).Distinct().ToList();
+        var bundleProducts = await _db.Products
+            .Include(p => p.Variants)
+            .Where(p => pids.Contains(p.Id))
+            .ToListAsync();
+
+        var validConfigs = new List<BundleItemConfigDto>();
+        foreach (var c in rawConfigs)
+        {
+            var bp = bundleProducts.FirstOrDefault(p => p.Id == c.ProductId);
+            if (bp == null) continue;
+
+            int maxStock;
+            if (c.ProductVariantId.HasValue && c.ProductVariantId.Value > 0)
+            {
+                var targetVariant = bp.Variants?.FirstOrDefault(v => v.Id == c.ProductVariantId.Value);
+                if (targetVariant == null)
+                    throw new ArgumentException($"المقاس أو اللون المحدد للمنتج '{bp.NameAr}' غير موجود.");
+                maxStock = targetVariant.StockQuantity;
+            }
+            else
+            {
+                maxStock = bp.Variants != null && bp.Variants.Any(v => v.IsActive)
+                    ? (bp.Variants.Where(v => v.IsActive).Select(v => v.StockQuantity).DefaultIfEmpty(0).Max())
+                    : bp.TotalStock;
+            }
+
+            if (maxStock <= 0)
+            {
+                throw new ArgumentException($"المنتج '{bp.NameAr}' غير متوفر في المخزون حالياً ولا يمكن إضافته للبندل.");
+            }
+
+            if (c.Quantity > maxStock)
+            {
+                throw new ArgumentException($"الكمية المحددة للمنتج '{bp.NameAr}' في البندل ({c.Quantity}) تتجاوز المخزون المتاح ({maxStock}).");
+            }
+
+            validConfigs.Add(new BundleItemConfigDto(c.ProductId, c.Quantity, c.ProductVariantId));
+        }
+
+        if (!validConfigs.Any()) return (null, null);
+        return (System.Text.Json.JsonSerializer.Serialize(validConfigs), validConfigs.First().ProductId);
+    }
+
+    private async Task<(List<ProductSummaryDto> bundleSummaries, List<int> bundleIds, List<BundleItemConfigDto> bundleConfigs, ProductSummaryDto? linkedSummary)> LoadBundleSummariesAsync(
+        Product p, DiscountApplyTo? source = null, int? warehouseId = null)
+    {
+        var configs = ParseBundleConfigs(p.BundleProductIds, p.LinkedProductId);
+        var bundleIds = configs.Select(c => c.ProductId).Where(id => id != p.Id).Distinct().ToList();
+
+        var bundleSummaries = new List<ProductSummaryDto>();
+        ProductSummaryDto? linkedSummary = null;
+
+        if (bundleIds.Count > 0)
+        {
+            var bundleEntities = await _db.Products
+                .AsNoTracking()
+                .AsSplitQuery()
+                .Include(x => x.Category)
+                .Include(x => x.Brand)
+                .Include(x => x.Images.OrderBy(i => i.SortOrder))
+                .Include(x => x.Variants)
+                .Include(x => x.Unit)
+                .Where(x => bundleIds.Contains(x.Id) && x.Id != p.Id)
+                .ToListAsync();
+
+            if (bundleEntities.Any())
+            {
+                var ordered = bundleIds
+                    .Select(bid => bundleEntities.FirstOrDefault(e => e.Id == bid))
+                    .Where(e => e != null)
+                    .Cast<Product>()
+                    .ToList();
+
+                var rawSummaries = await MapToSummaryListAsync(ordered, source, warehouseId);
+                var configMap = configs.ToDictionary(c => c.ProductId, c => c.Quantity);
+                var variantMap = configs.Where(c => c.ProductVariantId.HasValue).ToDictionary(c => c.ProductId, c => c.ProductVariantId);
+
+                bundleSummaries = rawSummaries
+                    .Select(s => s with { 
+                        BundleQuantity = configMap.GetValueOrDefault(s.Id, 1),
+                        BundleVariantId = variantMap.GetValueOrDefault(s.Id)
+                    })
+                    .ToList();
+
+                linkedSummary = bundleSummaries.FirstOrDefault();
+            }
+        }
+
+        return (bundleSummaries, bundleIds, configs, linkedSummary);
+    }
+
+    private ProductDetailDto MapToDetail(
+        Product p,
+        ProductDiscount? d = null,
+        ProductSummaryDto? linkedProduct = null,
+        List<ReviewListItemDto>? reviewDtos = null,
+        DiscountApplyTo? source = null,
+        bool rawPricing = false,
+        List<ProductSummaryDto>? bundleProducts = null,
+        List<int>? bundleProductIds = null,
+        List<BundleItemConfigDto>? bundleConfigs = null)
     {
         bool isStoreSource = source != DiscountApplyTo.POS;
         decimal effectiveBasePrice = (!rawPricing && isStoreSource && p.OnlinePrice.HasValue && p.OnlinePrice > 0)
@@ -1083,6 +1234,9 @@ public class ProductService : IProductService
 
         var reviewsList = reviewDtos ?? p.Reviews?.Where(r => r.IsApproved).OrderByDescending(r => r.CreatedAt).Select(r => new ReviewListItemDto(r.Id, r.Customer?.FullName ?? _t.Get("Products.AnonymousReviewer"), r.Rating, r.Comment, r.CreatedAt)).ToList();
 
+        var configs = bundleConfigs ?? ParseBundleConfigs(p.BundleProductIds, p.LinkedProductId);
+        var effectiveBundleIds = bundleProductIds ?? configs.Select(c => c.ProductId).ToList();
+
         return new ProductDetailDto(
             p.Id, p.NameAr, p.NameEn, p.Slug, p.DescriptionAr, p.DescriptionEn,
             effectiveBasePrice, finalDiscountPrice, p.CostPrice, p.SKU,
@@ -1112,6 +1266,12 @@ public class ProductService : IProductService
             p.SizeChartJson,
             p.LinkedProductId,
             linkedProduct,
+            BundleProductIds: effectiveBundleIds,
+            BundleItems: configs,
+            BundleDiscountType: p.BundleDiscountType,
+            BundleDiscountValue: p.BundleDiscountValue,
+            BundleTitle: p.BundleTitle,
+            BundleProducts: bundleProducts,
             RawDiscountPrice: p.DiscountPrice,
             SecondaryCategoryIds: p.SecondaryCategories?.Select(sc => sc.CategoryId).ToList() ?? new List<int>(),
             SecondaryCategories: p.SecondaryCategories?.Where(sc => sc.Category != null).Select(sc => new CategoryDto(sc.Category.Id, sc.Category.NameAr, sc.Category.NameEn, sc.Category.DescriptionAr, sc.Category.DescriptionEn, sc.Category.ImageUrl, sc.Category.IsActive, sc.Category.Type, 0, sc.Category.CreatedAt)).ToList() ?? new List<CategoryDto>(),

@@ -39,13 +39,26 @@ public class CartService : ICartService
             throw new ArgumentException($"يجب تحديد المقاس واللون للمنتج '{product.NameAr}' لإضافته للسلة.");
         }
 
+        var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
+        var variant = dto.ProductVariantId.HasValue ? product.Variants.FirstOrDefault(v => v.Id == dto.ProductVariantId.Value) : null;
+        var rawStock = variant?.StockQuantity ?? product.TotalStock;
+        var availableStock = (variant?.MaxOnlineStock != null && variant.MaxOnlineStock.Value > 0)
+            ? Math.Min(rawStock, variant.MaxOnlineStock.Value)
+            : rawStock;
+
         var existing = await _db.CartItems.FirstOrDefaultAsync(c =>
             c.CustomerId == customerId &&
             c.ProductId == dto.ProductId &&
             c.ProductVariantId == dto.ProductVariantId);
 
+        int requestedQty = (existing?.Quantity ?? 0) + dto.Quantity;
+        if (store != null && !store.AllowBackorders && requestedQty > availableStock)
+        {
+            throw new ArgumentException($"الكمية المطلوبة ({requestedQty}) تتجاوز المخزون المتوفر ({availableStock}) للمنتج '{product.NameAr}'.");
+        }
+
         if (existing != null)
-            existing.Quantity += dto.Quantity;
+            existing.Quantity = requestedQty;
         else
             _db.CartItems.Add(new CartItem
             {
@@ -75,6 +88,7 @@ public class CartService : ICartService
     {
         if (dto.Items == null || !dto.Items.Any()) return await GetCartAsync(customerId);
 
+        var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
         var productIds = dto.Items.Select(i => i.ProductId).Distinct().ToList();
         var productsDict = await _db.Products.Include(p => p.Variants).Where(p => productIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id);
 
@@ -87,13 +101,25 @@ public class CartService : ICartService
                 throw new ArgumentException($"يجب تحديد المقاس واللون للمنتج '{product.NameAr}' لإضافته للسلة.");
             }
 
+            var variant = item.ProductVariantId.HasValue ? product.Variants.FirstOrDefault(v => v.Id == item.ProductVariantId.Value) : null;
+            var rawStock = variant?.StockQuantity ?? product.TotalStock;
+            var availableStock = (variant?.MaxOnlineStock != null && variant.MaxOnlineStock.Value > 0)
+                ? Math.Min(rawStock, variant.MaxOnlineStock.Value)
+                : rawStock;
+
             var existing = await _db.CartItems.FirstOrDefaultAsync(c =>
                 c.CustomerId == customerId &&
                 c.ProductId == item.ProductId &&
                 c.ProductVariantId == item.ProductVariantId);
 
+            int requestedQty = (existing?.Quantity ?? 0) + item.Quantity;
+            if (store != null && !store.AllowBackorders && requestedQty > availableStock)
+            {
+                throw new ArgumentException($"الكمية المطلوبة ({requestedQty}) تتجاوز المخزون المتوفر ({availableStock}) للمنتج '{product.NameAr}'.");
+            }
+
             if (existing != null)
-                existing.Quantity += item.Quantity;
+                existing.Quantity = requestedQty;
             else
                 _db.CartItems.Add(new CartItem
                 {
@@ -125,6 +151,22 @@ public class CartService : ICartService
         var item = await _db.CartItems
             .FirstOrDefaultAsync(c => c.Id == cartItemId && c.CustomerId == customerId)
             ?? throw new KeyNotFoundException("Cart item not found");
+
+        var product = await _db.Products.Include(p => p.Variants).FirstOrDefaultAsync(p => p.Id == item.ProductId);
+        if (product != null)
+        {
+            var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
+            var variant = item.ProductVariantId.HasValue ? product.Variants.FirstOrDefault(v => v.Id == item.ProductVariantId.Value) : null;
+            var rawStock = variant?.StockQuantity ?? product.TotalStock;
+            var availableStock = (variant?.MaxOnlineStock != null && variant.MaxOnlineStock.Value > 0)
+                ? Math.Min(rawStock, variant.MaxOnlineStock.Value)
+                : rawStock;
+
+            if (store != null && !store.AllowBackorders && dto.Quantity > availableStock)
+            {
+                throw new ArgumentException($"الكمية المطلوبة ({dto.Quantity}) تتجاوز المخزون المتوفر ({availableStock}) للمنتج '{product.NameAr}'.");
+            }
+        }
 
         item.Quantity = dto.Quantity;
         await _db.SaveChangesAsync();
@@ -160,6 +202,35 @@ public class CartService : ICartService
     private static CartSummaryDto BuildSummary(List<CartItem> items, StoreInfo? store, List<ProductDiscount> discounts, Dictionary<int, int?> allCategories)
     {
         var deliveryFee = store?.FixedDeliveryFee ?? 50m;
+
+        // 🎁 DETECT BUNDLE OFFERS IN CART
+        var cartProductIds = items.Where(c => c.Product != null && c.ProductId.HasValue).Select(c => c.ProductId!.Value).Distinct().ToHashSet();
+        var cartBundlePctDiscounts = new Dictionary<int, decimal>();
+        decimal cartBundleFixedDiscountTotal = 0;
+
+        foreach (var ci in items)
+        {
+            if (ci.Product != null && !string.IsNullOrWhiteSpace(ci.Product.BundleProductIds) && ci.Product.BundleDiscountType > 0 && ci.Product.BundleDiscountValue > 0)
+            {
+                var bConfigs = ProductService.ParseBundleConfigs(ci.Product.BundleProductIds, ci.Product.LinkedProductId);
+                if (bConfigs.Any() && bConfigs.All(cfg => items.Where(x => x.ProductId == cfg.ProductId).Sum(x => x.Quantity) >= cfg.Quantity))
+                {
+                    if (ci.Product.BundleDiscountType == 1) // Percentage
+                    {
+                        var allGroup = bConfigs.Select(c => c.ProductId).Append(ci.Product.Id).Distinct();
+                        foreach (var gid in allGroup)
+                        {
+                            if (!cartBundlePctDiscounts.ContainsKey(gid))
+                                cartBundlePctDiscounts[gid] = ci.Product.BundleDiscountValue;
+                        }
+                    }
+                    else if (ci.Product.BundleDiscountType == 2) // Fixed amount
+                    {
+                        cartBundleFixedDiscountTotal += ci.Product.BundleDiscountValue;
+                    }
+                }
+            }
+        }
 
         var dtos = items.Select(c =>
         {
@@ -198,6 +269,10 @@ public class CartService : ICartService
                     ? Math.Round(basePrice - (basePrice * disc.DiscountValue / 100), 2)
                     : Math.Round(basePrice - disc.DiscountValue, 2);
             }
+            else if (c.ProductId.HasValue && cartBundlePctDiscounts.TryGetValue(c.ProductId.Value, out var cbPct) && cbPct > 0)
+            {
+                price = Math.Round(basePrice - (basePrice * cbPct / 100), 2);
+            }
             else if (c.Product?.OnlineDiscountPrice.HasValue == true && c.Product.OnlineDiscountPrice.Value > 0)
             {
                 price = c.Product.OnlineDiscountPrice.Value;
@@ -219,7 +294,7 @@ public class CartService : ICartService
             );
         }).ToList();
 
-        var subTotal = dtos.Sum(d => d.TotalPrice);
+        var subTotal = Math.Max(0, dtos.Sum(d => d.TotalPrice) - cartBundleFixedDiscountTotal);
 
         // Apply free-delivery threshold from store settings
         var freeAt = store?.FreeDeliveryAt ?? 2000m;

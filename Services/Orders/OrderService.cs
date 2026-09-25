@@ -657,6 +657,34 @@ public class OrderService : IOrderService
                     var productIds = dto.Items.Select(i => i.ProductId).Distinct().ToList();
                     var productsDict = await _db.Products.Include(p => p.Variants).Where(p => productIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id);
 
+                    // 🎁 DETECT BUNDLE OFFERS IN ORDER
+                    var bundlePctDiscounts = new Dictionary<int, decimal>();
+                    decimal bundleFixedDiscountTotal = 0;
+
+                    foreach (var p in productsDict.Values)
+                    {
+                        if (!string.IsNullOrWhiteSpace(p.BundleProductIds) && p.BundleDiscountType > 0 && p.BundleDiscountValue > 0)
+                        {
+                            var bConfigs = ProductService.ParseBundleConfigs(p.BundleProductIds, p.LinkedProductId);
+                            if (bConfigs.Any() && bConfigs.All(cfg => dto.Items.Where(x => x.ProductId == cfg.ProductId).Sum(x => x.Quantity) >= cfg.Quantity))
+                            {
+                                if (p.BundleDiscountType == 1) // Percentage
+                                {
+                                    var allGroup = bConfigs.Select(c => c.ProductId).Append(p.Id).Distinct();
+                                    foreach (var gid in allGroup)
+                                    {
+                                        if (!bundlePctDiscounts.ContainsKey(gid))
+                                            bundlePctDiscounts[gid] = p.BundleDiscountValue;
+                                    }
+                                }
+                                else if (p.BundleDiscountType == 2) // Fixed amount
+                                {
+                                    bundleFixedDiscountTotal += p.BundleDiscountValue;
+                                }
+                            }
+                        }
+                    }
+
                     bool isCostSale = dto.Note != null && dto.Note.Contains("[CostSale]");
 
                     foreach (var item in dto.Items)
@@ -729,6 +757,10 @@ public class OrderService : IOrderService
                                     ? Math.Round(originalUnitPrice - (originalUnitPrice * disc.DiscountValue / 100), 2)
                                     : Math.Round(originalUnitPrice - disc.DiscountValue, 2);
                             }
+                            else if (bundlePctDiscounts.TryGetValue(product.Id, out var bPct) && bPct > 0)
+                            {
+                                unitPrice = Math.Round(originalUnitPrice - (originalUnitPrice * bPct / 100), 2);
+                            }
                             else if (product.OnlineDiscountPrice.HasValue && product.OnlineDiscountPrice > 0)
                             {
                                 unitPrice = product.OnlineDiscountPrice.Value + variantAdjustment;
@@ -766,16 +798,20 @@ public class OrderService : IOrderService
                             order.TotalVatAmount += orderItem.ItemVatAmount;
                         }
 
+                        var totalRequested = dto.Items
+                            .Where(x => x.ProductId == item.ProductId && x.ProductVariantId == item.ProductVariantId)
+                            .Sum(x => x.Quantity);
+
                         var rawStock = variant?.StockQuantity ?? (product.TotalStock);
                         var availableStock = (actualSource == OrderSource.Website && variant?.MaxOnlineStock != null && variant.MaxOnlineStock.Value > 0)
                             ? Math.Min(rawStock, variant.MaxOnlineStock.Value)
                             : rawStock;
-                        if (store != null && !store.AllowBackorders && item.Quantity > availableStock)
+                        if (store != null && !store.AllowBackorders && totalRequested > availableStock)
                         {
                             throw new ArgumentException(
                                 actualSource == OrderSource.POS
-                                ? _t.Get("Orders.StockUnavailable", item.Quantity, product.NameAr, availableStock)
-                                : _t.Get("Orders.StockUnavailable", item.Quantity, product.NameAr, availableStock));
+                                ? _t.Get("Orders.StockUnavailable", totalRequested, product.NameAr, availableStock)
+                                : _t.Get("Orders.StockUnavailable", totalRequested, product.NameAr, availableStock));
                         }
 
                         order.Items.Add(orderItem);
@@ -796,6 +832,11 @@ public class OrderService : IOrderService
                             warehouseId: warehouseIdToUse
                         );
                     }
+
+                    if (bundleFixedDiscountTotal > 0)
+                    {
+                        order.TemporalDiscount += bundleFixedDiscountTotal;
+                    }
                 }
                 else
                 {
@@ -805,16 +846,49 @@ public class OrderService : IOrderService
                     
                     if (!cartItems.Any()) throw new ArgumentException(_t.Get("Orders.CartEmpty"));
 
+                    // 🎁 DETECT BUNDLE OFFERS IN CART
+                    var cartProductIds = cartItems.Where(c => c.Product != null && c.ProductId.HasValue).Select(c => c.ProductId!.Value).Distinct().ToHashSet();
+                    var cartBundlePctDiscounts = new Dictionary<int, decimal>();
+                    decimal cartBundleFixedDiscountTotal = 0;
+
+                    foreach (var ci in cartItems)
+                    {
+                        if (ci.Product != null && !string.IsNullOrWhiteSpace(ci.Product.BundleProductIds) && ci.Product.BundleDiscountType > 0 && ci.Product.BundleDiscountValue > 0)
+                        {
+                            var bConfigs = ProductService.ParseBundleConfigs(ci.Product.BundleProductIds, ci.Product.LinkedProductId);
+                            if (bConfigs.Any() && bConfigs.All(cfg => cartItems.Where(x => x.ProductId == cfg.ProductId).Sum(x => x.Quantity) >= cfg.Quantity))
+                            {
+                                if (ci.Product.BundleDiscountType == 1) // Percentage
+                                {
+                                    var allGroup = bConfigs.Select(c => c.ProductId).Append(ci.Product.Id).Distinct();
+                                    foreach (var gid in allGroup)
+                                    {
+                                        if (!cartBundlePctDiscounts.ContainsKey(gid))
+                                            cartBundlePctDiscounts[gid] = ci.Product.BundleDiscountValue;
+                                    }
+                                }
+                                else if (ci.Product.BundleDiscountType == 2) // Fixed amount
+                                {
+                                    cartBundleFixedDiscountTotal += ci.Product.BundleDiscountValue;
+                                }
+                            }
+                        }
+                    }
+
                     foreach (var ci in cartItems)
                     {
                     if (ci.Product == null) continue;
+                    var totalRequested = cartItems
+                        .Where(x => x.ProductId == ci.ProductId && x.ProductVariantId == ci.ProductVariantId)
+                        .Sum(x => x.Quantity);
+
                     var rawStock = ci.ProductVariant?.StockQuantity ?? ci.Product.TotalStock;
                     var availableStock = (ci.ProductVariant?.MaxOnlineStock != null && ci.ProductVariant.MaxOnlineStock.Value > 0)
                         ? Math.Min(rawStock, ci.ProductVariant.MaxOnlineStock.Value)
                         : rawStock;
-                    if (store != null && !store.AllowBackorders && ci.Quantity > availableStock)
+                    if (store != null && !store.AllowBackorders && totalRequested > availableStock)
                     {
-                        throw new ArgumentException(_t.Get("Orders.StockUnavailable", ci.Quantity, ci.Product.NameAr, availableStock));
+                        throw new ArgumentException(_t.Get("Orders.StockUnavailable", totalRequested, ci.Product.NameAr, availableStock));
                     }
 
                         decimal basePrice = (ci.Product.OnlinePrice.HasValue && ci.Product.OnlinePrice > 0)
@@ -853,6 +927,10 @@ public class OrderService : IOrderService
                             unitPrice = disc.DiscountType == DiscountType.Percentage 
                                 ? Math.Round(originalUnitPrice - (originalUnitPrice * disc.DiscountValue / 100), 2)
                                 : Math.Round(originalUnitPrice - disc.DiscountValue, 2);
+                        }
+                        else if (ci.ProductId.HasValue && cartBundlePctDiscounts.TryGetValue(ci.ProductId.Value, out var cbPct) && cbPct > 0)
+                        {
+                            unitPrice = Math.Round(originalUnitPrice - (originalUnitPrice * cbPct / 100), 2);
                         }
                         else if (ci.Product.OnlineDiscountPrice.HasValue && ci.Product.OnlineDiscountPrice > 0)
                         {
@@ -910,6 +988,11 @@ public class OrderService : IOrderService
                         );
                         
                         _db.CartItems.Remove(ci);
+                    }
+
+                    if (cartBundleFixedDiscountTotal > 0)
+                    {
+                        order.TemporalDiscount += cartBundleFixedDiscountTotal;
                     }
                 }
 

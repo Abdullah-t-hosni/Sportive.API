@@ -59,9 +59,15 @@ public class Product : BaseEntity
     public string? SizeChartImageUrl { get; set; }
     public string? SizeChartJson { get; set; }
 
-    // Linked Product for manual upsell/cross-sell in cart
+    // Linked Product for manual upsell/cross-sell in cart (legacy fallback)
     public int? LinkedProductId { get; set; }
     public Product? LinkedProduct { get; set; }
+
+    // Bundle / Cross-sell Products
+    public string? BundleProductIds { get; set; } // JSON array of ints e.g. "[1, 2, 3]"
+    public int BundleDiscountType { get; set; } = 0; // 0 = None, 1 = Percentage, 2 = FixedAmount
+    public decimal BundleDiscountValue { get; set; } = 0;
+    public string? BundleTitle { get; set; }
 }
 
 public class ProductVariant : BaseEntity
