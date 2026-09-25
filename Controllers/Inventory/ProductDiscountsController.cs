@@ -163,6 +163,20 @@ public class ProductDiscountsController : ControllerBase
         return Ok(discount);
     }
 
+    [HttpPatch("{id}/toggle")]
+    [RequirePermission(ModuleKeys.Discounts, requireEdit: true)]
+    public async Task<IActionResult> ToggleActive(int id)
+    {
+        var discount = await _db.ProductDiscounts.FindAsync(id);
+        if (discount == null) return NotFound();
+
+        discount.IsActive = !discount.IsActive;
+        discount.UpdatedAt = TimeHelper.GetEgyptTime();
+
+        await _db.SaveChangesAsync();
+        return Ok(new { id = discount.Id, isActive = discount.IsActive });
+    }
+
     [HttpDelete("{id}")]
     [RequirePermission(ModuleKeys.Discounts, requireEdit: true)]
     public async Task<IActionResult> Delete(int id)

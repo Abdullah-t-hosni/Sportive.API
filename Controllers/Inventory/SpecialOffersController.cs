@@ -101,6 +101,20 @@ public class SpecialOffersController : ControllerBase
         return Ok(offer);
     }
 
+    [HttpPatch("{id}/toggle")]
+    [RequirePermission(ModuleKeys.Promotions, requireEdit: true)]
+    public async Task<IActionResult> ToggleActive(int id)
+    {
+        var offer = await _db.SpecialOffers.FindAsync(id);
+        if (offer == null) return NotFound();
+
+        offer.IsActive = !offer.IsActive;
+        offer.UpdatedAt = TimeHelper.GetEgyptTime();
+
+        await _db.SaveChangesAsync();
+        return Ok(new { id = offer.Id, isActive = offer.IsActive });
+    }
+
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
