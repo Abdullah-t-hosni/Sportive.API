@@ -31,7 +31,9 @@ public record CartSummaryDto(
     decimal SubTotal,
     decimal DeliveryFee,
     decimal Total,
-    int ItemCount
+    int ItemCount,
+    decimal TemporalDiscount = 0,
+    string? AppliedOfferName = null
 );
 
 // ========== ORDER ==========

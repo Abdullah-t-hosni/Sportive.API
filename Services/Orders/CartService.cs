@@ -26,7 +26,13 @@ public class CartService : ICartService
 
         var allCategories = await _db.Categories.AsNoTracking().ToDictionaryAsync(c => c.Id, c => c.ParentId);
 
-        return BuildSummary(items, store, discounts, allCategories);
+        var specialOffers = await _db.SpecialOffers
+            .AsNoTracking()
+            .Where(o => o.IsActive && o.ValidFrom <= now && o.ValidTo >= now)
+            .Where(o => o.ApplyTo == DiscountApplyTo.All || o.ApplyTo == DiscountApplyTo.Store)
+            .ToListAsync();
+
+        return BuildSummary(items, store, discounts, allCategories, specialOffers);
     }
 
     public async Task<CartSummaryDto> AddToCartAsync(int customerId, AddToCartDto dto)
@@ -199,7 +205,7 @@ public class CartService : ICartService
             .Where(c => c.CustomerId == customerId)
             .ToListAsync();
 
-    private static CartSummaryDto BuildSummary(List<CartItem> items, StoreInfo? store, List<ProductDiscount> discounts, Dictionary<int, int?> allCategories)
+    private static CartSummaryDto BuildSummary(List<CartItem> items, StoreInfo? store, List<ProductDiscount> discounts, Dictionary<int, int?> allCategories, List<SpecialOffer>? specialOffers = null)
     {
         var deliveryFee = store?.FixedDeliveryFee ?? 50m;
 
@@ -294,13 +300,159 @@ public class CartService : ICartService
             );
         }).ToList();
 
+        // 🎁 Special Bundle / Quantity Offers Calculation (matches OrderService.cs)
+        decimal temporalDiscount = 0;
+        string? appliedOfferName = null;
+
+        if (specialOffers != null && specialOffers.Any())
+        {
+            var sortedOffers = specialOffers
+                .OrderByDescending(o =>
+                {
+                    int score = 0;
+                    var catCount = !string.IsNullOrWhiteSpace(o.EligibleCategoryIds) 
+                        ? o.EligibleCategoryIds.Split(',', StringSplitOptions.RemoveEmptyEntries).Length 
+                        : 0;
+                    var brandCount = !string.IsNullOrWhiteSpace(o.EligibleBrandIds) 
+                        ? o.EligibleBrandIds.Split(',', StringSplitOptions.RemoveEmptyEntries).Length 
+                        : 0;
+
+                    if (catCount > 0) score += 2000;
+                    if (brandCount > 0) score += 1000;
+                    if (catCount > 0) score += Math.Max(0, 100 - catCount * 5);
+
+                    decimal pct = o.IsFullDiscount ? 100 : o.DiscountPercentage;
+                    score += (int)(pct * 2);
+                    score += o.ThresholdQuantity + (o.FreeQuantity ?? 0);
+                    return score;
+                })
+                .ToList();
+
+            var itemPool = items
+                .SelectMany((ci, itemIdx) =>
+                {
+                    var dto = dtos.ElementAtOrDefault(itemIdx);
+                    var unitPrice = dto?.UnitPrice ?? 0;
+                    return Enumerable.Range(0, ci.Quantity)
+                        .Select(k => new
+                        {
+                            Uid = $"{itemIdx}_{k}",
+                            CartItem = ci,
+                            UnitPrice = unitPrice
+                        });
+                })
+                .ToList();
+
+            var appliedOfferNames = new List<string>();
+
+            foreach (var offer in sortedOffers)
+            {
+                var eligibleUnits = itemPool
+                    .Where(u => {
+                        var p = u.CartItem.Product;
+                        bool matchCategory = string.IsNullOrEmpty(offer.EligibleCategoryIds);
+                        if (!matchCategory && p != null)
+                        {
+                            var eligibleIds = offer.EligibleCategoryIds!.Split(',')
+                                .Where(s => !string.IsNullOrEmpty(s))
+                                .Select(int.Parse).ToList();
+                            
+                            int? currentCatId = p.CategoryId;
+                            while (currentCatId.HasValue)
+                            {
+                                if (eligibleIds.Contains(currentCatId.Value))
+                                {
+                                    matchCategory = true;
+                                    break;
+                                }
+                                currentCatId = allCategories.GetValueOrDefault(currentCatId.Value);
+                            }
+                        }
+                        
+                        bool matchBrand = string.IsNullOrEmpty(offer.EligibleBrandIds) || 
+                            (p != null && offer.EligibleBrandIds.Split(',').Contains(p.BrandId.ToString()));
+                        
+                        return matchCategory && matchBrand;
+                    })
+                    .ToList();
+
+                int threshold = Math.Max(1, offer.ThresholdQuantity);
+                int freeQty = offer.FreeQuantity ?? 0;
+                decimal discPercentage = offer.IsFullDiscount ? 100 : offer.DiscountPercentage;
+
+                if (freeQty > 0)
+                {
+                    int bundleSize = threshold + freeQty;
+                    int numBundles = bundleSize > 0 ? eligibleUnits.Count / bundleSize : 0;
+
+                    if (numBundles > 0)
+                    {
+                        int totalDiscountedCount = numBundles * freeQty;
+                        int totalUnitsInBundles = numBundles * bundleSize;
+
+                        var sortedEligible = eligibleUnits.OrderBy(u => u.UnitPrice).ToList();
+                        var unitsInBundles = sortedEligible.Take(totalUnitsInBundles).ToList();
+                        var discountedUnits = unitsInBundles.Take(totalDiscountedCount).ToList();
+
+                        var consumedUids = new HashSet<string>();
+                        decimal offerDiscount = 0;
+
+                        foreach (var unit in discountedUnits)
+                        {
+                            decimal discountPerPiece = Math.Round(unit.UnitPrice * (discPercentage / 100m), 2);
+                            offerDiscount += discountPerPiece;
+                        }
+
+                        foreach (var unit in unitsInBundles)
+                        {
+                            consumedUids.Add(unit.Uid);
+                        }
+
+                        temporalDiscount += Math.Round(offerDiscount, 2);
+                        itemPool.RemoveAll(u => consumedUids.Contains(u.Uid));
+                        if (!appliedOfferNames.Contains(offer.Name)) appliedOfferNames.Add(offer.Name);
+                    }
+                }
+                else if (eligibleUnits.Count > offer.ThresholdQuantity)
+                {
+                    int countToDiscount = eligibleUnits.Count - offer.ThresholdQuantity;
+                    var sortedEligible = eligibleUnits.OrderBy(u => u.UnitPrice).ToList();
+                    var discountedUnits = sortedEligible.Take(countToDiscount).ToList();
+                    var consumedUids = new HashSet<string>();
+                    decimal offerDiscount = 0;
+
+                    foreach (var unit in discountedUnits)
+                    {
+                        decimal discountPerPiece = Math.Round(unit.UnitPrice * (discPercentage / 100m), 2);
+                        offerDiscount += discountPerPiece;
+                    }
+
+                    foreach (var unit in sortedEligible)
+                    {
+                        consumedUids.Add(unit.Uid);
+                    }
+
+                    temporalDiscount += Math.Round(offerDiscount, 2);
+                    itemPool.RemoveAll(u => consumedUids.Contains(u.Uid));
+                    if (!appliedOfferNames.Contains(offer.Name)) appliedOfferNames.Add(offer.Name);
+                }
+            }
+
+            if (appliedOfferNames.Any())
+            {
+                appliedOfferName = string.Join(" + ", appliedOfferNames);
+            }
+        }
+
         var subTotal = Math.Max(0, dtos.Sum(d => d.TotalPrice) - cartBundleFixedDiscountTotal);
 
         // Apply free-delivery threshold from store settings
         var freeAt = store?.FreeDeliveryAt ?? 2000m;
         var appliedFee = subTotal >= freeAt ? 0m : deliveryFee;
 
-        return new CartSummaryDto(dtos, subTotal, appliedFee, subTotal + appliedFee, dtos.Sum(d => d.Quantity));
+        var finalTotal = Math.Max(0, subTotal + appliedFee - temporalDiscount);
+
+        return new CartSummaryDto(dtos, subTotal, appliedFee, finalTotal, dtos.Sum(d => d.Quantity), temporalDiscount, appliedOfferName);
     }
 
     private static bool IsCategoryExcluded(string? excludedCategoryIds, int? productCatId, Dictionary<int, int?> allCategories)
