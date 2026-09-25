@@ -368,3 +368,5 @@ public record CouponListDto(
 );
 
 public record ApplyCouponRequest(string Code, decimal OrderTotal);
+
+public record UpdateProductStatusDto([property: JsonPropertyName("status")] ProductStatus Status);

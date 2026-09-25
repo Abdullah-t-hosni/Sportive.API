@@ -163,6 +163,29 @@ public class ProductsController : ControllerBase
     }
 
     [RequirePermission(ModuleKeys.Products, requireEdit: true)]
+    [HttpPatch("{id}/status")]
+    public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateProductStatusDto dto)
+    {
+        var oldProduct = await _db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id);
+        if (oldProduct == null) return NotFound(new { message = "Product not found" });
+
+        var product = await _db.Products.FindAsync(id);
+        if (product == null) return NotFound(new { message = "Product not found" });
+
+        product.Status = dto.Status;
+        product.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        var newProduct = await _db.Products.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id);
+        try { 
+            await _audit.LogChangeAsync<Product>("UpdateProductStatus", "Product", id.ToString(), 
+                oldProduct, newProduct, 
+                User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); 
+        } catch { }
+        return Ok(new { id = product.Id, status = product.Status.ToString() });
+    }
+
+    [RequirePermission(ModuleKeys.Products, requireEdit: true)]
     [HttpPatch("variants/{variantId}/stock")]
     public async Task<IActionResult> UpdateStock(int variantId, [FromBody] int quantity)
     {
