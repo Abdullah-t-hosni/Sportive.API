@@ -1090,12 +1090,13 @@ public class OrderService : IOrderService
                         var eligibleUnits = itemPool
                             .Where(u => {
                                 var p = u.Item.Product;
-                                bool matchCategory = string.IsNullOrEmpty(offer.EligibleCategoryIds);
+                                bool matchCategory = string.IsNullOrWhiteSpace(offer.EligibleCategoryIds);
                                 if (!matchCategory && p != null)
                                 {
-                                    var eligibleIds = offer.EligibleCategoryIds!.Split(',')
-                                        .Where(s => !string.IsNullOrEmpty(s))
-                                        .Select(int.Parse).ToList();
+                                    var eligibleIds = offer.EligibleCategoryIds!.Split(new[] { ',', ';', ' ', '[', ']', '"' }, StringSplitOptions.RemoveEmptyEntries)
+                                        .Select(s => int.TryParse(s.Trim(), out int id) ? id : 0)
+                                        .Where(id => id > 0)
+                                        .ToHashSet();
                                     
                                     int? currentCatId = p.CategoryId;
                                     while (currentCatId.HasValue)
@@ -1109,8 +1110,14 @@ public class OrderService : IOrderService
                                     }
                                 }
                                 
-                                bool matchBrand = string.IsNullOrEmpty(offer.EligibleBrandIds) || 
-                                    (p != null && offer.EligibleBrandIds.Split(',').Contains(p.BrandId.ToString()));
+                                bool matchBrand = string.IsNullOrWhiteSpace(offer.EligibleBrandIds);
+                                if (!matchBrand && p != null && p.BrandId.HasValue)
+                                {
+                                    var eligibleBrands = offer.EligibleBrandIds!.Split(new[] { ',', ';', ' ', '[', ']', '"' }, StringSplitOptions.RemoveEmptyEntries)
+                                        .Select(s => s.Trim())
+                                        .ToHashSet();
+                                    matchBrand = eligibleBrands.Contains(p.BrandId.Value.ToString());
+                                }
                                 
                                 return matchCategory && matchBrand;
                             })
