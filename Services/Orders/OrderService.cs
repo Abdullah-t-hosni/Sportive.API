@@ -774,6 +774,7 @@ public class OrderService : IOrderService
                         var orderItem = new OrderItem
                         {
                             ProductId = item.ProductId,
+                            Product = product,
                             ProductVariantId = item.ProductVariantId,
                             ProductNameAr = product.NameAr,
                             ProductNameEn = product.NameEn,
@@ -1048,13 +1049,22 @@ public class OrderService : IOrderService
                 // 🎁 NEW: Special Bundle/Quantity Offers Logic (Multi-offer priority & unit tracking)
                 if (specialOffers.Any())
                 {
-                    // Sort offers by priority: specific category/brand first, then highest discount %, then bundle size
+                    // Sort offers by priority: specific category/brand first (narrower before broader), then highest discount %, then bundle size
                     var sortedOffers = specialOffers
                         .OrderByDescending(o =>
                         {
                             int score = 0;
-                            if (!string.IsNullOrWhiteSpace(o.EligibleCategoryIds)) score += 1000;
-                            if (!string.IsNullOrWhiteSpace(o.EligibleBrandIds)) score += 500;
+                            var catCount = !string.IsNullOrWhiteSpace(o.EligibleCategoryIds) 
+                                ? o.EligibleCategoryIds.Split(',', StringSplitOptions.RemoveEmptyEntries).Length 
+                                : 0;
+                            var brandCount = !string.IsNullOrWhiteSpace(o.EligibleBrandIds) 
+                                ? o.EligibleBrandIds.Split(',', StringSplitOptions.RemoveEmptyEntries).Length 
+                                : 0;
+
+                            if (catCount > 0) score += 2000;
+                            if (brandCount > 0) score += 1000;
+                            if (catCount > 0) score += Math.Max(0, 100 - catCount * 5);
+
                             decimal pct = o.IsFullDiscount ? 100 : o.DiscountPercentage;
                             score += (int)(pct * 2);
                             score += o.ThresholdQuantity + (o.FreeQuantity ?? 0);
