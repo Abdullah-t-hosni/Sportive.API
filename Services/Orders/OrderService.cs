@@ -1045,22 +1045,49 @@ public class OrderService : IOrderService
                     order.DeliveryFee = (threshold.HasValue && threshold.Value > 0 && order.SubTotal >= threshold.Value) ? 0 : fee;
                 }
 
-                // 🎁 NEW: Special Bundle/Quantity Offers Logic
+                // 🎁 NEW: Special Bundle/Quantity Offers Logic (Multi-offer priority & unit tracking)
                 if (specialOffers.Any())
                 {
-                    foreach (var offer in specialOffers)
+                    // Sort offers by priority: specific category/brand first, then highest discount %, then bundle size
+                    var sortedOffers = specialOffers
+                        .OrderByDescending(o =>
+                        {
+                            int score = 0;
+                            if (!string.IsNullOrWhiteSpace(o.EligibleCategoryIds)) score += 1000;
+                            if (!string.IsNullOrWhiteSpace(o.EligibleBrandIds)) score += 500;
+                            decimal pct = o.IsFullDiscount ? 100 : o.DiscountPercentage;
+                            score += (int)(pct * 2);
+                            score += o.ThresholdQuantity + (o.FreeQuantity ?? 0);
+                            return score;
+                        })
+                        .ToList();
+
+                    // Expand order items into individual tracked units
+                    var itemPool = order.Items
+                        .SelectMany((item, itemIdx) =>
+                            Enumerable.Range(0, item.Quantity)
+                                .Select(k => new
+                                {
+                                    Uid = $"{itemIdx}_{k}",
+                                    Item = item,
+                                    UnitPrice = item.UnitPrice
+                                }))
+                        .ToList();
+
+                    foreach (var offer in sortedOffers)
                     {
-                        // 🎯 Filter items eligible for this specific offer (Categories/Brands)
-                        var eligibleItems = order.Items
-                            .Where(i => {
+                        // 🎯 Filter unconsumed items eligible for this specific offer (Categories/Brands)
+                        var eligibleUnits = itemPool
+                            .Where(u => {
+                                var p = u.Item.Product;
                                 bool matchCategory = string.IsNullOrEmpty(offer.EligibleCategoryIds);
-                                if (!matchCategory && i.Product != null)
+                                if (!matchCategory && p != null)
                                 {
                                     var eligibleIds = offer.EligibleCategoryIds!.Split(',')
                                         .Where(s => !string.IsNullOrEmpty(s))
                                         .Select(int.Parse).ToList();
                                     
-                                    int? currentCatId = i.Product.CategoryId;
+                                    int? currentCatId = p.CategoryId;
                                     while (currentCatId.HasValue)
                                     {
                                         if (eligibleIds.Contains(currentCatId.Value))
@@ -1073,64 +1100,96 @@ public class OrderService : IOrderService
                                 }
                                 
                                 bool matchBrand = string.IsNullOrEmpty(offer.EligibleBrandIds) || 
-                                    (i.Product != null && offer.EligibleBrandIds.Split(',').Contains(i.Product.BrandId.ToString()));
+                                    (p != null && offer.EligibleBrandIds.Split(',').Contains(p.BrandId.ToString()));
                                 
                                 return matchCategory && matchBrand;
                             })
-                            .SelectMany(i => Enumerable.Repeat(i, i.Quantity))
                             .ToList();
-                        
-                        int countToDiscount = 0;
-                        if (offer.FreeQuantity.HasValue && offer.FreeQuantity.Value > 0)
+
+                        int threshold = Math.Max(1, offer.ThresholdQuantity);
+                        int freeQty = offer.FreeQuantity ?? 0;
+                        decimal discPercentage = offer.IsFullDiscount ? 100 : offer.DiscountPercentage;
+
+                        if (freeQty > 0)
                         {
-                            // 🔄 REPEATING BUNDLE LOGIC (e.g. Buy 3 get 7 free -> Bundle of 10)
-                            int bundleSize = offer.ThresholdQuantity + offer.FreeQuantity.Value;
-                            if (bundleSize > 0)
+                            // 🔄 REPEATING BUNDLE LOGIC (e.g. Buy 2 get 2 free -> Bundle of 4)
+                            int bundleSize = threshold + freeQty;
+                            int numBundles = bundleSize > 0 ? eligibleUnits.Count / bundleSize : 0;
+
+                            if (numBundles > 0)
                             {
-                                int bundlesCount = eligibleItems.Count / bundleSize;
-                                countToDiscount = bundlesCount * offer.FreeQuantity.Value;
+                                // Sort by UnitPrice ascending (cheapest units get the discount)
+                                var sortedEligible = eligibleUnits.OrderBy(u => u.UnitPrice).ToList();
+                                var consumedUids = new HashSet<string>();
+                                decimal offerDiscount = 0;
+
+                                for (int b = 0; b < numBundles; b++)
+                                {
+                                    var bundleUnits = sortedEligible.Skip(b * bundleSize).Take(bundleSize).ToList();
+                                    var discountedUnits = bundleUnits.Take(freeQty).ToList();
+
+                                    foreach (var unit in discountedUnits)
+                                    {
+                                        decimal discountPerPiece = Math.Round(unit.UnitPrice * (discPercentage / 100m), 2);
+                                        unit.Item.TotalPrice -= discountPerPiece;
+                                        unit.Item.DiscountAmount += discountPerPiece;
+
+                                        if (unit.Item.HasTax)
+                                        {
+                                            var rate = (unit.Item.VatRateApplied ?? 14) / 100m;
+                                            decimal newNet = Math.Round(unit.Item.TotalPrice / (1 + rate), 2);
+                                            decimal oldVat = unit.Item.ItemVatAmount;
+                                            unit.Item.ItemVatAmount = unit.Item.TotalPrice - newNet;
+                                            order.TotalVatAmount += (unit.Item.ItemVatAmount - oldVat);
+                                        }
+
+                                        offerDiscount += discountPerPiece;
+                                    }
+
+                                    foreach (var unit in bundleUnits)
+                                    {
+                                        consumedUids.Add(unit.Uid);
+                                    }
+                                }
+
+                                order.TemporalDiscount += Math.Round(offerDiscount, 2);
+                                itemPool.RemoveAll(u => consumedUids.Contains(u.Uid));
                             }
                         }
-                        else if (eligibleItems.Count > offer.ThresholdQuantity)
+                        else if (eligibleUnits.Count > offer.ThresholdQuantity)
                         {
                             // 📈 SIMPLE THRESHOLD LOGIC (Everything after piece X is discounted)
-                            countToDiscount = eligibleItems.Count - offer.ThresholdQuantity;
-                        }
-
-                        if (countToDiscount > 0)
-                        {
-                            // Sort by UnitPrice (cheapest first) to apply discount to the lowest price items
-                            var sortedItems = eligibleItems.OrderBy(i => i.UnitPrice).ToList();
+                            int countToDiscount = eligibleUnits.Count - offer.ThresholdQuantity;
+                            var sortedEligible = eligibleUnits.OrderBy(u => u.UnitPrice).ToList();
+                            var discountedUnits = sortedEligible.Take(countToDiscount).ToList();
+                            var consumedUids = new HashSet<string>();
                             decimal offerDiscount = 0;
-                            
-                            for (int i = 0; i < countToDiscount; i++)
-                            {
-                                var item = sortedItems[i];
-                                decimal discPercentage = offer.IsFullDiscount ? 100 : offer.DiscountPercentage;
-                                decimal discountPerPiece = Math.Round(item.UnitPrice * (discPercentage / 100m), 2);
-                                
-                                // ✅ Update item totals for accounting accuracy
-                                item.TotalPrice -= discountPerPiece;
-                                item.DiscountAmount += discountPerPiece;
 
-                                if (item.HasTax)
+                            foreach (var unit in discountedUnits)
+                            {
+                                decimal discountPerPiece = Math.Round(unit.UnitPrice * (discPercentage / 100m), 2);
+                                unit.Item.TotalPrice -= discountPerPiece;
+                                unit.Item.DiscountAmount += discountPerPiece;
+
+                                if (unit.Item.HasTax)
                                 {
-                                    var rate = (item.VatRateApplied ?? 14) / 100m;
-                                    decimal newNet = Math.Round(item.TotalPrice / (1 + rate), 2);
-                                    decimal oldVat = item.ItemVatAmount;
-                                    item.ItemVatAmount = item.TotalPrice - newNet;
-                                    
-                                    // Update global order VAT
-                                    order.TotalVatAmount += (item.ItemVatAmount - oldVat);
+                                    var rate = (unit.Item.VatRateApplied ?? 14) / 100m;
+                                    decimal newNet = Math.Round(unit.Item.TotalPrice / (1 + rate), 2);
+                                    decimal oldVat = unit.Item.ItemVatAmount;
+                                    unit.Item.ItemVatAmount = unit.Item.TotalPrice - newNet;
+                                    order.TotalVatAmount += (unit.Item.ItemVatAmount - oldVat);
                                 }
 
                                 offerDiscount += discountPerPiece;
                             }
-                            
+
+                            foreach (var unit in sortedEligible)
+                            {
+                                consumedUids.Add(unit.Uid);
+                            }
+
                             order.TemporalDiscount += Math.Round(offerDiscount, 2);
-                            
-                            // Note: We only apply one bundle offer per order for now (the first one found)
-                            break; 
+                            itemPool.RemoveAll(u => consumedUids.Contains(u.Uid));
                         }
                     }
                 }

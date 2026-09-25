@@ -24,16 +24,25 @@ public class SpecialOffersController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetAll()
+    [AllowAnonymous]
+    public async Task<IActionResult> GetAll([FromQuery] bool activeOnly = false)
     {
-        var items = await _db.SpecialOffers
-            .AsNoTracking()
+        var now = TimeHelper.GetEgyptTime();
+        var q = _db.SpecialOffers.AsNoTracking().AsQueryable();
+
+        if (activeOnly)
+        {
+            q = q.Where(o => o.IsActive && o.ValidFrom <= now && o.ValidTo >= now);
+        }
+
+        var items = await q
             .OrderByDescending(o => o.CreatedAt)
             .ToListAsync();
         return Ok(items);
     }
 
     [HttpGet("{id}")]
+    [AllowAnonymous]
     public async Task<IActionResult> GetById(int id)
     {
         var offer = await _db.SpecialOffers.FindAsync(id);
