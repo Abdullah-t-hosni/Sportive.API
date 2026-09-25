@@ -1128,38 +1128,38 @@ public class OrderService : IOrderService
 
                             if (numBundles > 0)
                             {
+                                int totalDiscountedCount = numBundles * freeQty;
+                                int totalUnitsInBundles = numBundles * bundleSize;
+
                                 // Sort by UnitPrice ascending (cheapest units get the discount)
                                 var sortedEligible = eligibleUnits.OrderBy(u => u.UnitPrice).ToList();
+                                var unitsInBundles = sortedEligible.Take(totalUnitsInBundles).ToList();
+                                var discountedUnits = unitsInBundles.Take(totalDiscountedCount).ToList();
+
                                 var consumedUids = new HashSet<string>();
                                 decimal offerDiscount = 0;
 
-                                for (int b = 0; b < numBundles; b++)
+                                foreach (var unit in discountedUnits)
                                 {
-                                    var bundleUnits = sortedEligible.Skip(b * bundleSize).Take(bundleSize).ToList();
-                                    var discountedUnits = bundleUnits.Take(freeQty).ToList();
+                                    decimal discountPerPiece = Math.Round(unit.UnitPrice * (discPercentage / 100m), 2);
+                                    unit.Item.TotalPrice -= discountPerPiece;
+                                    unit.Item.DiscountAmount += discountPerPiece;
 
-                                    foreach (var unit in discountedUnits)
+                                    if (unit.Item.HasTax)
                                     {
-                                        decimal discountPerPiece = Math.Round(unit.UnitPrice * (discPercentage / 100m), 2);
-                                        unit.Item.TotalPrice -= discountPerPiece;
-                                        unit.Item.DiscountAmount += discountPerPiece;
-
-                                        if (unit.Item.HasTax)
-                                        {
-                                            var rate = (unit.Item.VatRateApplied ?? 14) / 100m;
-                                            decimal newNet = Math.Round(unit.Item.TotalPrice / (1 + rate), 2);
-                                            decimal oldVat = unit.Item.ItemVatAmount;
-                                            unit.Item.ItemVatAmount = unit.Item.TotalPrice - newNet;
-                                            order.TotalVatAmount += (unit.Item.ItemVatAmount - oldVat);
-                                        }
-
-                                        offerDiscount += discountPerPiece;
+                                        var rate = (unit.Item.VatRateApplied ?? 14) / 100m;
+                                        decimal newNet = Math.Round(unit.Item.TotalPrice / (1 + rate), 2);
+                                        decimal oldVat = unit.Item.ItemVatAmount;
+                                        unit.Item.ItemVatAmount = unit.Item.TotalPrice - newNet;
+                                        order.TotalVatAmount += (unit.Item.ItemVatAmount - oldVat);
                                     }
 
-                                    foreach (var unit in bundleUnits)
-                                    {
-                                        consumedUids.Add(unit.Uid);
-                                    }
+                                    offerDiscount += discountPerPiece;
+                                }
+
+                                foreach (var unit in unitsInBundles)
+                                {
+                                    consumedUids.Add(unit.Uid);
                                 }
 
                                 order.TemporalDiscount += Math.Round(offerDiscount, 2);
