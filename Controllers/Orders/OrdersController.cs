@@ -100,8 +100,10 @@ public class OrdersController : ControllerBase
                     .ThenInclude(p => p!.Images)
             .Include(o => o.Items)
                 .ThenInclude(i => i.ProductVariant)
-            .Where(o => o.FulfillmentType == FulfillmentType.Pickup || 
-                        (o.CustomerNotes != null && o.CustomerNotes.Contains("استلام")))
+            .Where(o => o.Source == OrderSource.Website && 
+                        !o.OrderNumber.StartsWith("POS") &&
+                        (o.FulfillmentType == FulfillmentType.Pickup || 
+                         (o.CustomerNotes != null && o.CustomerNotes.Contains("استلام من الفرع"))))
             .AsNoTracking();
 
         if (!string.IsNullOrEmpty(status))
