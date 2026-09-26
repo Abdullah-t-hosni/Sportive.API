@@ -196,6 +196,36 @@ public record OrderSummaryDto(
     decimal? LoyaltyPointsRedeemed = 0
 );
 
+public record StorePickupItemDto(
+    int Id,
+    string ProductName,
+    string? SKU,
+    string? Size,
+    string? Color,
+    int Quantity,
+    decimal UnitPrice,
+    decimal TotalPrice,
+    string? ImageUrl
+);
+
+public record StorePickupOrderDto(
+    int Id,
+    string OrderNumber,
+    string CustomerName,
+    string CustomerPhone,
+    string Status,
+    string FulfillmentType,
+    string PaymentMethod,
+    string PaymentStatus,
+    decimal TotalAmount,
+    decimal PaidAmount,
+    DateTime CreatedAt,
+    DateTime? PickupScheduledAt,
+    string? CustomerNotes,
+    string? BranchName,
+    List<StorePickupItemDto> Items
+);
+
 
 public record OrderDetailDto(
     int Id,

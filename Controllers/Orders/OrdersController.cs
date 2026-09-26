@@ -86,7 +86,89 @@ public class OrdersController : ControllerBase
         return Ok(result);
     }
 
-    [HttpGet("{id}")]
+    [HttpGet("store-pickups")]
+    [AllowPosAccess]
+    public async Task<ActionResult<List<StorePickupOrderDto>>> GetStorePickupOrders(
+        [FromQuery] string? status = null,
+        [FromQuery] string? search = null)
+    {
+        var query = _db.Orders
+            .Include(o => o.Customer)
+            .Include(o => o.Branch)
+            .Include(o => o.Items)
+                .ThenInclude(i => i.Product)
+                    .ThenInclude(p => p!.Images)
+            .Include(o => o.Items)
+                .ThenInclude(i => i.ProductVariant)
+            .Where(o => o.FulfillmentType == FulfillmentType.Pickup || 
+                        (o.CustomerNotes != null && o.CustomerNotes.Contains("استلام")))
+            .AsNoTracking();
+
+        if (!string.IsNullOrEmpty(status))
+        {
+            if (status.Equals("ready", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(o => o.Status == OrderStatus.ReadyForPickup);
+            }
+            else if (status.Equals("delivered", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(o => o.Status == OrderStatus.Delivered);
+            }
+            else if (!status.Equals("all", StringComparison.OrdinalIgnoreCase) && Enum.TryParse<OrderStatus>(status, true, out var parsedStatus))
+            {
+                query = query.Where(o => o.Status == parsedStatus);
+            }
+        }
+        else
+        {
+            query = query.Where(o => o.Status == OrderStatus.ReadyForPickup || o.Status == OrderStatus.Processing || o.Status == OrderStatus.Confirmed);
+        }
+
+        if (!string.IsNullOrEmpty(search))
+        {
+            search = search.Trim();
+            query = query.Where(o => o.OrderNumber.Contains(search) || 
+                                     o.Customer.FullName.Contains(search) || 
+                                     (o.Customer.Phone != null && o.Customer.Phone.Contains(search)));
+        }
+
+        var orders = await query
+            .OrderByDescending(o => o.CreatedAt)
+            .Take(60)
+            .ToListAsync();
+
+        var dtos = orders.Select(o => new StorePickupOrderDto(
+            o.Id,
+            o.OrderNumber,
+            o.Customer != null ? o.Customer.FullName : "عميل موقع",
+            o.Customer != null ? (o.Customer.Phone ?? "") : "",
+            o.Status.ToString(),
+            o.FulfillmentType.ToString(),
+            o.PaymentMethod.ToString(),
+            o.PaymentStatus.ToString(),
+            o.TotalAmount,
+            o.PaidAmount,
+            o.CreatedAt,
+            o.PickupScheduledAt,
+            o.CustomerNotes,
+            o.Branch != null ? o.Branch.Name : "المسله",
+            o.Items.Select(i => new StorePickupItemDto(
+                i.Id,
+                !string.IsNullOrEmpty(i.ProductNameAr) ? i.ProductNameAr : (!string.IsNullOrEmpty(i.ProductNameEn) ? i.ProductNameEn : (i.Product != null ? (i.Product.NameAr ?? i.Product.NameEn ?? "صنف") : "صنف")),
+                i.SKU,
+                i.Size ?? i.ProductVariant?.Size,
+                i.Color ?? i.ProductVariant?.ColorAr ?? i.ProductVariant?.Color,
+                i.Quantity,
+                i.UnitPrice,
+                i.TotalPrice > 0 ? i.TotalPrice : (i.UnitPrice * i.Quantity),
+                i.ProductVariant?.ImageUrl ?? i.Product?.Images?.FirstOrDefault()?.ImageUrl
+            )).ToList()
+        )).ToList();
+
+        return Ok(dtos);
+    }
+
+    [HttpGet("{id:int}")]
     public async Task<ActionResult<OrderDetailDto>> GetOrder(int id)
     {
         var order = await _orderService.GetOrderByIdAsync(id);
@@ -470,7 +552,8 @@ public class OrdersController : ControllerBase
         return CreatedAtAction(nameof(GetOrder), new { id = order.Id }, order);
     }
 
-    [HttpPatch("{id}/status")]
+    [HttpPatch("{id:int}/status")]
+    [AllowPosAccess]
     [RequirePermission(ModuleKeys.Orders + "," + ModuleKeys.OrdersMain + "," + ModuleKeys.OnlineStore + "," + ModuleKeys.OnlineOrders)]
     public async Task<ActionResult<OrderDetailDto>> UpdateStatus(int id, [FromBody] UpdateOrderStatusDto dto)
     {
