@@ -146,8 +146,7 @@ public class PaymentVouchersController : ControllerBase
         if (!cashAccount.CanReceivePayment && (!User.IsInRole("SuperAdmin") && !User.IsInRole("Admin")))
             return BadRequest(_t.Get("Accounting.ReceiptVoucher.AccountCannotReceivePayment", cashAccount.NameAr));
 
-        var vDate = dto.VoucherDate.ToStoreTime();
-        if (vDate.TimeOfDay == TimeSpan.Zero) vDate = vDate.Add(TimeHelper.GetEgyptTime().TimeOfDay);
+        var vDate = TimeHelper.ResolveBusinessDateTime(dto.VoucherDate);
 
         int? resolvedBranchId = User.GetBranchId();
         bool canChangeBranch = await User.HasViewAllBranchesAsync(HttpContext);
@@ -242,8 +241,7 @@ public class PaymentVouchersController : ControllerBase
             return BadRequest(_t.Get("Accounting.PaymentVoucher.CannotEditPosted"));
 
         var oldAmount = voucher.Amount;
-        var vDate = dto.VoucherDate.ToStoreTime();
-        if (vDate.TimeOfDay == TimeSpan.Zero) vDate = vDate.Add(TimeHelper.GetEgyptTime().TimeOfDay);
+        var vDate = TimeHelper.ResolveBusinessDateTime(dto.VoucherDate);
 
         int? resolvedBranchId = User.GetBranchId();
         bool canChangeBranch = await User.HasViewAllBranchesAsync(HttpContext);

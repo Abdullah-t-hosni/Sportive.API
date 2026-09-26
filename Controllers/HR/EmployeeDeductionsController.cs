@@ -78,7 +78,7 @@ public class EmployeeDeductionsController : ControllerBase
         {
             DeductionNumber = dedNo,
             EmployeeId      = dto.EmployeeId,
-            DeductionDate   = dto.DeductionDate,
+            DeductionDate   = TimeHelper.ResolveBusinessDateTime(dto.DeductionDate),
             Amount          = dto.Amount,
             DeductionType   = dto.DeductionType,
             Reason          = dto.Reason?.Trim(),

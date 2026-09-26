@@ -108,9 +108,7 @@ public class EmployeeAdvancesController : ControllerBase
                 return BadRequest(new { message = _t.Get("HR.SalaryAccountNotSet") });
         }
 
-        var advDate = dto.AdvanceDate.ToStoreTime();
-        if (advDate.TimeOfDay == TimeSpan.Zero)
-            advDate = advDate.Add(TimeHelper.GetEgyptTime().TimeOfDay);
+        var advDate = TimeHelper.ResolveBusinessDateTime(dto.AdvanceDate);
 
         Account? cashAccount = null;
         if (dto.CashAccountId.HasValue && dto.CashAccountId > 0)
@@ -259,9 +257,7 @@ public class EmployeeAdvancesController : ControllerBase
         if (adv.Status != AdvanceStatus.Pending)
             return BadRequest(new { message = _t.Get("HR.AdvanceCannotDelete") });
 
-        var advDate = dto.AdvanceDate.ToStoreTime();
-        if (advDate.TimeOfDay == TimeSpan.Zero)
-            advDate = advDate.Add(TimeHelper.GetEgyptTime().TimeOfDay);
+        var advDate = TimeHelper.ResolveBusinessDateTime(dto.AdvanceDate);
 
         Account? cashAccount = null;
         if (dto.CashAccountId.HasValue && dto.CashAccountId > 0)

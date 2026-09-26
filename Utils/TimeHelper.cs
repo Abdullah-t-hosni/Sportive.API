@@ -74,5 +74,29 @@ public static class TimeHelper
         var endHour = GetBusinessDayEndHour();
         return dt.Hour < endHour ? dt.Date.AddDays(-1) : dt.Date;
     }
+
+    /// <summary>
+    /// Converts input date into the proper store business datetime.
+    /// - If no time is specified (TimeOfDay == 0, e.g. from a date picker):
+    ///     * If the date matches the current active business date, it adopts current real-time (preserves midnight shift).
+    ///     * If it is a past/future business date, it uses 12:00 PM (noon) to guarantee it stays in that business day
+    ///       (preventing the 02:00 AM cutoff from subtracting a day).
+    /// - If a time was specified, converts from UTC to store time.
+    /// </summary>
+    public static DateTime ResolveBusinessDateTime(DateTime inputDate)
+    {
+        var storeDate = inputDate.ToStoreTime();
+        if (storeDate.TimeOfDay == TimeSpan.Zero)
+        {
+            var now = GetEgyptTime();
+            var currentBusinessDate = GetBusinessDate(now);
+            if (storeDate.Date == currentBusinessDate)
+            {
+                return now;
+            }
+            return storeDate.Date.AddHours(12);
+        }
+        return storeDate;
+    }
 }
 

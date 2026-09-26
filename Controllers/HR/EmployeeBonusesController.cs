@@ -82,9 +82,7 @@ public class EmployeeBonusesController : ControllerBase
                 return BadRequest(new { message = _t.Get("HR.BonusAccountNotSet") });
         }
 
-        var bonDate = dto.BonusDate.ToStoreTime();
-        if (bonDate.TimeOfDay == TimeSpan.Zero)
-            bonDate = bonDate.Add(TimeHelper.GetEgyptTime().TimeOfDay);
+        var bonDate = TimeHelper.ResolveBusinessDateTime(dto.BonusDate);
 
         Account? cashAccount = null;
         if (dto.CashAccountId.HasValue && dto.CashAccountId > 0)
@@ -229,9 +227,7 @@ public class EmployeeBonusesController : ControllerBase
         if (bon.PayrollRunId.HasValue)
             return BadRequest(new { message = _t.Get("HR.BonusCannotEdit") });
 
-        var bonDate = dto.BonusDate.ToStoreTime();
-        if (bonDate.TimeOfDay == TimeSpan.Zero)
-            bonDate = bonDate.Add(TimeHelper.GetEgyptTime().TimeOfDay);
+        var bonDate = TimeHelper.ResolveBusinessDateTime(dto.BonusDate);
 
         Account? cashAccount = null;
         if (dto.CashAccountId.HasValue && dto.CashAccountId > 0)
