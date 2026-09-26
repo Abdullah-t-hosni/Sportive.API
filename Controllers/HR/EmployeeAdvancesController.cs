@@ -108,6 +108,31 @@ public class EmployeeAdvancesController : ControllerBase
                 return BadRequest(new { message = _t.Get("HR.SalaryAccountNotSet") });
         }
 
+        var advDate = dto.AdvanceDate.ToStoreTime();
+        if (advDate.TimeOfDay == TimeSpan.Zero)
+            advDate = advDate.Add(TimeHelper.GetEgyptTime().TimeOfDay);
+
+        Account? cashAccount = null;
+        if (dto.CashAccountId.HasValue && dto.CashAccountId > 0)
+        {
+            cashAccount = await _db.Accounts.FindAsync(dto.CashAccountId.Value);
+        }
+
+        int? resolvedBranchId = cashAccount?.BranchId ?? emp.BranchId;
+
+        var resolvedCostCenter = dto.CostCenter;
+        if (resolvedCostCenter == null)
+        {
+            if (cashAccount != null && (cashAccount.Code?.StartsWith("1101") == true || cashAccount.Code?.StartsWith("1103") == true))
+            {
+                resolvedCostCenter = OrderSource.POS;
+            }
+            else
+            {
+                resolvedCostCenter = emp.CostCenter;
+            }
+        }
+
         // Retry logic for sequence generation to handle race conditions
         for (int retry = 0; retry < 3; retry++)
         {
@@ -119,12 +144,13 @@ public class EmployeeAdvancesController : ControllerBase
                 {
                     AdvanceNumber = advNo,
                     EmployeeId = dto.EmployeeId,
-                    AdvanceDate = dto.AdvanceDate,
+                    AdvanceDate = advDate,
                     Amount = dto.Amount,
                     Reason = dto.Reason?.Trim(),
                     Notes = dto.Notes?.Trim(),
                     CashAccountId = dto.CashAccountId,
-                    CostCenter = dto.CostCenter ?? emp.CostCenter,
+                    CostCenter = resolvedCostCenter,
+                    BranchId = resolvedBranchId,
                     Status = AdvanceStatus.Pending,
                     CreatedAt = TimeHelper.GetEgyptTime(),
                     CreatedByUserId = UserId
@@ -150,7 +176,8 @@ public class EmployeeAdvancesController : ControllerBase
                         Reference = advance.AdvanceNumber,
                         CreatedAt = TimeHelper.GetEgyptTime(),
                         CreatedByUserId = UserId,
-                        CostCenter = advance.CostCenter
+                        CostCenter = advance.CostCenter,
+                        BranchId = resolvedBranchId
                     };
                     _db.PaymentVouchers.Add(voucher);
                     await _db.SaveChangesAsync();
@@ -232,12 +259,38 @@ public class EmployeeAdvancesController : ControllerBase
         if (adv.Status != AdvanceStatus.Pending)
             return BadRequest(new { message = _t.Get("HR.AdvanceCannotDelete") });
 
+        var advDate = dto.AdvanceDate.ToStoreTime();
+        if (advDate.TimeOfDay == TimeSpan.Zero)
+            advDate = advDate.Add(TimeHelper.GetEgyptTime().TimeOfDay);
+
+        Account? cashAccount = null;
+        if (dto.CashAccountId.HasValue && dto.CashAccountId > 0)
+        {
+            cashAccount = await _db.Accounts.FindAsync(dto.CashAccountId.Value);
+        }
+
+        int? resolvedBranchId = cashAccount?.BranchId ?? adv.BranchId;
+
+        var resolvedCostCenter = dto.CostCenter;
+        if (resolvedCostCenter == null)
+        {
+            if (cashAccount != null && (cashAccount.Code?.StartsWith("1101") == true || cashAccount.Code?.StartsWith("1103") == true))
+            {
+                resolvedCostCenter = OrderSource.POS;
+            }
+            else
+            {
+                resolvedCostCenter = adv.CostCenter;
+            }
+        }
+
         adv.Amount = dto.Amount;
-        adv.AdvanceDate = dto.AdvanceDate;
+        adv.AdvanceDate = advDate;
         adv.Reason = dto.Reason?.Trim();
         adv.Notes = dto.Notes?.Trim();
         adv.CashAccountId = dto.CashAccountId;
-        adv.CostCenter = dto.CostCenter ?? adv.CostCenter;
+        adv.CostCenter = resolvedCostCenter;
+        adv.BranchId = resolvedBranchId;
         adv.UpdatedAt = TimeHelper.GetEgyptTime();
 
         // Update voucher if exists
@@ -249,6 +302,7 @@ public class EmployeeAdvancesController : ControllerBase
             voucher.CashAccountId = adv.CashAccountId ?? 0;
             voucher.Description = $"تعديل سلفة موظف — {adv.AdvanceNumber}";
             voucher.CostCenter = adv.CostCenter;
+            voucher.BranchId = adv.BranchId;
             
             // Re-post to update journal entry
             await _accounting.PostPaymentVoucherAsync(voucher);

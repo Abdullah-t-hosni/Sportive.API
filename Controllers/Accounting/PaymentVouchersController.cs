@@ -88,12 +88,12 @@ public class PaymentVouchersController : ControllerBase
             int? isolatedBranchId = User.GetBranchId();
             if (isolatedBranchId.HasValue)
             {
-                q = q.Where(v => v.BranchId == isolatedBranchId.Value);
+                q = q.Where(v => v.BranchId == isolatedBranchId.Value || (v.CashAccount != null && v.CashAccount.BranchId == isolatedBranchId.Value));
             }
         }
         else if (branchId.HasValue) 
         {
-            q = q.Where(v => v.BranchId == branchId.Value);
+            q = q.Where(v => v.BranchId == branchId.Value || (v.CashAccount != null && v.CashAccount.BranchId == branchId.Value));
         }
 
         if (employeeId.HasValue)

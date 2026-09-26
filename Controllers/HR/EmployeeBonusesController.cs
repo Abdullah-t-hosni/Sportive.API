@@ -82,6 +82,31 @@ public class EmployeeBonusesController : ControllerBase
                 return BadRequest(new { message = _t.Get("HR.BonusAccountNotSet") });
         }
 
+        var bonDate = dto.BonusDate.ToStoreTime();
+        if (bonDate.TimeOfDay == TimeSpan.Zero)
+            bonDate = bonDate.Add(TimeHelper.GetEgyptTime().TimeOfDay);
+
+        Account? cashAccount = null;
+        if (dto.CashAccountId.HasValue && dto.CashAccountId > 0)
+        {
+            cashAccount = await _db.Accounts.FindAsync(dto.CashAccountId.Value);
+        }
+
+        int? resolvedBranchId = cashAccount?.BranchId ?? emp.BranchId;
+
+        var resolvedCostCenter = dto.BonusCostCenter;
+        if (resolvedCostCenter == null)
+        {
+            if (cashAccount != null && (cashAccount.Code?.StartsWith("1101") == true || cashAccount.Code?.StartsWith("1103") == true))
+            {
+                resolvedCostCenter = OrderSource.POS;
+            }
+            else
+            {
+                resolvedCostCenter = emp.CostCenter;
+            }
+        }
+
         // Retry logic for sequence generation
         for (int retry = 0; retry < 3; retry++)
         {
@@ -93,13 +118,14 @@ public class EmployeeBonusesController : ControllerBase
                 {
                     BonusNumber = bonNo,
                     EmployeeId = dto.EmployeeId,
-                    BonusDate = dto.BonusDate,
+                    BonusDate = bonDate,
                     Amount = dto.Amount,
                     BonusType = dto.BonusType,
                     Reason = dto.Reason?.Trim(),
                     Notes = dto.Notes?.Trim(),
                     CashAccountId = dto.CashAccountId,
-                    CostCenter = dto.BonusCostCenter ?? emp.CostCenter, // Use provided or fall back to employee default
+                    CostCenter = resolvedCostCenter,
+                    BranchId = resolvedBranchId,
                     CreatedAt = TimeHelper.GetEgyptTime(),
                     CreatedByUserId = UserId
                 };
@@ -124,7 +150,8 @@ public class EmployeeBonusesController : ControllerBase
                         Reference = bonus.BonusNumber,
                         CreatedAt = TimeHelper.GetEgyptTime(),
                         CreatedByUserId = UserId,
-                        CostCenter = bonus.CostCenter
+                        CostCenter = bonus.CostCenter,
+                        BranchId = resolvedBranchId
                     };
                     _db.PaymentVouchers.Add(voucher);
                     await _db.SaveChangesAsync();
@@ -202,13 +229,39 @@ public class EmployeeBonusesController : ControllerBase
         if (bon.PayrollRunId.HasValue)
             return BadRequest(new { message = _t.Get("HR.BonusCannotEdit") });
 
+        var bonDate = dto.BonusDate.ToStoreTime();
+        if (bonDate.TimeOfDay == TimeSpan.Zero)
+            bonDate = bonDate.Add(TimeHelper.GetEgyptTime().TimeOfDay);
+
+        Account? cashAccount = null;
+        if (dto.CashAccountId.HasValue && dto.CashAccountId > 0)
+        {
+            cashAccount = await _db.Accounts.FindAsync(dto.CashAccountId.Value);
+        }
+
+        int? resolvedBranchId = cashAccount?.BranchId ?? bon.BranchId;
+
+        var resolvedCostCenter = dto.BonusCostCenter;
+        if (resolvedCostCenter == null)
+        {
+            if (cashAccount != null && (cashAccount.Code?.StartsWith("1101") == true || cashAccount.Code?.StartsWith("1103") == true))
+            {
+                resolvedCostCenter = OrderSource.POS;
+            }
+            else
+            {
+                resolvedCostCenter = bon.CostCenter;
+            }
+        }
+
         bon.Amount = dto.Amount;
-        bon.BonusDate = dto.BonusDate;
+        bon.BonusDate = bonDate;
         bon.BonusType = dto.BonusType;
         bon.Reason = dto.Reason?.Trim();
         bon.Notes = dto.Notes?.Trim();
         bon.CashAccountId = dto.CashAccountId;
-        bon.CostCenter = dto.BonusCostCenter ?? bon.CostCenter;
+        bon.CostCenter = resolvedCostCenter;
+        bon.BranchId = resolvedBranchId;
         bon.UpdatedAt = TimeHelper.GetEgyptTime();
 
         var voucher = await _db.PaymentVouchers.FirstOrDefaultAsync(v => v.Reference == bon.BonusNumber);
@@ -218,6 +271,7 @@ public class EmployeeBonusesController : ControllerBase
             voucher.VoucherDate = bon.BonusDate;
             voucher.CashAccountId = bon.CashAccountId ?? 0;
             voucher.CostCenter = bon.CostCenter;
+            voucher.BranchId = bon.BranchId;
             
             await _accounting.PostPaymentVoucherAsync(voucher);
             bon.JournalEntryId = voucher.JournalEntryId;
