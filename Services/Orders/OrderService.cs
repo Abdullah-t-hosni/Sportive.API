@@ -659,7 +659,6 @@ public class OrderService : IOrderService
 
                     // 🎁 DETECT BUNDLE OFFERS IN ORDER
                     var bundlePctDiscounts = new Dictionary<int, decimal>();
-                    decimal bundleFixedDiscountTotal = 0;
 
                     foreach (var p in productsDict.Values)
                     {
@@ -668,18 +667,41 @@ public class OrderService : IOrderService
                             var bConfigs = ProductService.ParseBundleConfigs(p.BundleProductIds, p.LinkedProductId);
                             if (bConfigs.Any() && bConfigs.All(cfg => dto.Items.Where(x => x.ProductId == cfg.ProductId).Sum(x => x.Quantity) >= cfg.Quantity))
                             {
+                                var allGroup = bConfigs.Select(c => c.ProductId).Append(p.Id).Distinct().ToList();
+
                                 if (p.BundleDiscountType == 1) // Percentage
                                 {
-                                    var allGroup = bConfigs.Select(c => c.ProductId).Append(p.Id).Distinct();
                                     foreach (var gid in allGroup)
                                     {
                                         if (!bundlePctDiscounts.ContainsKey(gid))
                                             bundlePctDiscounts[gid] = p.BundleDiscountValue;
                                     }
                                 }
-                                else if (p.BundleDiscountType == 2) // Fixed amount
+                                else if (p.BundleDiscountType == 2) // Fixed amount: distribute proportionately to bundle items
                                 {
-                                    bundleFixedDiscountTotal += p.BundleDiscountValue;
+                                    decimal bundleCombinedTotal = 0;
+                                    foreach (var gid in allGroup)
+                                    {
+                                        if (productsDict.TryGetValue(gid, out var gp))
+                                        {
+                                            decimal gpPrice = (gp.OnlineDiscountPrice.HasValue && gp.OnlineDiscountPrice > 0)
+                                                ? gp.OnlineDiscountPrice.Value
+                                                : (gp.OnlinePrice.HasValue && gp.OnlinePrice > 0 ? gp.OnlinePrice.Value : gp.Price);
+                                            var cfg = bConfigs.FirstOrDefault(c => c.ProductId == gid);
+                                            int qty = cfg != null ? cfg.Quantity : 1;
+                                            bundleCombinedTotal += (gpPrice * qty);
+                                        }
+                                    }
+
+                                    if (bundleCombinedTotal > 0)
+                                    {
+                                        decimal effectivePct = Math.Min(100m, (p.BundleDiscountValue / bundleCombinedTotal) * 100m);
+                                        foreach (var gid in allGroup)
+                                        {
+                                            if (!bundlePctDiscounts.ContainsKey(gid))
+                                                bundlePctDiscounts[gid] = effectivePct;
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -751,23 +773,32 @@ public class OrderService : IOrderService
                                 disc = null;
                             }
 
+                            // 1. Determine the individual selling price of the piece (preserving piece discounts)
+                            decimal pieceSellingPrice;
                             if (disc != null && item.Quantity >= disc.MinQty)
                             {
-                                unitPrice = disc.DiscountType == DiscountType.Percentage 
+                                pieceSellingPrice = disc.DiscountType == DiscountType.Percentage 
                                     ? Math.Round(originalUnitPrice - (originalUnitPrice * disc.DiscountValue / 100), 2)
                                     : Math.Round(originalUnitPrice - disc.DiscountValue, 2);
                             }
-                            else if (bundlePctDiscounts.TryGetValue(product.Id, out var bPct) && bPct > 0)
+                            else if (isWebsite && product.OnlineDiscountPrice.HasValue && product.OnlineDiscountPrice > 0)
                             {
-                                unitPrice = Math.Round(originalUnitPrice - (originalUnitPrice * bPct / 100), 2);
+                                pieceSellingPrice = product.OnlineDiscountPrice.Value + variantAdjustment;
                             }
-                            else if (product.OnlineDiscountPrice.HasValue && product.OnlineDiscountPrice > 0)
+                            else if (product.DiscountPrice > 0)
                             {
-                                unitPrice = product.OnlineDiscountPrice.Value + variantAdjustment;
+                                pieceSellingPrice = product.DiscountPrice.Value + variantAdjustment;
                             }
                             else
                             {
-                                unitPrice = (product.DiscountPrice > 0 ? (product.DiscountPrice.Value + variantAdjustment) : originalUnitPrice);
+                                pieceSellingPrice = originalUnitPrice;
+                            }
+
+                            // 2. 🎁 Apply Bundle Extra Discount ON TOP OF pieceSellingPrice (Preserves item discounts!)
+                            unitPrice = pieceSellingPrice;
+                            if (bundlePctDiscounts.TryGetValue(product.Id, out var bPct) && bPct > 0)
+                            {
+                                unitPrice = Math.Round(pieceSellingPrice - (pieceSellingPrice * bPct / 100m), 2);
                             }
                         }
                         
@@ -833,11 +864,6 @@ public class OrderService : IOrderService
                             warehouseId: warehouseIdToUse
                         );
                     }
-
-                    if (bundleFixedDiscountTotal > 0)
-                    {
-                        order.TemporalDiscount += bundleFixedDiscountTotal;
-                    }
                 }
                 else
                 {
@@ -850,7 +876,6 @@ public class OrderService : IOrderService
                     // 🎁 DETECT BUNDLE OFFERS IN CART
                     var cartProductIds = cartItems.Where(c => c.Product != null && c.ProductId.HasValue).Select(c => c.ProductId!.Value).Distinct().ToHashSet();
                     var cartBundlePctDiscounts = new Dictionary<int, decimal>();
-                    decimal cartBundleFixedDiscountTotal = 0;
 
                     foreach (var ci in cartItems)
                     {
@@ -859,18 +884,42 @@ public class OrderService : IOrderService
                             var bConfigs = ProductService.ParseBundleConfigs(ci.Product.BundleProductIds, ci.Product.LinkedProductId);
                             if (bConfigs.Any() && bConfigs.All(cfg => cartItems.Where(x => x.ProductId == cfg.ProductId).Sum(x => x.Quantity) >= cfg.Quantity))
                             {
+                                var allGroup = bConfigs.Select(c => c.ProductId).Append(ci.Product.Id).Distinct().ToList();
+
                                 if (ci.Product.BundleDiscountType == 1) // Percentage
                                 {
-                                    var allGroup = bConfigs.Select(c => c.ProductId).Append(ci.Product.Id).Distinct();
                                     foreach (var gid in allGroup)
                                     {
                                         if (!cartBundlePctDiscounts.ContainsKey(gid))
                                             cartBundlePctDiscounts[gid] = ci.Product.BundleDiscountValue;
                                     }
                                 }
-                                else if (ci.Product.BundleDiscountType == 2) // Fixed amount
+                                else if (ci.Product.BundleDiscountType == 2) // Fixed amount: distribute proportionately to bundle items
                                 {
-                                    cartBundleFixedDiscountTotal += ci.Product.BundleDiscountValue;
+                                    decimal bundleCombinedTotal = 0;
+                                    foreach (var gid in allGroup)
+                                    {
+                                        var gp = cartItems.FirstOrDefault(x => x.ProductId == gid)?.Product;
+                                        if (gp != null)
+                                        {
+                                            decimal gpPrice = (gp.OnlineDiscountPrice.HasValue && gp.OnlineDiscountPrice > 0)
+                                                ? gp.OnlineDiscountPrice.Value
+                                                : (gp.OnlinePrice.HasValue && gp.OnlinePrice > 0 ? gp.OnlinePrice.Value : gp.Price);
+                                            var cfg = bConfigs.FirstOrDefault(c => c.ProductId == gid);
+                                            int qty = cfg != null ? cfg.Quantity : 1;
+                                            bundleCombinedTotal += (gpPrice * qty);
+                                        }
+                                    }
+
+                                    if (bundleCombinedTotal > 0)
+                                    {
+                                        decimal effectivePct = Math.Min(100m, (ci.Product.BundleDiscountValue / bundleCombinedTotal) * 100m);
+                                        foreach (var gid in allGroup)
+                                        {
+                                            if (!cartBundlePctDiscounts.ContainsKey(gid))
+                                                cartBundlePctDiscounts[gid] = effectivePct;
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -922,25 +971,33 @@ public class OrderService : IOrderService
                             // Strict Offers Page Resolution: Product -> Category Tree -> Brand
                             // Products ONLY receive discounts if they, their category, or their brand are explicitly targeted in the Offers Page.
 
-                            decimal unitPrice;
+                            // 1. Determine the individual selling price of the piece (preserving piece discounts)
+                            decimal pieceSellingPrice;
                             if (disc != null && ci.Quantity >= disc.MinQty)
-                        {
-                            unitPrice = disc.DiscountType == DiscountType.Percentage 
-                                ? Math.Round(originalUnitPrice - (originalUnitPrice * disc.DiscountValue / 100), 2)
-                                : Math.Round(originalUnitPrice - disc.DiscountValue, 2);
-                        }
-                        else if (ci.ProductId.HasValue && cartBundlePctDiscounts.TryGetValue(ci.ProductId.Value, out var cbPct) && cbPct > 0)
-                        {
-                            unitPrice = Math.Round(originalUnitPrice - (originalUnitPrice * cbPct / 100), 2);
-                        }
-                        else if (ci.Product.OnlineDiscountPrice.HasValue && ci.Product.OnlineDiscountPrice > 0)
-                        {
-                            unitPrice = ci.Product.OnlineDiscountPrice.Value + variantAdjustment;
-                        }
-                        else
-                        {
-                            unitPrice = (ci.Product.DiscountPrice > 0 ? (ci.Product.DiscountPrice.Value + variantAdjustment) : originalUnitPrice);
-                        }
+                            {
+                                pieceSellingPrice = disc.DiscountType == DiscountType.Percentage 
+                                    ? Math.Round(originalUnitPrice - (originalUnitPrice * disc.DiscountValue / 100), 2)
+                                    : Math.Round(originalUnitPrice - disc.DiscountValue, 2);
+                            }
+                            else if (ci.Product.OnlineDiscountPrice.HasValue && ci.Product.OnlineDiscountPrice > 0)
+                            {
+                                pieceSellingPrice = ci.Product.OnlineDiscountPrice.Value + variantAdjustment;
+                            }
+                            else if (ci.Product.DiscountPrice > 0)
+                            {
+                                pieceSellingPrice = ci.Product.DiscountPrice.Value + variantAdjustment;
+                            }
+                            else
+                            {
+                                pieceSellingPrice = originalUnitPrice;
+                            }
+
+                            // 2. 🎁 Apply Bundle Extra Discount ON TOP OF pieceSellingPrice (Preserves item discounts!)
+                            decimal unitPrice = pieceSellingPrice;
+                            if (ci.ProductId.HasValue && cartBundlePctDiscounts.TryGetValue(ci.ProductId.Value, out var cbPct) && cbPct > 0)
+                            {
+                                unitPrice = Math.Round(pieceSellingPrice - (pieceSellingPrice * cbPct / 100m), 2);
+                            }
                         
                         var orderItem = new OrderItem
                         {
@@ -989,11 +1046,6 @@ public class OrderService : IOrderService
                         );
                         
                         _db.CartItems.Remove(ci);
-                    }
-
-                    if (cartBundleFixedDiscountTotal > 0)
-                    {
-                        order.TemporalDiscount += cartBundleFixedDiscountTotal;
                     }
                 }
 

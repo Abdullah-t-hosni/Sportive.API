@@ -297,15 +297,33 @@ public class SalesAccountingService
         // ── 2.5 Final Balancing Check ────────────────────────
         decimal sumDr = lines.Sum(l => l.debit);
         decimal sumCr = lines.Sum(l => l.credit);
-        decimal diff = sumDr - sumCr;
+        decimal diff = Math.Round(sumDr - sumCr, 2);
         
-        if (Math.Abs(diff) > 0 && Math.Abs(diff) < 0.1m)
+        if (Math.Abs(diff) > 0.001m)
         {
-            var revLineIdx = lines.FindIndex(l => l.code == salesRevAcct);
-            if (revLineIdx != -1)
+            if (diff < 0)
             {
-                var target = lines[revLineIdx];
-                lines[revLineIdx] = (target.code, target.debit, target.credit + diff, target.desc);
+                // Debits are less than Credits: route any unallocated order discount/rounding difference to Sales Discount debit
+                decimal missingDebit = Math.Abs(diff);
+                var discLineIdx = lines.FindIndex(l => l.code == salesDiscAcct);
+                if (discLineIdx != -1)
+                {
+                    var target = lines[discLineIdx];
+                    lines[discLineIdx] = (target.code, target.debit + missingDebit, target.credit, target.desc);
+                }
+                else
+                {
+                    lines.Add((salesDiscAcct, missingDebit, 0, _t.Get("Accounting.OfferDiscountDesc", order.OrderNumber, missingDebit)));
+                }
+            }
+            else if (diff > 0 && diff < 0.5m)
+            {
+                var revLineIdx = lines.FindIndex(l => l.code == salesRevAcct);
+                if (revLineIdx != -1)
+                {
+                    var target = lines[revLineIdx];
+                    lines[revLineIdx] = (target.code, target.debit, target.credit + diff, target.desc);
+                }
             }
         }
 
