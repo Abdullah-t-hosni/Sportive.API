@@ -63,6 +63,46 @@ public class WhatsAppChatController : ControllerBase
         return (phoneHashes, emailHashes, local, intl);
     }
 
+    private async Task<(Dictionary<string, string> lidToPhone, Dictionary<string, string> phoneToLid)> GetLidMapsAsync()
+    {
+        var lidToPhone = new Dictionary<string, string>();
+        var phoneToLid = new Dictionary<string, string>();
+        try
+        {
+            var conn = _db.Database.GetDbConnection();
+            if (conn.State != System.Data.ConnectionState.Open)
+                await conn.OpenAsync();
+
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT LidMap FROM WhatsAppSessions WHERE LidMap IS NOT NULL LIMIT 1";
+            var raw = await cmd.ExecuteScalarAsync() as string;
+            if (!string.IsNullOrEmpty(raw))
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(raw);
+                if (doc.RootElement.TryGetProperty("lidToPhone", out var l2pEl))
+                {
+                    foreach (var prop in l2pEl.EnumerateObject())
+                    {
+                        var val = prop.Value.GetString();
+                        if (!string.IsNullOrEmpty(val))
+                            lidToPhone[prop.Name] = val;
+                    }
+                }
+                if (doc.RootElement.TryGetProperty("phoneToLid", out var p2lEl))
+                {
+                    foreach (var prop in p2lEl.EnumerateObject())
+                    {
+                        var val = prop.Value.GetString();
+                        if (!string.IsNullOrEmpty(val))
+                            phoneToLid[prop.Name] = val;
+                    }
+                }
+            }
+        }
+        catch {}
+        return (lidToPhone, phoneToLid);
+    }
+
     [HttpGet]
     public async Task<IActionResult> GetAllConversations([FromQuery] string? search = null)
     {
@@ -79,9 +119,15 @@ public class WhatsAppChatController : ControllerBase
             .Take(2000)
             .ToListAsync();
 
+        var (lidToPhone, _) = await GetLidMapsAsync();
+
         var grouped = recentMsgs
             .GroupBy(m => {
                 var p = Regex.Replace(m.Phone ?? "", @"\D", "").Trim();
+                if (lidToPhone.TryGetValue(p, out var mappedPhone))
+                {
+                    p = mappedPhone;
+                }
                 if (p.StartsWith("20") && p.Length == 12) return "0" + p.Substring(2);
                 if (p.StartsWith("0020") && p.Length == 14) return "0" + p.Substring(4);
                 return p;
@@ -268,13 +314,24 @@ public class WhatsAppChatController : ControllerBase
         if (string.IsNullOrWhiteSpace(phone))
             return BadRequest("Phone is required");
 
+        var (lidToPhone, phoneToLid) = await GetLidMapsAsync();
         var (_, _, localPhone, intlPhone) = GenerateSearchHashes(phone);
         var raw = phone.Replace("+", "").Replace(" ", "").Replace("-", "").Trim();
         var last9 = raw.Length >= 9 ? raw.Substring(raw.Length - 9) : raw;
 
+        var candidatePhones = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { localPhone, intlPhone, raw };
+        if (lidToPhone.TryGetValue(raw, out var mp))
+        {
+            candidatePhones.Add(mp);
+            if (mp.StartsWith("20") && mp.Length == 12) candidatePhones.Add("0" + mp.Substring(2));
+        }
+        if (phoneToLid.TryGetValue(intlPhone, out var ml)) candidatePhones.Add(ml);
+        if (phoneToLid.TryGetValue(localPhone, out var mlLocal)) candidatePhones.Add(mlLocal);
+        if (phoneToLid.TryGetValue(raw, out var mlRaw)) candidatePhones.Add(mlRaw);
+
         var messages = await _db.WhatsAppMessages
             .AsNoTracking()
-            .Where(m => m.Phone == localPhone || m.Phone == intlPhone || m.Phone == raw || (last9.Length >= 8 && m.Phone.EndsWith(last9)))
+            .Where(m => candidatePhones.Contains(m.Phone) || (last9.Length >= 9 && m.Phone.EndsWith(last9) && m.Phone.Length <= 13))
             .OrderByDescending(m => m.Timestamp)
             .Take(250)
             .ToListAsync();
