@@ -31,6 +31,7 @@ public class ProductService : IProductService
             .AsNoTracking()
             .AsSplitQuery()
             .Include(p => p.Category!).ThenInclude(c => c.Parent!).ThenInclude(c => c.Parent!)
+            .Include(p => p.SecondaryCategories).ThenInclude(sc => sc.Category)
             .Include(p => p.Brand)
             .Include(p => p.Images)
             .Include(p => p.Variants)
@@ -52,6 +53,8 @@ public class ProductService : IProductService
             }
         }
 
+        int? effectiveContextCategoryId = filter.CategoryId;
+
         if (filter.Section.HasValue)
         {
             var section = filter.Section.Value;
@@ -65,6 +68,11 @@ public class ProductService : IProductService
                     (section == CategoryType.SpecialSizes && (c.NameAr == "مقاسات خاصة" || c.NameEn == "Special Sizes")))
                 .Select(c => c.Id)
                 .ToListAsync();
+
+            if (!effectiveContextCategoryId.HasValue && rootCategoryIds.Count > 0)
+            {
+                effectiveContextCategoryId = rootCategoryIds.First();
+            }
 
             var allCategoryIds = new List<int>();
             foreach (var id in rootCategoryIds)
@@ -216,7 +224,7 @@ public class ProductService : IProductService
             .Take(filter.PageSize)
             .ToListAsync();
 
-        var items = await MapToSummaryListAsync(rawProducts, filter.Source, filter.WarehouseId);
+        var items = await MapToSummaryListAsync(rawProducts, filter.Source, filter.WarehouseId, effectiveContextCategoryId);
 
         return new PaginatedResult<ProductSummaryDto>(
             items, total, page, filter.PageSize,
@@ -224,7 +232,7 @@ public class ProductService : IProductService
         );
     }
 
-    public async Task<ProductDetailDto?> GetProductByIdAsync(int id, DiscountApplyTo? source = null, int? warehouseId = null, bool rawPricing = false)
+    public async Task<ProductDetailDto?> GetProductByIdAsync(int id, DiscountApplyTo? source = null, int? warehouseId = null, bool rawPricing = false, int? contextCategoryId = null)
     {
         var p = await _db.Products
             .AsNoTracking()
@@ -284,20 +292,28 @@ public class ProductService : IProductService
             p.TotalStock = p.Variants.Count > 0 ? p.Variants.Sum(v => v.StockQuantity) : p.TotalStock;
         }
 
+        var (effectiveCatId, effectiveAncestors) = await ResolveEffectiveCategoryAsync(p, contextCategoryId);
+
         ProductDiscount? d = null;
         if (!rawPricing)
         {
             var now = TimeHelper.GetEgyptTime();
+
+            var validCategoryIds = new List<int>();
+            if (effectiveCatId.HasValue) validCategoryIds.Add(effectiveCatId.Value);
+            validCategoryIds.AddRange(effectiveAncestors);
+
             d = await _db.ProductDiscounts
                 .Where(x => (x.ProductId == id || 
-                             (p.CategoryId != null && (x.CategoryId == p.CategoryId || x.CategoryId == p.Category!.ParentId || (p.Category!.Parent != null && x.CategoryId == p.Category!.Parent!.ParentId))) || 
-                             (p.BrandId != null && x.BrandId == p.BrandId)) 
+                             (validCategoryIds.Any() && x.CategoryId != null && validCategoryIds.Contains(x.CategoryId.Value)) || 
+                             (p.BrandId != null && x.BrandId == p.BrandId) ||
+                             (x.ProductId == null && x.CategoryId == null && x.BrandId == null)) 
                         && x.IsActive && x.ValidFrom <= now && x.ValidTo >= now)
                 .Where(x => x.ApplyTo == DiscountApplyTo.All || (source.HasValue ? x.ApplyTo == source.Value : x.ApplyTo == DiscountApplyTo.Store))
                 .OrderByDescending(x => x.ProductId != null ? 4 : (x.CategoryId != null ? 3 : (x.BrandId != null ? 2 : 1)))
                 .FirstOrDefaultAsync();
 
-            if (d != null && IsCategoryExcluded(d.ExcludedCategoryIds, p.CategoryId, new[] { p.Category?.ParentId, p.Category?.Parent?.ParentId }.Where(x => x.HasValue).Select(x => x!.Value)))
+            if (d != null && IsCategoryExcluded(d.ExcludedCategoryIds, effectiveCatId, effectiveAncestors))
             {
                 d = null;
             }
@@ -305,10 +321,10 @@ public class ProductService : IProductService
 
         var (bundleSummaries, bundleIds, bundleConfigs, linkedSummary) = await LoadBundleSummariesAsync(p, source, warehouseId);
 
-        return MapToDetail(p, d, linkedSummary, reviewDtos, source, rawPricing, bundleSummaries, bundleIds, bundleConfigs);
+        return MapToDetail(p, d, linkedSummary, reviewDtos, source, rawPricing, bundleSummaries, bundleIds, bundleConfigs, effectiveCatId);
     }
 
-    public async Task<ProductDetailDto?> GetProductBySlugAsync(string slug, DiscountApplyTo? source = null, int? warehouseId = null, bool rawPricing = false)
+    public async Task<ProductDetailDto?> GetProductBySlugAsync(string slug, DiscountApplyTo? source = null, int? warehouseId = null, bool rawPricing = false, int? contextCategoryId = null)
     {
         var p = await _db.Products
             .AsNoTracking()
@@ -368,20 +384,28 @@ public class ProductService : IProductService
             p.TotalStock = p.Variants.Count > 0 ? p.Variants.Sum(v => v.StockQuantity) : p.TotalStock;
         }
 
+        var (effectiveCatId, effectiveAncestors) = await ResolveEffectiveCategoryAsync(p, contextCategoryId);
+
         ProductDiscount? d = null;
         if (!rawPricing)
         {
             var now = TimeHelper.GetEgyptTime();
+
+            var validCategoryIds = new List<int>();
+            if (effectiveCatId.HasValue) validCategoryIds.Add(effectiveCatId.Value);
+            validCategoryIds.AddRange(effectiveAncestors);
+
             d = await _db.ProductDiscounts
                 .Where(x => (x.ProductId == p.Id || 
-                             (p.CategoryId != null && (x.CategoryId == p.CategoryId || x.CategoryId == p.Category!.ParentId || (p.Category!.Parent != null && x.CategoryId == p.Category!.Parent!.ParentId))) || 
-                             (p.BrandId != null && x.BrandId == p.BrandId)) 
+                             (validCategoryIds.Any() && x.CategoryId != null && validCategoryIds.Contains(x.CategoryId.Value)) || 
+                             (p.BrandId != null && x.BrandId == p.BrandId) ||
+                             (x.ProductId == null && x.CategoryId == null && x.BrandId == null)) 
                         && x.IsActive && x.ValidFrom <= now && x.ValidTo >= now)
                 .Where(x => x.ApplyTo == DiscountApplyTo.All || (source.HasValue ? x.ApplyTo == source.Value : x.ApplyTo == DiscountApplyTo.Store))
                 .OrderByDescending(x => x.ProductId != null ? 4 : (x.CategoryId != null ? 3 : (x.BrandId != null ? 2 : 1)))
                 .FirstOrDefaultAsync();
 
-            if (d != null && IsCategoryExcluded(d.ExcludedCategoryIds, p.CategoryId, new[] { p.Category?.ParentId, p.Category?.Parent?.ParentId }.Where(x => x.HasValue).Select(x => x!.Value)))
+            if (d != null && IsCategoryExcluded(d.ExcludedCategoryIds, effectiveCatId, effectiveAncestors))
             {
                 d = null;
             }
@@ -389,7 +413,7 @@ public class ProductService : IProductService
 
         var (bundleSummaries, bundleIds, bundleConfigs, linkedSummary) = await LoadBundleSummariesAsync(p, source, warehouseId);
 
-        return MapToDetail(p, d, linkedSummary, reviewDtos, source, rawPricing, bundleSummaries, bundleIds, bundleConfigs);
+        return MapToDetail(p, d, linkedSummary, reviewDtos, source, rawPricing, bundleSummaries, bundleIds, bundleConfigs, effectiveCatId);
     }
 
     public async Task<ProductDetailDto> CreateProductAsync(CreateProductDto dto)
@@ -1035,6 +1059,62 @@ public class ProductService : IProductService
             .FirstOrDefaultAsync();
     }
 
+    private async Task<(int? effectiveCatId, List<int> effectiveAncestors)> ResolveEffectiveCategoryAsync(Product p, int? contextCategoryId)
+    {
+        var allCategories = await _cache.GetAsync<List<(int Id, int? ParentId, string NameAr, string NameEn)>>("CategoryTreeFull");
+        if (allCategories == null)
+        {
+            var raw = await _db.Categories.AsNoTracking().Select(c => new { c.Id, c.ParentId, c.NameAr, c.NameEn }).ToListAsync();
+            allCategories = raw.Select(c => (c.Id, c.ParentId, c.NameAr, c.NameEn)).ToList();
+            await _cache.SetAsync("CategoryTreeFull", allCategories, TimeSpan.FromMinutes(10));
+        }
+
+        var thisProductCatIds = new List<int>();
+        if (p.CategoryId.HasValue) thisProductCatIds.Add(p.CategoryId.Value);
+        if (p.SecondaryCategories != null)
+        {
+            thisProductCatIds.AddRange(p.SecondaryCategories.Select(sc => sc.CategoryId));
+        }
+        thisProductCatIds = thisProductCatIds.Distinct().ToList();
+
+        int? effectiveCatId = p.CategoryId;
+        List<int> effectiveAncestors = new List<int>();
+
+        if (contextCategoryId.HasValue)
+        {
+            var contextDescendants = new HashSet<int> { contextCategoryId.Value };
+            var queue = new Queue<int>();
+            queue.Enqueue(contextCategoryId.Value);
+            while (queue.Count > 0)
+            {
+                var cur = queue.Dequeue();
+                var children = allCategories.Where(c => c.ParentId == cur).Select(c => c.Id);
+                foreach (var ch in children)
+                {
+                    if (contextDescendants.Add(ch)) queue.Enqueue(ch);
+                }
+            }
+
+            var matchedCat = thisProductCatIds.FirstOrDefault(cid => contextDescendants.Contains(cid));
+            if (matchedCat > 0)
+            {
+                effectiveCatId = matchedCat;
+            }
+        }
+
+        if (effectiveCatId.HasValue)
+        {
+            var cur = allCategories.FirstOrDefault(c => c.Id == effectiveCatId.Value);
+            while (cur.ParentId.HasValue)
+            {
+                effectiveAncestors.Add(cur.ParentId.Value);
+                cur = allCategories.FirstOrDefault(c => c.Id == cur.ParentId.Value);
+            }
+        }
+
+        return (effectiveCatId, effectiveAncestors);
+    }
+
     private static bool IsCategoryExcluded(string? excludedCategoryIds, int? productCatId, IEnumerable<int>? ancestors)
     {
         if (string.IsNullOrWhiteSpace(excludedCategoryIds) || !productCatId.HasValue) return false;
@@ -1198,7 +1278,8 @@ public class ProductService : IProductService
         bool rawPricing = false,
         List<ProductSummaryDto>? bundleProducts = null,
         List<int>? bundleProductIds = null,
-        List<BundleItemConfigDto>? bundleConfigs = null)
+        List<BundleItemConfigDto>? bundleConfigs = null,
+        int? effectiveCatId = null)
     {
         bool isStoreSource = source != DiscountApplyTo.POS;
         decimal effectiveBasePrice = (!rawPricing && isStoreSource && p.OnlinePrice.HasValue && p.OnlinePrice > 0)
@@ -1237,6 +1318,10 @@ public class ProductService : IProductService
         var configs = bundleConfigs ?? ParseBundleConfigs(p.BundleProductIds, p.LinkedProductId);
         var effectiveBundleIds = bundleProductIds ?? configs.Select(c => c.ProductId).ToList();
 
+        var effectiveCat = (effectiveCatId.HasValue && p.SecondaryCategories != null 
+            ? p.SecondaryCategories.FirstOrDefault(sc => sc.CategoryId == effectiveCatId.Value)?.Category 
+            : null) ?? p.Category;
+
         return new ProductDetailDto(
             p.Id, p.NameAr, p.NameEn, p.Slug, p.DescriptionAr, p.DescriptionEn,
             effectiveBasePrice, finalDiscountPrice, p.CostPrice, p.SKU,
@@ -1244,8 +1329,10 @@ public class ProductService : IProductService
             p.Brand != null ? p.Brand.NameEn : null,
             p.BrandId,
             p.Status.ToString(), p.IsFeatured,
-            p.CategoryId, p.Category?.NameAr ?? _t.Get("Products.CategoryMissing"), p.Category?.NameEn ?? _t.Get("Products.CategoryMissing"),
-            p.Category?.Type.ToString(),
+            effectiveCat?.Id ?? p.CategoryId, 
+            effectiveCat?.NameAr ?? p.Category?.NameAr ?? _t.Get("Products.CategoryMissing"), 
+            effectiveCat?.NameEn ?? p.Category?.NameEn ?? _t.Get("Products.CategoryMissing"),
+            effectiveCat?.Type.ToString() ?? p.Category?.Type.ToString(),
             p.Variants?.Select(v => new ProductVariantDto(v.Id, v.Size, v.Color, v.ColorAr, v.StockQuantity, v.ReorderLevel, v.PriceAdjustment ?? 0, v.ImageUrl, v.ImagePublicId, v.IsActive, v.MaxOnlineStock, v.OnlinePriceAdjustment)).ToList() ?? new List<ProductVariantDto>(),
             p.Images?.Select(i => new ProductImageDto(i.Id, i.ImageUrl, i.ImagePublicId, i.IsMain, i.SortOrder, i.ColorAr, i.CategoryId)).ToList() ?? new List<ProductImageDto>(),
             p.AverageRating,
@@ -1280,31 +1367,61 @@ public class ProductService : IProductService
         );
     }
 
-    private async Task<List<ProductSummaryDto>> MapToSummaryListAsync(List<Product> products, DiscountApplyTo? source = null, int? warehouseId = null)
+    private async Task<List<ProductSummaryDto>> MapToSummaryListAsync(List<Product> products, DiscountApplyTo? source = null, int? warehouseId = null, int? contextCategoryId = null)
     {
         if (products == null || !products.Any()) return new List<ProductSummaryDto>();
 
         var productIds = products.Select(x => x.Id).ToList();
-        var categoryIds = products.Where(x => x.CategoryId.HasValue).Select(x => x.CategoryId!.Value).ToList();
         var brandIds = products.Where(x => x.BrandId.HasValue).Select(x => x.BrandId!.Value).ToList();
 
-        // Load CategoryTree cache to resolve ancestors
-        var allCategories = await _cache.GetAsync<List<(int Id, int? ParentId)>>("CategoryTree");
+        // Load CategoryTree cache to resolve ancestors and names
+        var allCategories = await _cache.GetAsync<List<(int Id, int? ParentId, string NameAr, string NameEn)>>("CategoryTreeFull");
         if (allCategories == null)
         {
-            var raw = await _db.Categories.AsNoTracking().Select(c => new { c.Id, c.ParentId }).ToListAsync();
-            allCategories = raw.Select(c => (c.Id, c.ParentId)).ToList();
-            await _cache.SetAsync("CategoryTree", allCategories, TimeSpan.FromMinutes(10));
+            var raw = await _db.Categories.AsNoTracking().Select(c => new { c.Id, c.ParentId, c.NameAr, c.NameEn }).ToListAsync();
+            allCategories = raw.Select(c => (c.Id, c.ParentId, c.NameAr, c.NameEn)).ToList();
+            await _cache.SetAsync("CategoryTreeFull", allCategories, TimeSpan.FromMinutes(10));
         }
 
-        var ancestorCategoryIds = new List<int>();
-        foreach (var catId in categoryIds)
+        // Collect all candidate category IDs across all products (primary and secondary)
+        var allProductCategoryIds = new HashSet<int>();
+        foreach (var p in products)
+        {
+            if (p.CategoryId.HasValue) allProductCategoryIds.Add(p.CategoryId.Value);
+            if (p.SecondaryCategories != null)
+            {
+                foreach (var sc in p.SecondaryCategories)
+                {
+                    allProductCategoryIds.Add(sc.CategoryId);
+                }
+            }
+        }
+
+        var allRelevantCategoryIds = new HashSet<int>(allProductCategoryIds);
+        foreach (var catId in allProductCategoryIds)
         {
             var current = allCategories.FirstOrDefault(c => c.Id == catId);
             while (current.ParentId.HasValue)
             {
-                ancestorCategoryIds.Add(current.ParentId.Value);
+                allRelevantCategoryIds.Add(current.ParentId.Value);
                 current = allCategories.FirstOrDefault(c => c.Id == current.ParentId.Value);
+            }
+        }
+
+        HashSet<int>? contextDescendants = null;
+        if (contextCategoryId.HasValue)
+        {
+            contextDescendants = new HashSet<int> { contextCategoryId.Value };
+            var queue = new Queue<int>();
+            queue.Enqueue(contextCategoryId.Value);
+            while (queue.Count > 0)
+            {
+                var cur = queue.Dequeue();
+                var children = allCategories.Where(c => c.ParentId == cur).Select(c => c.Id);
+                foreach (var ch in children)
+                {
+                    if (contextDescendants.Add(ch)) queue.Enqueue(ch);
+                }
             }
         }
 
@@ -1314,8 +1431,9 @@ public class ProductService : IProductService
             .Where(d => source.HasValue ? (d.ApplyTo == DiscountApplyTo.All || d.ApplyTo == source.Value) : true)
             .Where(d => 
                 (d.ProductId != null && productIds.Contains(d.ProductId.Value)) ||
-                (d.CategoryId != null && (categoryIds.Contains(d.CategoryId.Value) || ancestorCategoryIds.Contains(d.CategoryId.Value))) ||
-                (d.BrandId != null && brandIds.Contains(d.BrandId.Value))
+                (d.CategoryId != null && allRelevantCategoryIds.Contains(d.CategoryId.Value)) ||
+                (d.BrandId != null && brandIds.Contains(d.BrandId.Value)) ||
+                (d.ProductId == null && d.CategoryId == null && d.BrandId == null)
             )
             .ToListAsync();
 
@@ -1353,11 +1471,28 @@ public class ProductService : IProductService
 
         foreach (var p in products)
         {
-            // Resolve parent hierarchy for this product
-            var pCategoryAncestors = new List<int>();
-            if (p.CategoryId.HasValue)
+            // Resolve effective category for this product in current context
+            int? effectiveCatId = p.CategoryId;
+            if (contextDescendants != null)
             {
-                var current = allCategories.FirstOrDefault(c => c.Id == p.CategoryId.Value);
+                var pCandidateCats = new List<int>();
+                if (p.CategoryId.HasValue) pCandidateCats.Add(p.CategoryId.Value);
+                if (p.SecondaryCategories != null)
+                {
+                    pCandidateCats.AddRange(p.SecondaryCategories.Select(sc => sc.CategoryId));
+                }
+
+                var matched = pCandidateCats.FirstOrDefault(cid => contextDescendants.Contains(cid));
+                if (matched > 0)
+                {
+                    effectiveCatId = matched;
+                }
+            }
+
+            var pCategoryAncestors = new List<int>();
+            if (effectiveCatId.HasValue)
+            {
+                var current = allCategories.FirstOrDefault(c => c.Id == effectiveCatId.Value);
                 while (current.ParentId.HasValue)
                 {
                     pCategoryAncestors.Add(current.ParentId.Value);
@@ -1366,10 +1501,10 @@ public class ProductService : IProductService
             }
 
             var applicableDiscounts = discounts
-                .Where(d => !IsCategoryExcluded(d.ExcludedCategoryIds, p.CategoryId, pCategoryAncestors))
+                .Where(d => !IsCategoryExcluded(d.ExcludedCategoryIds, effectiveCatId, pCategoryAncestors))
                 .Where(d => 
                     (d.ProductId == p.Id) ||
-                    (p.CategoryId.HasValue && d.CategoryId.HasValue && (d.CategoryId.Value == p.CategoryId.Value || pCategoryAncestors.Contains(d.CategoryId.Value))) ||
+                    (effectiveCatId.HasValue && d.CategoryId.HasValue && (d.CategoryId.Value == effectiveCatId.Value || pCategoryAncestors.Contains(d.CategoryId.Value))) ||
                     (p.BrandId.HasValue && d.BrandId.HasValue && d.BrandId.Value == p.BrandId.Value) ||
                     (d.ProductId == null && d.CategoryId == null && d.BrandId == null)
                 )
@@ -1439,6 +1574,10 @@ public class ProductService : IProductService
                 ? (productStocks.TryGetValue(p.Id, out var ps) ? ps : (hasWarehouseRecords ? 0 : (p.Variants != null && p.Variants.Count > 0 ? p.Variants.Sum(v => v.StockQuantity) : p.TotalStock)))
                 : (p.Variants != null && p.Variants.Count > 0 ? p.Variants.Sum(v => v.StockQuantity) : p.TotalStock);
 
+            var effectiveCatObj = effectiveCatId.HasValue ? allCategories.FirstOrDefault(c => c.Id == effectiveCatId.Value) : default;
+            string displayCatNameAr = effectiveCatObj.Id > 0 ? effectiveCatObj.NameAr : (p.Category != null ? p.Category.NameAr : _t.Get("Products.CategoryMissing"));
+            string displayCatNameEn = effectiveCatObj.Id > 0 ? effectiveCatObj.NameEn : (p.Category != null ? p.Category.NameEn : _t.Get("Products.CategoryMissing"));
+
             resultList.Add(new ProductSummaryDto(
                 p.Id,
                 p.NameAr,
@@ -1447,8 +1586,8 @@ public class ProductService : IProductService
                 effectiveBasePrice,
                 finalPrice,
                 p.Images?.FirstOrDefault(i => i.IsMain)?.ImageUrl ?? p.Images?.FirstOrDefault()?.ImageUrl,
-                p.Category != null ? p.Category.NameAr : _t.Get("Products.CategoryMissing"),
-                p.Category != null ? p.Category.NameEn : _t.Get("Products.CategoryMissing"),
+                displayCatNameAr,
+                displayCatNameEn,
                 p.Brand != null ? p.Brand.NameAr : null,
                 p.Brand != null ? p.Brand.NameEn : null,
                 p.BrandId,

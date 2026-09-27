@@ -750,9 +750,10 @@ public class OrderService : IOrderService
                         {
                             // 🔍 RECURSIVE DISCOUNT LOOKUP: Product -> Category Tree -> Brand
                             var disc = activeDiscounts.FirstOrDefault(d => d.ProductId == product.Id);
+                            int? effectiveCatId = item.CategoryId ?? product.CategoryId;
                             if (disc == null)
                             {
-                                int? currentCatId = product.CategoryId;
+                                int? currentCatId = effectiveCatId;
                                 while (currentCatId.HasValue && disc == null)
                                 {
                                     int lookupId = currentCatId.Value;
@@ -768,7 +769,7 @@ public class OrderService : IOrderService
                             // Strict Offers Page Resolution: Product -> Category Tree -> Brand
                             // Products ONLY receive discounts if they, their category, or their brand are explicitly targeted in the Offers Page.
 
-                            if (disc != null && IsCategoryExcluded(disc.ExcludedCategoryIds, product.CategoryId, allCategories))
+                            if (disc != null && IsCategoryExcluded(disc.ExcludedCategoryIds, effectiveCatId, allCategories))
                             {
                                 disc = null;
                             }

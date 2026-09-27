@@ -71,21 +71,21 @@ public class ProductsController : ControllerBase
 
 
     [HttpGet("{id}")]
-    public async Task<IActionResult> GetById(int id, [FromQuery] DiscountApplyTo? source = null, [FromQuery] int? warehouseId = null, [FromQuery] bool rawPricing = false)
+    public async Task<IActionResult> GetById(int id, [FromQuery] DiscountApplyTo? source = null, [FromQuery] int? warehouseId = null, [FromQuery] bool rawPricing = false, [FromQuery] int? categoryId = null)
     {
-        var product = await _products.GetProductByIdAsync(id, source, warehouseId, rawPricing);
+        var product = await _products.GetProductByIdAsync(id, source, warehouseId, rawPricing, categoryId);
         return product == null ? NotFound() : Ok(product);
     }
 
     [HttpGet("slug/{slug}")]
-    public async Task<IActionResult> GetBySlug(string slug, [FromQuery] DiscountApplyTo? source = null, [FromQuery] int? warehouseId = null)
+    public async Task<IActionResult> GetBySlug(string slug, [FromQuery] DiscountApplyTo? source = null, [FromQuery] int? warehouseId = null, [FromQuery] int? categoryId = null)
     {
         if (int.TryParse(slug, out int id))
         {
-            var productById = await _products.GetProductByIdAsync(id, source, warehouseId);
+            var productById = await _products.GetProductByIdAsync(id, source, warehouseId, false, categoryId);
             if (productById != null) return Ok(productById);
         }
-        var product = await _products.GetProductBySlugAsync(slug, source, warehouseId);
+        var product = await _products.GetProductBySlugAsync(slug, source, warehouseId, false, categoryId);
         return product == null ? NotFound() : Ok(product);
     }
 

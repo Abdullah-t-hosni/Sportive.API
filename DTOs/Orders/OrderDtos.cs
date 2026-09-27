@@ -111,8 +111,10 @@ public record CreateOrderItemDto(
     bool? HasTax = null,
     decimal? VatRate = null,
     string? Size = null,
-    string? Color = null
+    string? Color = null,
+    int? CategoryId = null
 );
+
 
 // ========== POS ==========
 public record CreatePOSOrderDto(
