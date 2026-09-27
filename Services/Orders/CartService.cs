@@ -281,7 +281,7 @@ public class CartService : ICartService
                     }
                 }
             }
-            if (disc == null) disc = discounts.FirstOrDefault(d => d.BrandId == c.Product?.BrandId);
+            if (disc == null && c.Product?.BrandId.HasValue == true) disc = discounts.FirstOrDefault(d => d.BrandId.HasValue && d.BrandId.Value == c.Product.BrandId.Value);
             
             // Strict Offers Page Resolution: Product -> Category Tree -> Brand
             // Products ONLY receive discounts if they, their category, or their brand are explicitly targeted in the Offers Page.

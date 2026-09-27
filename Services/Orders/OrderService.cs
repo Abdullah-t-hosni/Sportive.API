@@ -763,7 +763,7 @@ public class OrderService : IOrderService
                                     }
                                 }
                             }
-                            if (disc == null) disc = activeDiscounts.FirstOrDefault(d => d.BrandId == product.BrandId);
+                            if (disc == null && product.BrandId.HasValue) disc = activeDiscounts.FirstOrDefault(d => d.BrandId.HasValue && d.BrandId.Value == product.BrandId.Value);
                             
                             // Strict Offers Page Resolution: Product -> Category Tree -> Brand
                             // Products ONLY receive discounts if they, their category, or their brand are explicitly targeted in the Offers Page.
@@ -966,7 +966,7 @@ public class OrderService : IOrderService
                                     }
                                 }
                             }
-                            if (disc == null) disc = activeDiscounts.FirstOrDefault(d => d.BrandId == ci.Product.BrandId);
+                            if (disc == null && ci.Product.BrandId.HasValue) disc = activeDiscounts.FirstOrDefault(d => d.BrandId.HasValue && d.BrandId.Value == ci.Product.BrandId.Value);
                             
                             // Strict Offers Page Resolution: Product -> Category Tree -> Brand
                             // Products ONLY receive discounts if they, their category, or their brand are explicitly targeted in the Offers Page.
