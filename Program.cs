@@ -456,7 +456,6 @@ _ = Task.Run(async () =>
         try { await db.Database.ExecuteSqlRawAsync("ALTER TABLE `PayrollRuns` ADD COLUMN `ToDate` datetime NULL;"); } catch {}
         var maintenance = scope.ServiceProvider.GetRequiredService<IDataMaintenanceService>();
         await maintenance.FixReturnedOrderStatusesAsync();
-        await maintenance.FixLegacyWebsiteSettlementsAsync();
     }
     catch (Exception ex)
     {
