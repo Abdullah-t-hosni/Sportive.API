@@ -145,6 +145,7 @@ public class WhatsAppWebhookController : ControllerBase
                     CustomerName = displayName,
                     Text = displayMsg,
                     FromMe = fromMe,
+                    IsRead = fromMe,
                     Timestamp = timestamp,
                     MediaUrl = mediaUrl,
                     MediaType = mediaType,

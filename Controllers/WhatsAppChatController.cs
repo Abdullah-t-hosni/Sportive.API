@@ -151,7 +151,7 @@ public class WhatsAppChatController : ControllerBase
                         mediaType = latest.MediaType,
                         mediaUrl = latest.MediaUrl
                     },
-                    unreadCount = g.Count(m => !m.FromMe),
+                    unreadCount = g.Count(m => !m.FromMe && !m.IsRead),
                     totalMessages = g.Count(),
                     lastActivity = latest.Timestamp
                 };
@@ -330,11 +330,21 @@ public class WhatsAppChatController : ControllerBase
         if (phoneToLid.TryGetValue(raw, out var mlRaw)) candidatePhones.Add(mlRaw);
 
         var messages = await _db.WhatsAppMessages
-            .AsNoTracking()
             .Where(m => candidatePhones.Contains(m.Phone) || (last9.Length >= 9 && m.Phone.EndsWith(last9) && m.Phone.Length <= 13))
             .OrderByDescending(m => m.Timestamp)
             .Take(250)
             .ToListAsync();
+
+        // Automatically mark any unread incoming messages as read upon viewing
+        var unread = messages.Where(m => !m.FromMe && !m.IsRead).ToList();
+        if (unread.Any())
+        {
+            foreach (var u in unread)
+            {
+                u.IsRead = true;
+            }
+            await _db.SaveChangesAsync();
+        }
 
         var distinctMessages = messages
             .GroupBy(m => m.Id)
@@ -351,6 +361,7 @@ public class WhatsAppChatController : ControllerBase
             {
                 id = m.Id.ToString(),
                 fromMe = m.FromMe,
+                isRead = m.IsRead,
                 text = m.Text,
                 timestamp = m.Timestamp,
                 pushName = m.CustomerName ?? (m.FromMe ? "Store" : "Customer"),
@@ -360,5 +371,42 @@ public class WhatsAppChatController : ControllerBase
                 fileName = m.FileName
             })
         });
+    }
+
+    [HttpPost("{phone}/read")]
+    public async Task<IActionResult> MarkAsRead(string phone)
+    {
+        if (string.IsNullOrWhiteSpace(phone))
+            return BadRequest("Phone is required");
+
+        var (lidToPhone, phoneToLid) = await GetLidMapsAsync();
+        var (_, _, localPhone, intlPhone) = GenerateSearchHashes(phone);
+        var raw = phone.Replace("+", "").Replace(" ", "").Replace("-", "").Trim();
+        var last9 = raw.Length >= 9 ? raw.Substring(raw.Length - 9) : raw;
+
+        var candidatePhones = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { localPhone, intlPhone, raw };
+        if (lidToPhone.TryGetValue(raw, out var mp))
+        {
+            candidatePhones.Add(mp);
+            if (mp.StartsWith("20") && mp.Length == 12) candidatePhones.Add("0" + mp.Substring(2));
+        }
+        if (phoneToLid.TryGetValue(intlPhone, out var ml)) candidatePhones.Add(ml);
+        if (phoneToLid.TryGetValue(localPhone, out var mlLocal)) candidatePhones.Add(mlLocal);
+        if (phoneToLid.TryGetValue(raw, out var mlRaw)) candidatePhones.Add(mlRaw);
+
+        var unreadToMark = await _db.WhatsAppMessages
+            .Where(m => !m.FromMe && !m.IsRead && (candidatePhones.Contains(m.Phone) || (last9.Length >= 9 && m.Phone.EndsWith(last9) && m.Phone.Length <= 13)))
+            .ToListAsync();
+
+        if (unreadToMark.Any())
+        {
+            foreach (var u in unreadToMark)
+            {
+                u.IsRead = true;
+            }
+            await _db.SaveChangesAsync();
+        }
+
+        return Ok(new { success = true, markedCount = unreadToMark.Count });
     }
 }

@@ -19,6 +19,8 @@ public class WhatsAppMessage
 
     public bool FromMe { get; set; }
 
+    public bool IsRead { get; set; } = false;
+
     public long Timestamp { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
     [MaxLength(2000)]
