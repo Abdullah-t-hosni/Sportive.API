@@ -2283,6 +2283,13 @@ public class OrderService : IOrderService
         // 3. Automated WhatsApp via Gateway
         try
         {
+            // Do NOT send online shipping/confirmation messages for in-store POS orders!
+            // POS sales already send the electronic invoice receipt via POS cashier flow.
+            if (order.Source == OrderSource.POS)
+            {
+                return;
+            }
+
             var storeSettings = await db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
             var customerPhone = order.Customer?.Phone;
 
@@ -2297,7 +2304,7 @@ public class OrderService : IOrderService
                     await waApiService.SendWhatsAppMessageAsync(
                         customerPhone, 
                         waMeResult.FullMessage, 
-                        order.Source == OrderSource.POS);
+                        false);
                 }
             }
         }
