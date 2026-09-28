@@ -2451,6 +2451,30 @@ public class OrderService : IOrderService
             {
                 foreach (var it in orderWithItems.Items) it.ReturnedQuantity = it.Quantity;
             }
+
+            // Automatically sync and close any active/pending/approved return requests for this order
+            var pendingReturnRequests = await _db.ReturnExchangeRequests
+                .Where(r => r.OrderId == orderId && (r.Status == ReturnExchangeStatus.Pending || r.Status == ReturnExchangeStatus.Approved))
+                .ToListAsync();
+
+            foreach (var req in pendingReturnRequests)
+            {
+                req.Status = ReturnExchangeStatus.ReceivedAtWarehouse;
+                req.ReceivedAtWarehouseAt = TimeHelper.GetEgyptTime();
+                req.AdminNotes = (string.IsNullOrEmpty(req.AdminNotes) ? "" : req.AdminNotes + " | ") + "تم تأكيد إغلاق واستلام طلب الاسترجاع بالمخزن تلقائياً لتحويل الفاتورة إلى مرتجع كامل";
+            }
+        }
+        else if (dto.Status == OrderStatus.Cancelled)
+        {
+            var pendingReturnRequests = await _db.ReturnExchangeRequests
+                .Where(r => r.OrderId == orderId && (r.Status == ReturnExchangeStatus.Pending || r.Status == ReturnExchangeStatus.Approved))
+                .ToListAsync();
+
+            foreach (var req in pendingReturnRequests)
+            {
+                req.Status = ReturnExchangeStatus.Cancelled;
+                req.AdminNotes = (string.IsNullOrEmpty(req.AdminNotes) ? "" : req.AdminNotes + " | ") + "تم إلغاء طلب المرتجع/الاستبدال تلقائياً لإلغاء الفاتورة بالكامل";
+            }
         }
         else if (dto.Status == OrderStatus.PartiallyReturned)
         {
