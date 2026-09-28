@@ -1363,7 +1363,9 @@ public class ProductService : IProductService
             SecondaryCategoryIds: p.SecondaryCategories?.Select(sc => sc.CategoryId).ToList() ?? new List<int>(),
             SecondaryCategories: p.SecondaryCategories?.Where(sc => sc.Category != null).Select(sc => new CategoryDto(sc.Category.Id, sc.Category.NameAr, sc.Category.NameEn, sc.Category.DescriptionAr, sc.Category.DescriptionEn, sc.Category.ImageUrl, sc.Category.IsActive, sc.Category.Type, 0, sc.Category.CreatedAt)).ToList() ?? new List<CategoryDto>(),
             OnlinePrice: p.OnlinePrice,
-            OnlineDiscountPrice: p.OnlineDiscountPrice
+            OnlineDiscountPrice: (!rawPricing && isStoreSource && finalDiscountPrice > 0 && finalDiscountPrice < effectiveBasePrice)
+                ? finalDiscountPrice
+                : p.OnlineDiscountPrice
         );
     }
 
