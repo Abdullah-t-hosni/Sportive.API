@@ -195,7 +195,9 @@ public record OrderSummaryDto(
     DateTime? StatusChangedAt = null,
     List<OrderStatusHistoryDto>? StatusHistory = null,
     decimal? LoyaltyDiscountAmount = 0,
-    decimal? LoyaltyPointsRedeemed = 0
+    decimal? LoyaltyPointsRedeemed = 0,
+    decimal DeliveryFee = 0,
+    decimal SubTotal = 0
 );
 
 public record StorePickupItemDto(

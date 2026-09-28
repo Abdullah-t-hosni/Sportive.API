@@ -145,7 +145,9 @@ public class OrderService : IOrderService
                 o.StatusHistory.Where(h => h.Status == o.Status).OrderByDescending(h => h.CreatedAt).Select(h => (DateTime?)h.CreatedAt).FirstOrDefault() ?? o.UpdatedAt ?? o.CreatedAt,
                 o.StatusHistory.OrderByDescending(h => h.CreatedAt).Select(h => new OrderStatusHistoryDto(h.Status.ToString(), h.Note, h.CreatedAt, h.ChangedByName)).ToList(),
                 o.LoyaltyDiscountAmount,
-                o.LoyaltyPointsRedeemed
+                o.LoyaltyPointsRedeemed,
+                o.DeliveryFee,
+                o.SubTotal
             ))
             .ToListAsync();
 
