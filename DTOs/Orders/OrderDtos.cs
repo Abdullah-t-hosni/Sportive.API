@@ -89,6 +89,7 @@ public record UpdateOrderDto(
     List<CreateOrderItemDto> Items,
     decimal DiscountAmount,
     string? AdminNotes = null,
+    string? CustomerNotes = null,
     PaymentMethod? PaymentMethod = null,
     List<OrderPaymentDto>? Payments = null,
     decimal? PaidAmount = null,

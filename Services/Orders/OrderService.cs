@@ -1865,9 +1865,10 @@ public class OrderService : IOrderService
                     order.Status = OrderStatus.PartiallyReturned;
                 }
 
-                // 5. UPDATE TOTALS
                 order.DiscountAmount = dto.DiscountAmount;
                 order.AdminNotes = dto.AdminNotes;
+                if (dto.CustomerNotes != null)
+                    order.CustomerNotes = dto.CustomerNotes;
                 order.SalesPersonId = dto.SalesPersonId == "" ? null : (dto.SalesPersonId ?? order.SalesPersonId);
                 if (dto.DeliveryFee.HasValue)
                     order.DeliveryFee = dto.DeliveryFee.Value;
