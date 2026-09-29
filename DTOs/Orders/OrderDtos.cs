@@ -112,7 +112,9 @@ public record CreateOrderItemDto(
     decimal? VatRate = null,
     string? Size = null,
     string? Color = null,
-    int? CategoryId = null
+    int? CategoryId = null,
+    [property: global::System.Text.Json.Serialization.JsonPropertyName("originalUnitPrice")]
+    decimal? OriginalUnitPrice = null
 );
 
 

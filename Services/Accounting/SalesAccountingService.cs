@@ -316,13 +316,17 @@ public class SalesAccountingService
                     lines.Add((salesDiscAcct, missingDebit, 0, _t.Get("Accounting.OfferDiscountDesc", order.OrderNumber, missingDebit)));
                 }
             }
-            else if (diff > 0 && diff < 0.5m)
+            else if (diff > 0)
             {
                 var revLineIdx = lines.FindIndex(l => l.code == salesRevAcct);
                 if (revLineIdx != -1)
                 {
                     var target = lines[revLineIdx];
                     lines[revLineIdx] = (target.code, target.debit, target.credit + diff, target.desc);
+                }
+                else
+                {
+                    lines.Add((salesRevAcct, 0, diff, _t.Get("Accounting.SalesRevenueDesc", order.OrderNumber)));
                 }
             }
         }

@@ -1737,10 +1737,37 @@ public class OrderService : IOrderService
                         : (itemDto.ProductVariantId.HasValue ? product.Variants.FirstOrDefault(v => v.Id == itemDto.ProductVariantId) : null);
 
                     var existingItemForPrice = order.Items.FirstOrDefault(i => i.ProductId == itemDto.ProductId && (i.ProductVariantId == itemDto.ProductVariantId || (dtoVId > 0 && oldVariantMap.GetValueOrDefault(i) == dtoVId)));
-                    decimal catalogPrice = product.Price + (variant?.PriceAdjustment ?? 0);
-                    decimal originalUnitPrice = isCostSale ? itemDto.UnitPrice 
-                        : (existingItemForPrice != null ? existingItemForPrice.OriginalUnitPrice : catalogPrice);
-                    decimal discountAmount = isCostSale ? 0 : (originalUnitPrice - itemDto.UnitPrice) * itemDto.Quantity;
+                    
+                    bool isWebsiteOrder = order.Source == OrderSource.Website;
+                    decimal basePrice = (isWebsiteOrder && product.OnlinePrice.HasValue && product.OnlinePrice > 0)
+                        ? product.OnlinePrice.Value
+                        : product.Price;
+
+                    decimal variantAdjustment = (isWebsiteOrder && variant?.OnlinePriceAdjustment.HasValue == true)
+                        ? variant.OnlinePriceAdjustment.Value
+                        : (variant?.PriceAdjustment ?? 0);
+
+                    decimal catalogPrice = basePrice + variantAdjustment;
+
+                    decimal originalUnitPrice;
+                    if (isCostSale)
+                    {
+                        originalUnitPrice = itemDto.UnitPrice;
+                    }
+                    else if (itemDto.OriginalUnitPrice.HasValue && itemDto.OriginalUnitPrice.Value >= itemDto.UnitPrice)
+                    {
+                        originalUnitPrice = itemDto.OriginalUnitPrice.Value;
+                    }
+                    else if (existingItemForPrice != null)
+                    {
+                        originalUnitPrice = Math.Max(existingItemForPrice.OriginalUnitPrice, itemDto.UnitPrice);
+                    }
+                    else
+                    {
+                        originalUnitPrice = Math.Max(catalogPrice, itemDto.UnitPrice);
+                    }
+
+                    decimal discountAmount = isCostSale ? 0 : Math.Max(0, (originalUnitPrice - itemDto.UnitPrice) * itemDto.Quantity);
                     decimal totalPrice = itemDto.TotalPrice > 0 ? itemDto.TotalPrice : (itemDto.UnitPrice * itemDto.Quantity);
                     bool hasTax = itemDto.HasTax ?? product.HasTax;
                     decimal vatRateApplied = itemDto.VatRate ?? product.VatRate ?? (store?.VatRatePercent ?? 14);

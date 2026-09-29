@@ -19,7 +19,8 @@ public class BarcodeController : ControllerBase
     public async Task<IActionResult> Scan(
         [FromQuery] string q, 
         [FromQuery] bool byPrice = false, 
-        [FromQuery] int? warehouseId = null)
+        [FromQuery] int? warehouseId = null,
+        [FromQuery] DiscountApplyTo? source = null)
     {
         if (string.IsNullOrWhiteSpace(q)) return BadRequest();
 
@@ -63,6 +64,14 @@ public class BarcodeController : ControllerBase
             ? warehouseStocks.Values.Sum() 
             : product.Variants.Sum(v => v.StockQuantity);
 
+        bool isStoreSource = source == DiscountApplyTo.Store;
+        decimal basePrice = (isStoreSource && product.OnlinePrice.HasValue && product.OnlinePrice > 0)
+            ? product.OnlinePrice.Value
+            : product.Price;
+        decimal? discountPrice = isStoreSource
+            ? (product.OnlineDiscountPrice.HasValue && product.OnlineDiscountPrice > 0 ? product.OnlineDiscountPrice : product.DiscountPrice)
+            : product.DiscountPrice;
+
         // التنسيق المطلوب للـ Frontend (POS & Inventory Count)
         return Ok(new
         {
@@ -70,20 +79,31 @@ public class BarcodeController : ControllerBase
             nameAr = product.NameAr,
             nameEn = product.NameEn,
             sku = product.SKU,
-            price = product.Price,
-            discountPrice = product.DiscountPrice,
+            price = basePrice,
+            discountPrice = discountPrice,
+            onlinePrice = product.OnlinePrice,
+            onlineDiscountPrice = product.OnlineDiscountPrice,
             costPrice = product.CostPrice,
             image = product.Images.FirstOrDefault(i => i.IsMain)?.ImageUrl ?? product.Images.FirstOrDefault()?.ImageUrl,
             totalStock = totalStock,
             matchedVariantId = matchedVariant?.Id,
-            variants = product.Variants.Select(v => new
+            variants = product.Variants.Select(v =>
             {
-                id = v.Id,
-                size = v.Size,
-                color = v.Color,
-                colorAr = v.ColorAr,
-                stockQuantity = warehouseId.HasValue ? (warehouseStocks.TryGetValue(v.Id, out var qty) ? qty : 0) : v.StockQuantity,
-                finalPrice = ((product.DiscountPrice > 0) ? product.DiscountPrice.Value : product.Price) + (v.PriceAdjustment ?? 0)
+                decimal adj = isStoreSource
+                    ? (v.OnlinePriceAdjustment ?? v.PriceAdjustment ?? 0)
+                    : (v.PriceAdjustment ?? 0);
+                decimal pieceSellingPrice = ((discountPrice.HasValue && discountPrice > 0) ? discountPrice.Value : basePrice) + adj;
+                return new
+                {
+                    id = v.Id,
+                    size = v.Size,
+                    color = v.Color,
+                    colorAr = v.ColorAr,
+                    priceAdjustment = v.PriceAdjustment ?? 0,
+                    onlinePriceAdjustment = v.OnlinePriceAdjustment,
+                    stockQuantity = warehouseId.HasValue ? (warehouseStocks.TryGetValue(v.Id, out var qty) ? qty : 0) : v.StockQuantity,
+                    finalPrice = pieceSellingPrice
+                };
             })
         });
     }
