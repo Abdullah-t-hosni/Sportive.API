@@ -1327,10 +1327,15 @@ public class PayrollController : ControllerBase
 
             var totalGross = run.TotalBasicSalary + run.TotalBonuses;
 
+            int lastDay = DateTime.DaysInMonth(run.PeriodYear, run.PeriodMonth);
+            var entryDate = (run.PeriodType != PayrollRunType.Monthly && run.ToDate.HasValue)
+                ? run.ToDate.Value.Date.AddHours(23).AddMinutes(59).AddSeconds(59)
+                : new DateTime(run.PeriodYear, run.PeriodMonth, lastDay, 23, 59, 59);
+
             je = new JournalEntry
             {
                 EntryNumber     = jeNo,
-                EntryDate       = TimeHelper.GetEgyptTime(),
+                EntryDate       = entryDate,
                 Type            = JournalEntryType.Payroll,
                 Status          = JournalEntryStatus.Posted,
                 Description     = _t.Get("HR.PayrollRunDescription", run.PeriodMonth, run.PeriodYear),
