@@ -382,9 +382,12 @@ public class OrdersController : ControllerBase
                 var matched = zones.FirstOrDefault(z => z.Governorates.ToLower().Split(',').Any(g => g.Trim() == city));
                 
                 decimal fee = matched?.Fee ?? store?.FixedDeliveryFee ?? 50;
-                decimal? threshold = matched?.FreeThreshold ?? store?.FreeDeliveryAt ?? 2000;
+                decimal? threshold = (matched?.FreeThreshold.HasValue == true && matched.FreeThreshold.Value > 0)
+                    ? matched.FreeThreshold.Value
+                    : (store?.FreeDeliveryAt ?? 2000);
                 
-                decimal correctFee = (threshold.HasValue && threshold.Value > 0 && order.SubTotal >= threshold.Value) ? 0 : fee;
+                decimal effectiveSub = Math.Max(0, order.SubTotal - order.DiscountAmount - order.TemporalDiscount);
+                decimal correctFee = (threshold.HasValue && threshold.Value > 0 && effectiveSub >= threshold.Value) ? 0 : fee;
                 if (correctFee != order.DeliveryFee)
                 {
                     order.DeliveryFee = correctFee;

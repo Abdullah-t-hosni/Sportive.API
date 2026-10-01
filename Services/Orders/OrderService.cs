@@ -1062,10 +1062,10 @@ public class OrderService : IOrderService
                         _db.CartItems.RemoveRange(remainingCart);
                 }
 
+                decimal? deliveryThreshold = store?.FreeDeliveryAt ?? 2000;
                 if (order.Source == OrderSource.Website && order.FulfillmentType == FulfillmentType.Delivery)
                 {
                     decimal fee = store?.FixedDeliveryFee ?? 50;
-                    decimal? threshold = store?.FreeDeliveryAt ?? 2000;
 
                     if (order.DeliveryAddressId.HasValue)
                     {
@@ -1093,12 +1093,41 @@ public class OrderService : IOrderService
                             if (matched != null)
                             {
                                 fee = matched.Fee;
-                                threshold = matched.FreeThreshold;
+                                if (matched.FreeThreshold.HasValue && matched.FreeThreshold.Value > 0)
+                                {
+                                    deliveryThreshold = matched.FreeThreshold.Value;
+                                }
+                            }
+                        }
+                    }
+                    else if (dto.GuestAddress != null && !string.IsNullOrEmpty(dto.GuestAddress.City))
+                    {
+                        var city = dto.GuestAddress.City.Trim().ToLower();
+                        var districtStr = !string.IsNullOrWhiteSpace(dto.GuestAddress.District) 
+                            ? $"{city} - {dto.GuestAddress.District.Trim().ToLower()}" 
+                            : city;
+
+                        var zones = await _db.ShippingZones.AsNoTracking()
+                            .Where(z => z.IsActive)
+                            .ToListAsync();
+                        
+                        var matched = zones.FirstOrDefault(z => z.Governorates.ToLower().Split(',').Any(g => g.Trim() == districtStr));
+                        if (matched == null)
+                        {
+                            matched = zones.FirstOrDefault(z => z.Governorates.ToLower().Split(',').Any(g => g.Trim() == city));
+                        }
+
+                        if (matched != null)
+                        {
+                            fee = matched.Fee;
+                            if (matched.FreeThreshold.HasValue && matched.FreeThreshold.Value > 0)
+                            {
+                                deliveryThreshold = matched.FreeThreshold.Value;
                             }
                         }
                     }
 
-                    order.DeliveryFee = (threshold.HasValue && threshold.Value > 0 && order.SubTotal >= threshold.Value) ? 0 : fee;
+                    order.DeliveryFee = (deliveryThreshold.HasValue && deliveryThreshold.Value > 0 && order.SubTotal >= deliveryThreshold.Value) ? 0 : fee;
                 }
 
                 // 🎁 NEW: Special Bundle/Quantity Offers Logic (Multi-offer priority & unit tracking)
@@ -1284,6 +1313,16 @@ public class OrderService : IOrderService
                 else
                 {
                     order.DiscountAmount += (dto.DiscountAmount ?? 0);
+                }
+
+                // 🚀 Re-check Free Shipping after discounts: if effective items total meets the threshold, free shipping!
+                if (order.Source == OrderSource.Website && order.FulfillmentType == FulfillmentType.Delivery)
+                {
+                    decimal effectiveNetItems = Math.Max(0, order.SubTotal - order.TemporalDiscount - order.DiscountAmount);
+                    if (deliveryThreshold.HasValue && deliveryThreshold.Value > 0 && effectiveNetItems >= deliveryThreshold.Value)
+                    {
+                        order.DeliveryFee = 0;
+                    }
                 }
 
                 order.TotalAmount = Math.Max(0, order.SubTotal + order.DeliveryFee - order.DiscountAmount - order.TemporalDiscount - order.LoyaltyDiscountAmount);
