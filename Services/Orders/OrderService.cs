@@ -93,13 +93,7 @@ public class OrderService : IOrderService
         if (branchId.HasValue) query = query.Where(o => o.BranchId == branchId.Value);
         if (warehouseId.HasValue) query = query.Where(o => o.WarehouseId == warehouseId.Value);
 
-        // ⚠️ Search: return nothing when query is empty
-        if (string.IsNullOrWhiteSpace(search) && !customerId.HasValue)
-        {
-            // No search term and not filtering by customer — return empty
-            query = query.Where(o => false);
-        }
-        else if (!string.IsNullOrWhiteSpace(search))
+        if (!string.IsNullOrWhiteSpace(search))
         {
             var s = search.Trim().TrimStart('#').Trim();
             // Hash the search term for encrypted phone lookup
