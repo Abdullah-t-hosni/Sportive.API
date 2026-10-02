@@ -297,5 +297,24 @@ public class ImagesController : ControllerBase
         await _db.SaveChangesAsync();
         return NoContent();
     }
+
+    /// <summary>رفع صورة في الشات الداخلي</summary>
+    [Authorize]
+    [HttpPost("chat")]
+    [RequestSizeLimit(10 * 1024 * 1024)] // 10MB
+    public async Task<IActionResult> UploadChatImage(IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(new { message = "لم يتم اختيار ملف" });
+
+        var allowedTypes = new[] { "image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp" };
+        if (!allowedTypes.Contains(file.ContentType.ToLower()))
+            return BadRequest(new { message = "يُسمح فقط بصور JPG, PNG, GIF, WEBP" });
+
+        var result = await _images.UploadAttachmentAsync(file, "chat");
+        if (!result.Success) return BadRequest(new { message = result.Error });
+
+        return Ok(new { url = result.Url });
+    }
 }
 
