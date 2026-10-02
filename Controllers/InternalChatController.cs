@@ -236,15 +236,17 @@ public class InternalChatController : ControllerBase
             })
             .ToListAsync();
 
-        // All staff users for DMs
+        var staffIds = await GetStaffUserIdsAsync();
+
+        // All staff users for DMs (internal employees only)
         var users = await _db.Users
             .AsNoTracking()
-            .Where(u => u.IsActive && u.Id != userId)
+            .Where(u => u.IsActive && u.Id != userId && staffIds.Contains(u.Id))
             .OrderBy(u => u.FullName)
             .Select(u => new
             {
                 id = u.Id,
-                name = u.FullName,
+                name = string.IsNullOrWhiteSpace(u.FullName) ? (u.UserName ?? "موظف") : u.FullName,
                 avatarUrl = u.ProfileImageUrl
             })
             .ToListAsync();
@@ -397,14 +399,16 @@ public class InternalChatController : ControllerBase
     [HttpGet("users")]
     public async Task<IActionResult> GetUsers()
     {
+        var staffIds = await GetStaffUserIdsAsync();
+
         var users = await _db.Users
             .AsNoTracking()
-            .Where(u => u.IsActive)
+            .Where(u => u.IsActive && staffIds.Contains(u.Id))
             .OrderBy(u => u.FullName)
             .Select(u => new
             {
                 id = u.Id,
-                name = u.FullName,
+                name = string.IsNullOrWhiteSpace(u.FullName) ? (u.UserName ?? "موظف") : u.FullName,
                 avatarUrl = u.ProfileImageUrl
             })
             .ToListAsync();
@@ -412,20 +416,37 @@ public class InternalChatController : ControllerBase
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────────
+    private async Task<List<string>> GetStaffUserIdsAsync()
+    {
+        var staffRoleIds = await _db.Roles
+            .Where(r => AppRoles.StaffRoles.Contains(r.Name!))
+            .Select(r => r.Id)
+            .ToListAsync();
+
+        return await _db.UserRoles
+            .Where(ur => staffRoleIds.Contains(ur.RoleId))
+            .Select(ur => ur.UserId)
+            .Distinct()
+            .ToListAsync();
+    }
+
     private async Task EnsureUserInGeneralChannelAsync(string userId)
     {
+        var staffIds = await GetStaffUserIdsAsync();
+        if (!staffIds.Contains(userId)) return;
+
         var general = await _db.InternalChatChannels
             .Include(c => c.Members)
-            .FirstOrDefaultAsync(c => c.Type == InternalChatChannelType.General && c.Name == "عام");
+            .FirstOrDefaultAsync(c => c.Type == InternalChatChannelType.General);
 
         if (general == null)
         {
             general = new InternalChatChannel
             {
-                Name = "عام",
-                Description = "القناة العامة لكل الموظفين",
+                Name = "📢 القناة العامة",
+                Description = "القناة العامة لجميع موظفي الشركة",
                 Type = InternalChatChannelType.General,
-                Icon = "💬",
+                Icon = "📢",
                 CreatedByUserId = userId
             };
             _db.InternalChatChannels.Add(general);
