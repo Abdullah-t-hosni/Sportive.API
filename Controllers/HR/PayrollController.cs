@@ -62,6 +62,17 @@ public class PayrollController : ControllerBase
         try { await _db.Database.ExecuteSqlRawAsync("ALTER TABLE `PayrollRuns` ADD COLUMN `PeriodType` int NOT NULL DEFAULT 1;"); } catch {}
         try { await _db.Database.ExecuteSqlRawAsync("ALTER TABLE `PayrollRuns` ADD COLUMN `FromDate` datetime NULL;"); } catch {}
         try { await _db.Database.ExecuteSqlRawAsync("ALTER TABLE `PayrollRuns` ADD COLUMN `ToDate` datetime NULL;"); } catch {}
+        try { 
+            await _db.Database.ExecuteSqlRawAsync(@"
+                UPDATE PayrollRuns pr 
+                JOIN (
+                    SELECT PayrollRunId, SUM(BasicSalary + TransportationAllowance + CommunicationAllowance + BonusAmount + FixedAllowance + OvertimeAmount + CommissionAmount - DeductionAmount - AdvanceDeducted - AbsenceDeduction) as RealNet 
+                    FROM PayrollItems 
+                    GROUP BY PayrollRunId
+                ) pi ON pr.Id = pi.PayrollRunId 
+                SET pr.TotalNetPayable = pi.RealNet 
+                WHERE ABS(pr.TotalNetPayable - pi.RealNet) > 0.001;"); 
+        } catch {}
 
         var q = _db.PayrollRuns.Include(p => p.Items).ThenInclude(i => i.Employee).AsQueryable();
         if (year.HasValue)  q = q.Where(p => p.PeriodYear  == year.Value);
@@ -102,6 +113,13 @@ public class PayrollController : ControllerBase
 
         // Dynamically sync and self-heal manual and automatic payments
         await PayrollSyncHelper.SyncPayrollRunPaymentsAsync(_db, _core, run.Id);
+
+        var realNet = run.Items.Sum(i => i.NetPayable);
+        if (Math.Abs(run.TotalNetPayable - realNet) > 0.001m)
+        {
+            run.TotalNetPayable = realNet;
+            await _db.SaveChangesAsync();
+        }
 
         return Ok(ToDto(run));
     }
@@ -1166,7 +1184,7 @@ public class PayrollController : ControllerBase
             run.TotalDeductions       = totalDed;
             run.TotalAbsenceDeduction  = totalAbsence;
             run.TotalAdvancesDeducted = totalAdv;
-            run.TotalNetPayable       = totalBasic + totalTrans + totalComm + totalBonus + totalFixedAll + totalOvertime + totalCommission - totalDed - totalAbsence - totalAdv;
+            run.TotalNetPayable       = run.Items.Sum(i => i.NetPayable);
 
             _db.PayrollRuns.Add(run);
             await _db.SaveChangesAsync();
@@ -1579,7 +1597,7 @@ public class PayrollController : ControllerBase
             run.TotalDeductions       = totalDed;
             run.TotalAbsenceDeduction  = totalAbsence;
             run.TotalAdvancesDeducted = totalAdv;
-            run.TotalNetPayable       = totalBasic + totalTrans + totalComm + totalBonus + totalFixedAll + totalOvertime + totalCommission - totalDed - totalAbsence - totalAdv;
+            run.TotalNetPayable       = run.Items.Sum(i => i.NetPayable);
 
             await _db.SaveChangesAsync();
             try { await _audit.LogAsync("UpdatePayrollRun", "PayrollRun", run.Id.ToString(), $"Updated payroll run {run.PayrollNumber}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
@@ -2175,7 +2193,7 @@ public class PayrollController : ControllerBase
         run.TotalBasicSalary, run.TotalTransportation, run.TotalCommunication, run.TotalBonuses,
         run.TotalFixedAllowances,
         run.TotalOvertimeAmount,
-        run.TotalDeductions + run.TotalAbsenceDeduction,
+        run.TotalDeductions,
         run.TotalAdvancesDeducted, run.TotalNetPayable, (int)run.Status, run.Notes,
         run.JournalEntryId, run.PaymentJournalEntryId, run.CreatedAt,
         run.Items.Select(i => new PayrollItemDto(
