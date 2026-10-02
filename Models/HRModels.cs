@@ -56,6 +56,7 @@ public enum CommissionBasis
 {
     NetSales = 1,  // صافي المبيعات (بعد الخصم والمرتجع)
     GrossSales = 2, // إجمالي المبيعات (قبل الخصم)
+    OnlineStoreDeliveredNetSales = 3 // صافي مبيعات المتجر الإلكتروني (الطلبات المسلّمة)
 }
 
 public enum AttendanceMode

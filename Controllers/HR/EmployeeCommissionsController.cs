@@ -23,6 +23,31 @@ public class EmployeeCommissionsController : ControllerBase
     private readonly IAuditService _audit;
     public EmployeeCommissionsController(AppDbContext db, ITranslator t, IAuditService audit) { _db = db; _t = t; _audit = audit; }
 
+    private static bool IsStoreEmployee(Employee? emp)
+        => emp != null && (emp.BranchId == 5 || emp.CostCenter == OrderSource.Website);
+
+    private static bool IsStoreGroup(CommissionGroup g)
+        => g.Members.Any(m => m.BranchId == 5 || m.CostCenter == OrderSource.Website);
+
+    private static decimal CalculateStoreNetSales(IEnumerable<Order> orders)
+    {
+        return orders
+            .Where(o => (o.Source == OrderSource.Website || o.BranchId == 5) &&
+                        (o.Status == OrderStatus.Delivered || o.Status == OrderStatus.PartiallyReturned))
+            .Sum(o => {
+                var ret = o.Items.Sum(i => i.Quantity > 0 ? (i.TotalPrice / i.Quantity) * i.ReturnedQuantity : 0m);
+                return Math.Max(0m, (o.TotalAmount - o.DeliveryFee) - ret);
+            });
+    }
+
+    private static int CalculateStoreDeliveredItemsCount(IEnumerable<Order> orders)
+    {
+        return orders
+            .Where(o => (o.Source == OrderSource.Website || o.BranchId == 5) &&
+                        (o.Status == OrderStatus.Delivered || o.Status == OrderStatus.PartiallyReturned))
+            .Sum(o => o.Items.Sum(i => Math.Max(0, i.Quantity - i.ReturnedQuantity)));
+    }
+
     [HttpGet("{employeeId}")]
     public async Task<ActionResult<CommissionSettingDto>> GetCommissionSetting(int employeeId)
     {
@@ -91,7 +116,16 @@ public class EmployeeCommissionsController : ControllerBase
         
         var orders = await _db.Orders
             .Include(o => o.Items)
-            .Where(o => o.CreatedAt >= startOfMonth && o.CreatedAt < endOfMonth && o.Status != OrderStatus.Cancelled)
+            .Where(o => o.Status != OrderStatus.Cancelled &&
+                (
+                    (o.CreatedAt >= startOfMonth && o.CreatedAt < endOfMonth)
+                    ||
+                    ((o.Source == OrderSource.Website || o.BranchId == 5) &&
+                     (o.Status == OrderStatus.Delivered || o.Status == OrderStatus.PartiallyReturned) &&
+                     (o.ActualDeliveryDate ?? o.CreatedAt) >= startOfMonth &&
+                     (o.ActualDeliveryDate ?? o.CreatedAt) < endOfMonth)
+                )
+            )
             .ToListAsync();
 
         var employees = await _db.Employees
@@ -113,13 +147,26 @@ public class EmployeeCommissionsController : ControllerBase
 
         foreach (var g in groups)
         {
-            var memberUserIds = g.Members.Select(m => m.AppUserId).Where(id => id != null).OfType<string>().ToList();
-            var memberIds = g.Members.Select(m => m.Id.ToString()).ToList();
-            
-            var groupOrders = orders.Where(o => 
-                (o.SalesPersonId != null && memberUserIds.Contains(o.SalesPersonId)) || 
-                (o.SalesPersonId != null && memberIds.Contains(o.SalesPersonId))
-            ).ToList();
+            bool isStoreGrp = IsStoreGroup(g);
+            List<Order> groupOrders;
+            if (isStoreGrp)
+            {
+                groupOrders = orders.Where(o => 
+                    (o.Source == OrderSource.Website || o.BranchId == 5) &&
+                    (o.Status == OrderStatus.Delivered || o.Status == OrderStatus.PartiallyReturned) &&
+                    ((o.ActualDeliveryDate ?? o.CreatedAt) >= startOfMonth && (o.ActualDeliveryDate ?? o.CreatedAt) < endOfMonth)
+                ).ToList();
+            }
+            else
+            {
+                var memberUserIds = g.Members.Select(m => m.AppUserId).Where(id => id != null).OfType<string>().ToList();
+                var memberIds = g.Members.Select(m => m.Id.ToString()).ToList();
+                
+                groupOrders = orders.Where(o => 
+                    (o.SalesPersonId != null && memberUserIds.Contains(o.SalesPersonId)) || 
+                    (o.SalesPersonId != null && memberIds.Contains(o.SalesPersonId))
+                ).ToList();
+            }
             
             var scheme = g.CommissionSchemeId != null 
                 ? await _db.CommissionSchemes.Include(s => s.Tiers).FirstOrDefaultAsync(s => s.Id == g.CommissionSchemeId)
@@ -133,11 +180,28 @@ public class EmployeeCommissionsController : ControllerBase
                 ? scheme.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList() 
                 : g.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList();
 
-            var returnsAmount = groupOrders.Sum(o => o.Status == OrderStatus.Returned ? o.TotalAmount : o.Items.Sum(i => i.Quantity > 0 ? (i.TotalPrice / i.Quantity) * i.ReturnedQuantity : 0));
+            bool isStoreGrpComm = isStoreGrp || basis == CommissionBasis.OnlineStoreDeliveredNetSales;
+            if (isStoreGrpComm)
+            {
+                groupOrders = orders.Where(o => 
+                    (o.Source == OrderSource.Website || o.BranchId == 5) &&
+                    (o.Status == OrderStatus.Delivered || o.Status == OrderStatus.PartiallyReturned) &&
+                    ((o.ActualDeliveryDate ?? o.CreatedAt) >= startOfMonth && (o.ActualDeliveryDate ?? o.CreatedAt) < endOfMonth)
+                ).ToList();
+            }
 
-            decimal relevantSales = basis == CommissionBasis.NetSales 
-                ? groupOrders.Sum(o => o.TotalAmount) - returnsAmount
-                : groupOrders.Sum(o => o.SubTotal) - returnsAmount;
+            decimal relevantSales = 0;
+            if (isStoreGrpComm)
+            {
+                relevantSales = CalculateStoreNetSales(groupOrders);
+            }
+            else
+            {
+                var returnsAmount = groupOrders.Sum(o => o.Status == OrderStatus.Returned ? o.TotalAmount : o.Items.Sum(i => i.Quantity > 0 ? (i.TotalPrice / i.Quantity) * i.ReturnedQuantity : 0));
+                relevantSales = basis == CommissionBasis.NetSales 
+                    ? groupOrders.Sum(o => o.TotalAmount) - returnsAmount
+                    : groupOrders.Sum(o => o.SubTotal) - returnsAmount;
+            }
 
             decimal earnedCommission = 0;
 
@@ -149,10 +213,18 @@ public class EmployeeCommissionsController : ControllerBase
                 }
                 else if (type == CommissionType.FixedAmountPerItem)
                 {
-                    var orderIds = groupOrders.Select(o => o.Id).ToList();
-                    var itemsCount = await _db.OrderItems
-                        .Where(oi => orderIds.Contains(oi.OrderId))
-                        .SumAsync(oi => oi.Quantity);
+                    int itemsCount;
+                    if (isStoreGrpComm)
+                    {
+                        itemsCount = CalculateStoreDeliveredItemsCount(groupOrders);
+                    }
+                    else
+                    {
+                        var orderIds = groupOrders.Select(o => o.Id).ToList();
+                        itemsCount = await _db.OrderItems
+                            .Where(oi => orderIds.Contains(oi.OrderId))
+                            .SumAsync(oi => oi.Quantity);
+                    }
                     
                     earnedCommission = itemsCount * defaultRate;
                 }
@@ -243,10 +315,23 @@ public class EmployeeCommissionsController : ControllerBase
             }
             else if (e.CommissionSetting != null)
             {
-                var empOrders = orders.Where(o => 
-                    o.SalesPersonId == e.AppUserId || 
-                    o.SalesPersonId == e.Id.ToString()
-                ).ToList();
+                bool isStoreEmp = IsStoreEmployee(e);
+                List<Order> empOrders;
+                if (isStoreEmp)
+                {
+                    empOrders = orders.Where(o => 
+                        (o.Source == OrderSource.Website || o.BranchId == 5) &&
+                        (o.Status == OrderStatus.Delivered || o.Status == OrderStatus.PartiallyReturned) &&
+                        ((o.ActualDeliveryDate ?? o.CreatedAt) >= startOfMonth && (o.ActualDeliveryDate ?? o.CreatedAt) < endOfMonth)
+                    ).ToList();
+                }
+                else
+                {
+                    empOrders = orders.Where(o => 
+                        o.SalesPersonId == e.AppUserId || 
+                        o.SalesPersonId == e.Id.ToString()
+                    ).ToList();
+                }
 
                 var scheme = e.CommissionSetting.CommissionSchemeId != null 
                     ? await _db.CommissionSchemes.Include(s => s.Tiers).FirstOrDefaultAsync(s => s.Id == e.CommissionSetting.CommissionSchemeId)
@@ -260,11 +345,27 @@ public class EmployeeCommissionsController : ControllerBase
                     ? scheme.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList() 
                     : e.CommissionSetting.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList();
 
-                var returnsAmount = empOrders.Sum(o => o.Status == OrderStatus.Returned ? o.TotalAmount : o.Items.Sum(i => i.Quantity > 0 ? (i.TotalPrice / i.Quantity) * i.ReturnedQuantity : 0));
+                bool isStoreComm = isStoreEmp || basis == CommissionBasis.OnlineStoreDeliveredNetSales;
+                if (isStoreComm)
+                {
+                    empOrders = orders.Where(o => 
+                        (o.Source == OrderSource.Website || o.BranchId == 5) &&
+                        (o.Status == OrderStatus.Delivered || o.Status == OrderStatus.PartiallyReturned) &&
+                        ((o.ActualDeliveryDate ?? o.CreatedAt) >= startOfMonth && (o.ActualDeliveryDate ?? o.CreatedAt) < endOfMonth)
+                    ).ToList();
+                }
 
-                relevantSales = basis == CommissionBasis.NetSales 
-                    ? empOrders.Sum(o => o.TotalAmount) - returnsAmount
-                    : empOrders.Sum(o => o.SubTotal) - returnsAmount;
+                if (isStoreComm)
+                {
+                    relevantSales = CalculateStoreNetSales(empOrders);
+                }
+                else
+                {
+                    var returnsAmount = empOrders.Sum(o => o.Status == OrderStatus.Returned ? o.TotalAmount : o.Items.Sum(i => i.Quantity > 0 ? (i.TotalPrice / i.Quantity) * i.ReturnedQuantity : 0));
+                    relevantSales = basis == CommissionBasis.NetSales 
+                        ? empOrders.Sum(o => o.TotalAmount) - returnsAmount
+                        : empOrders.Sum(o => o.SubTotal) - returnsAmount;
+                }
 
                 if (type == CommissionType.TargetAchievementTiers || relevantSales >= targetAmount)
                 {
@@ -274,10 +375,18 @@ public class EmployeeCommissionsController : ControllerBase
                     }
                     else if (type == CommissionType.FixedAmountPerItem)
                     {
-                        var orderIds = empOrders.Select(o => o.Id).ToList();
-                        var itemsCount = await _db.OrderItems
-                            .Where(oi => orderIds.Contains(oi.OrderId))
-                            .SumAsync(oi => oi.Quantity);
+                        int itemsCount;
+                        if (isStoreComm)
+                        {
+                            itemsCount = CalculateStoreDeliveredItemsCount(empOrders);
+                        }
+                        else
+                        {
+                            var orderIds = empOrders.Select(o => o.Id).ToList();
+                            itemsCount = await _db.OrderItems
+                                .Where(oi => orderIds.Contains(oi.OrderId))
+                                .SumAsync(oi => oi.Quantity);
+                        }
                         
                         earnedCommission = itemsCount * defaultRate;
                     }
