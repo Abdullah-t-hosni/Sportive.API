@@ -47,7 +47,7 @@ public class InternalChatController : ControllerBase
             .AsNoTracking()
             .Include(c => c.Members)
             .Include(c => c.Messages.OrderByDescending(msg => msg.SentAt).Take(1))
-            .Where(c => myMemberships.Contains(c.Id) && !c.IsArchived && c.Type == InternalChatChannelType.Direct)
+            .Where(c => myMemberships.Contains(c.Id) && !c.IsArchived && (c.Type == InternalChatChannelType.Direct || c.Type == InternalChatChannelType.Group))
             .OrderByDescending(c => c.Messages.Max(m => (DateTime?)m.SentAt) ?? c.CreatedAt)
             .ToListAsync();
 
@@ -80,9 +80,11 @@ public class InternalChatController : ControllerBase
                 originalName = c.Name,
                 description = c.Description,
                 type = c.Type.ToString(),
-                icon = c.Icon,
+                icon = c.Icon ?? (c.Type == InternalChatChannelType.Group ? "👥" : null),
                 unreadCount = unread,
                 membersCount = c.Members.Count,
+                createdByUserId = c.CreatedByUserId,
+                members = c.Members.Select(m => new { userId = m.UserId, userName = m.UserName, isAdmin = m.IsAdmin }).ToList(),
                 otherUserId = otherUserId,
                 lastMessage = lastMsg == null ? null : new
                 {
@@ -435,6 +437,50 @@ public class InternalChatController : ControllerBase
         return Ok(new { success = true });
     }
 
+    // ── POST /api/internal-chat/channels/{id}/members ─────────────────────────
+    [HttpPost("channels/{channelId}/members")]
+    public async Task<IActionResult> AddMember(int channelId, [FromBody] AddMemberRequest req)
+    {
+        var channel = await _db.InternalChatChannels.Include(c => c.Members).FirstOrDefaultAsync(c => c.Id == channelId);
+        if (channel == null || channel.Type == InternalChatChannelType.Direct) return BadRequest("Invalid channel");
+
+        if (string.IsNullOrEmpty(req.UserId)) return BadRequest("User ID is required");
+
+        var already = channel.Members.Any(m => m.UserId == req.UserId);
+        if (already) return Ok(new { success = true, alreadyMember = true });
+
+        var user = await _db.Users.FindAsync(req.UserId);
+        if (user == null) return NotFound("User not found");
+
+        _db.InternalChatMembers.Add(new InternalChatMember
+        {
+            ChannelId = channelId,
+            UserId = req.UserId,
+            UserName = user.FullName ?? user.UserName ?? "عضو"
+        });
+        await _db.SaveChangesAsync();
+
+        await _hub.Clients.All.SendAsync("InternalChatChannelUpdated", new { channelId });
+
+        return Ok(new { success = true });
+    }
+
+    // ── DELETE /api/internal-chat/channels/{id}/members/{targetUserId} ────────
+    [HttpDelete("channels/{channelId}/members/{targetUserId}")]
+    public async Task<IActionResult> RemoveMember(int channelId, string targetUserId)
+    {
+        var membership = await _db.InternalChatMembers
+            .FirstOrDefaultAsync(m => m.ChannelId == channelId && m.UserId == targetUserId);
+        if (membership == null) return NotFound();
+
+        _db.InternalChatMembers.Remove(membership);
+        await _db.SaveChangesAsync();
+
+        await _hub.Clients.All.SendAsync("InternalChatChannelUpdated", new { channelId });
+
+        return Ok(new { success = true });
+    }
+
     // ── POST /api/internal-chat/channels/cleanup-departments ──────────────────
     [HttpPost("channels/cleanup-departments")]
     public async Task<IActionResult> CleanupDepartmentChannels()
@@ -571,5 +617,10 @@ public class InternalChatController : ControllerBase
         public string? Icon { get; set; }
         public string? TargetUserId { get; set; } // For Direct messages
         public List<string>? MemberIds { get; set; }
+    }
+
+    public class AddMemberRequest
+    {
+        public string UserId { get; set; } = "";
     }
 }
