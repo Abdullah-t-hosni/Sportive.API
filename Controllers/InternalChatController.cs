@@ -51,17 +51,36 @@ public class InternalChatController : ControllerBase
             .OrderByDescending(c => c.Messages.Max(m => (DateTime?)m.SentAt) ?? c.CreatedAt)
             .ToListAsync();
 
-        // Get unread counts
+        // Get unread counts accurately per channel
         var memberLastRead = await _db.InternalChatMembers
             .AsNoTracking()
             .Where(m => m.UserId == userId && myMemberships.Contains(m.ChannelId))
             .ToDictionaryAsync(m => m.ChannelId, m => m.LastReadAt);
 
+        // Fetch unread count grouped by channel for all messages sent by others
+        var unreadCounts = await _db.InternalChatMessages
+            .AsNoTracking()
+            .Where(m => myMemberships.Contains(m.ChannelId) && m.SenderId != userId && !m.IsDeleted)
+            .GroupBy(m => m.ChannelId)
+            .Select(g => new
+            {
+                ChannelId = g.Key,
+                Messages = g.Select(x => new { x.SentAt })
+            })
+            .ToListAsync();
+
+        var unreadMap = new Dictionary<int, int>();
+        foreach (var ug in unreadCounts)
+        {
+            var lastRead = memberLastRead.TryGetValue(ug.ChannelId, out var lr) ? lr : null;
+            var unread = ug.Messages.Count(m => lastRead == null || m.SentAt > lastRead);
+            unreadMap[ug.ChannelId] = unread;
+        }
+
         var result = channels.Select(c =>
         {
             var lastMsg = c.Messages.OrderByDescending(m => m.SentAt).FirstOrDefault();
-            var lastReadAt = memberLastRead.TryGetValue(c.Id, out var lr) ? lr : null;
-            var unread = c.Messages.Count(m => m.SenderId != userId && (lastReadAt == null || m.SentAt > lastReadAt));
+            var unread = unreadMap.TryGetValue(c.Id, out var u) ? u : 0;
 
             // For Direct channels, get the other user's name
             string displayName = c.Name;
@@ -149,6 +168,11 @@ public class InternalChatController : ControllerBase
             .AnyAsync(m => m.ChannelId == channelId && m.UserId == userId);
         if (!isMember) return Forbid();
 
+        var channel = await _db.InternalChatChannels
+            .AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == channelId);
+        if (channel == null) return NotFound();
+
         var text = req.Text?.Trim() ?? "";
         if (string.IsNullOrWhiteSpace(text) && string.IsNullOrWhiteSpace(req.MediaUrl))
         {
@@ -206,51 +230,66 @@ public class InternalChatController : ControllerBase
             }
         }
 
-        var mapped = MapMessage(msg, userId);
+        var memberUserIds = await _db.InternalChatMembers
+            .AsNoTracking()
+            .Where(m => m.ChannelId == channelId)
+            .Select(m => m.UserId)
+            .ToListAsync();
 
-        // Broadcast via SignalR to all channel members
-        try
+        var mapped = MapMessage(msg, userId, channel.Name, channel.Type.ToString());
+
+        // 🔒 STRICT PRIVACY ISOLATION:
+        // Broadcast via SignalR ONLY to verified channel members (Zero leaks to non-members)
+        foreach (var memberId in memberUserIds)
         {
-            await _hub.Clients.All.SendAsync("ReceiveInternalChatMessage", mapped);
-        }
-        catch
-        {
-            // Silently ignore SignalR broadcast failure so HTTP 200 is still returned
+            try
+            {
+                await _hub.Clients.Group($"user_{memberId}").SendAsync("ReceiveInternalChatMessage", mapped);
+            }
+            catch
+            {
+                // Silently ignore individual SignalR delivery failure so HTTP 200 is still returned
+            }
         }
 
-        // Send mention notifications
+        // Send mention notifications strictly to mentioned users who are verified members of this channel
         if (!string.IsNullOrWhiteSpace(req.MentionedUserIds))
         {
             var mentionedIds = req.MentionedUserIds.Split(',', StringSplitOptions.RemoveEmptyEntries);
-            foreach (var mentionedId in mentionedIds.Where(id => id != userId))
+            foreach (var mentionedId in mentionedIds.Where(id => id != userId && memberUserIds.Contains(id)))
             {
-                await _hub.Clients.Group($"user_{mentionedId}").SendAsync("ReceiveInternalChatMention", new
+                try
                 {
-                    channelId,
-                    messageId = msg.Id,
-                    fromName = userName,
-                    preview = msg.Text.Length > 80 ? msg.Text[..80] + "..." : msg.Text
-                });
+                    await _hub.Clients.Group($"user_{mentionedId}").SendAsync("ReceiveInternalChatMention", new
+                    {
+                        channelId,
+                        channelName = channel.Name,
+                        messageId = msg.Id,
+                        fromName = userName,
+                        preview = msg.Text.Length > 80 ? msg.Text[..80] + "..." : msg.Text
+                    });
+                }
+                catch {}
             }
         }
 
         return Ok(mapped);
     }
 
-    // ── GET /api/internal-chat/channels ─────────────────────────────────────────
-    /// <summary>Get all available channels + users for DM</summary>
+    // ── GET /api/internal-chat/available ─────────────────────────────────────────
+    /// <summary>Get available public channels + staff users for DM</summary>
     [HttpGet("available")]
     public async Task<IActionResult> GetAvailable()
     {
         var userId = UserId;
 
-        // All public channels (General + Department)
+        // STRICT PRIVACY: Only public channels (General) are publicly discoverable.
+        // Private groups (Group) are NEVER listed to non-members!
         var publicChannels = await _db.InternalChatChannels
             .AsNoTracking()
             .Include(c => c.Members)
-            .Where(c => !c.IsArchived && c.Type != InternalChatChannelType.Direct)
-            .OrderBy(c => c.Type)
-            .ThenBy(c => c.Name)
+            .Where(c => !c.IsArchived && c.Type == InternalChatChannelType.General)
+            .OrderBy(c => c.Name)
             .Select(c => new
             {
                 id = c.Id,
@@ -315,16 +354,35 @@ public class InternalChatController : ControllerBase
             };
             _db.InternalChatChannels.Add(channel);
             await _db.SaveChangesAsync();
+
+            // 🔒 Notify ONLY the two participants
+            try
+            {
+                await _hub.Clients.Group($"user_{userId}").SendAsync("InternalChatChannelCreated", new
+                {
+                    channelId = channel.Id,
+                    name = channel.Name,
+                    type = "Direct"
+                });
+                await _hub.Clients.Group($"user_{req.TargetUserId}").SendAsync("InternalChatChannelCreated", new
+                {
+                    channelId = channel.Id,
+                    name = userName,
+                    type = "Direct"
+                });
+            }
+            catch {}
+
             return Ok(new { id = channel.Id, alreadyExists = false });
         }
 
-        // Regular channel
+        // Regular channel / group
         var newChannel = new InternalChatChannel
         {
-            Name = req.Name?.Trim() ?? "قناة جديدة",
+            Name = req.Name?.Trim() ?? "مجموعة جديدة",
             Description = req.Description,
-            Type = Enum.TryParse<InternalChatChannelType>(req.Type, out var ct) ? ct : InternalChatChannelType.Department,
-            Icon = req.Icon,
+            Type = Enum.TryParse<InternalChatChannelType>(req.Type, out var ct) ? ct : InternalChatChannelType.Group,
+            Icon = req.Icon ?? "👥",
             CreatedByUserId = userId,
             Members = new List<InternalChatMember>
             {
@@ -332,7 +390,7 @@ public class InternalChatController : ControllerBase
             }
         };
 
-        if (req.MemberIds != null)
+        if (req.MemberIds != null && req.MemberIds.Count > 0)
         {
             var members = await _db.Users
                 .Where(u => req.MemberIds.Contains(u.Id))
@@ -344,13 +402,20 @@ public class InternalChatController : ControllerBase
         _db.InternalChatChannels.Add(newChannel);
         await _db.SaveChangesAsync();
 
-        // Notify new members
-        await _hub.Clients.All.SendAsync("InternalChatChannelCreated", new
+        // 🔒 Notify ONLY members of this group (No leak to the rest of the company)
+        foreach (var m in newChannel.Members)
         {
-            channelId = newChannel.Id,
-            name = newChannel.Name,
-            type = newChannel.Type.ToString()
-        });
+            try
+            {
+                await _hub.Clients.Group($"user_{m.UserId}").SendAsync("InternalChatChannelCreated", new
+                {
+                    channelId = newChannel.Id,
+                    name = newChannel.Name,
+                    type = newChannel.Type.ToString()
+                });
+            }
+            catch {}
+        }
 
         return Ok(new { id = newChannel.Id });
     }
@@ -360,12 +425,17 @@ public class InternalChatController : ControllerBase
     public async Task<IActionResult> JoinChannel(int channelId)
     {
         var userId = UserId;
+        var channel = await _db.InternalChatChannels.FindAsync(channelId);
+        if (channel == null) return NotFound();
+
+        // 🔒 STRICT PRIVACY: Only public General channels allow self-joining!
+        // Private Direct chats and private groups CANNOT be joined arbitrarily without invitation!
+        if (channel.Type != InternalChatChannelType.General) 
+            return Forbid();
+
         var already = await _db.InternalChatMembers
             .AnyAsync(m => m.ChannelId == channelId && m.UserId == userId);
         if (already) return Ok(new { success = true });
-
-        var channel = await _db.InternalChatChannels.FindAsync(channelId);
-        if (channel == null || channel.Type == InternalChatChannelType.Direct) return NotFound();
 
         _db.InternalChatMembers.Add(new InternalChatMember
         {
@@ -385,16 +455,21 @@ public class InternalChatController : ControllerBase
         var msg = await _db.InternalChatMessages.FindAsync(messageId);
         if (msg == null) return NotFound();
 
+        // Verify channel membership
+        var isMember = await _db.InternalChatMembers.AnyAsync(m => m.ChannelId == msg.ChannelId && m.UserId == userId);
+        if (!isMember) return Forbid();
+
         var already = await _db.InternalChatReadReceipts
             .AnyAsync(r => r.MessageId == messageId && r.UserId == userId);
-        if (already) return Ok();
-
-        _db.InternalChatReadReceipts.Add(new InternalChatReadReceipt
+        if (!already)
         {
-            MessageId = messageId,
-            UserId = userId,
-            UserName = UserName
-        });
+            _db.InternalChatReadReceipts.Add(new InternalChatReadReceipt
+            {
+                MessageId = messageId,
+                UserId = userId,
+                UserName = UserName
+            });
+        }
 
         // Update channel last read
         var membership = await _db.InternalChatMembers
@@ -402,6 +477,24 @@ public class InternalChatController : ControllerBase
         if (membership != null) membership.LastReadAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
+
+        // Notify the message sender for real-time double blue check
+        if (msg.SenderId != userId)
+        {
+            try
+            {
+                await _hub.Clients.Group($"user_{msg.SenderId}").SendAsync("InternalChatMessageRead", new
+                {
+                    channelId = msg.ChannelId,
+                    messageId = msg.Id,
+                    userId,
+                    userName = UserName,
+                    readAt = DateTime.UtcNow
+                });
+            }
+            catch {}
+        }
+
         return Ok();
     }
 
@@ -412,13 +505,33 @@ public class InternalChatController : ControllerBase
         var userId = UserId;
         var msg = await _db.InternalChatMessages.FindAsync(messageId);
         if (msg == null) return NotFound();
-        if (msg.SenderId != userId) return Forbid();
+
+        var isMember = await _db.InternalChatMembers.AnyAsync(m => m.ChannelId == msg.ChannelId && m.UserId == userId);
+        if (!isMember) return Forbid();
+
+        var isAdmin = User.IsInRole("Admin") || User.IsInRole("SuperAdmin");
+        if (msg.SenderId != userId && !isAdmin) return Forbid();
 
         msg.IsDeleted = true;
         msg.Text = "تم حذف هذه الرسالة";
         await _db.SaveChangesAsync();
 
-        await _hub.Clients.All.SendAsync("InternalChatMessageDeleted", new { channelId = msg.ChannelId, messageId });
+        // 🔒 Notify ONLY channel members
+        var memberIds = await _db.InternalChatMembers
+            .AsNoTracking()
+            .Where(m => m.ChannelId == msg.ChannelId)
+            .Select(m => m.UserId)
+            .ToListAsync();
+
+        foreach (var mId in memberIds)
+        {
+            try
+            {
+                await _hub.Clients.Group($"user_{mId}").SendAsync("InternalChatMessageDeleted", new { channelId = msg.ChannelId, messageId });
+            }
+            catch {}
+        }
+
         return Ok();
     }
 
@@ -426,14 +539,34 @@ public class InternalChatController : ControllerBase
     [HttpDelete("channels/{channelId}")]
     public async Task<IActionResult> DeleteChannel(int channelId)
     {
+        var userId = UserId;
         var channel = await _db.InternalChatChannels
             .Include(c => c.Members)
             .Include(c => c.Messages)
             .FirstOrDefaultAsync(c => c.Id == channelId);
         if (channel == null) return NotFound();
 
+        // 🔒 Security check: Only creator or admin can delete channel
+        var canDelete = channel.CreatedByUserId == userId 
+            || channel.Members.Any(m => m.UserId == userId && m.IsAdmin) 
+            || User.IsInRole("Admin") || User.IsInRole("SuperAdmin");
+        if (!canDelete) return Forbid();
+
+        var memberUserIds = channel.Members.Select(m => m.UserId).ToList();
+
         _db.InternalChatChannels.Remove(channel);
         await _db.SaveChangesAsync();
+
+        // 🔒 Notify only members of this channel
+        foreach (var mId in memberUserIds)
+        {
+            try
+            {
+                await _hub.Clients.Group($"user_{mId}").SendAsync("InternalChatChannelDeleted", new { channelId });
+            }
+            catch {}
+        }
+
         return Ok(new { success = true });
     }
 
@@ -441,8 +574,15 @@ public class InternalChatController : ControllerBase
     [HttpPost("channels/{channelId}/members")]
     public async Task<IActionResult> AddMember(int channelId, [FromBody] AddMemberRequest req)
     {
+        var userId = UserId;
         var channel = await _db.InternalChatChannels.Include(c => c.Members).FirstOrDefaultAsync(c => c.Id == channelId);
         if (channel == null || channel.Type == InternalChatChannelType.Direct) return BadRequest("Invalid channel");
+
+        // 🔒 Security check: only creator, channel admin, or system admin can add members
+        var canAdd = channel.CreatedByUserId == userId 
+            || channel.Members.Any(m => m.UserId == userId && m.IsAdmin) 
+            || User.IsInRole("Admin") || User.IsInRole("SuperAdmin");
+        if (!canAdd) return Forbid();
 
         if (string.IsNullOrEmpty(req.UserId)) return BadRequest("User ID is required");
 
@@ -452,15 +592,36 @@ public class InternalChatController : ControllerBase
         var user = await _db.Users.FindAsync(req.UserId);
         if (user == null) return NotFound("User not found");
 
-        _db.InternalChatMembers.Add(new InternalChatMember
+        var newMember = new InternalChatMember
         {
             ChannelId = channelId,
             UserId = req.UserId,
             UserName = user.FullName ?? user.UserName ?? "عضو"
-        });
+        };
+        _db.InternalChatMembers.Add(newMember);
         await _db.SaveChangesAsync();
 
-        await _hub.Clients.All.SendAsync("InternalChatChannelUpdated", new { channelId });
+        // 🔒 Notify the newly added member
+        try
+        {
+            await _hub.Clients.Group($"user_{req.UserId}").SendAsync("InternalChatChannelCreated", new
+            {
+                channelId = channel.Id,
+                name = channel.Name,
+                type = channel.Type.ToString()
+            });
+        }
+        catch {}
+
+        // 🔒 Notify existing members
+        foreach (var m in channel.Members)
+        {
+            try
+            {
+                await _hub.Clients.Group($"user_{m.UserId}").SendAsync("InternalChatChannelUpdated", new { channelId });
+            }
+            catch {}
+        }
 
         return Ok(new { success = true });
     }
@@ -469,14 +630,40 @@ public class InternalChatController : ControllerBase
     [HttpDelete("channels/{channelId}/members/{targetUserId}")]
     public async Task<IActionResult> RemoveMember(int channelId, string targetUserId)
     {
-        var membership = await _db.InternalChatMembers
-            .FirstOrDefaultAsync(m => m.ChannelId == channelId && m.UserId == targetUserId);
+        var userId = UserId;
+        var channel = await _db.InternalChatChannels.Include(c => c.Members).FirstOrDefaultAsync(c => c.Id == channelId);
+        if (channel == null) return NotFound();
+
+        // 🔒 Security check: user can leave themselves, OR creator/channel admin/system admin can kick
+        var canRemove = targetUserId == userId 
+            || channel.CreatedByUserId == userId 
+            || channel.Members.Any(m => m.UserId == userId && m.IsAdmin) 
+            || User.IsInRole("Admin") || User.IsInRole("SuperAdmin");
+        if (!canRemove) return Forbid();
+
+        var membership = channel.Members.FirstOrDefault(m => m.UserId == targetUserId);
         if (membership == null) return NotFound();
 
         _db.InternalChatMembers.Remove(membership);
         await _db.SaveChangesAsync();
 
-        await _hub.Clients.All.SendAsync("InternalChatChannelUpdated", new { channelId });
+        // 🔒 Notify the removed user
+        try
+        {
+            await _hub.Clients.Group($"user_{targetUserId}").SendAsync("InternalChatChannelDeleted", new { channelId });
+        }
+        catch {}
+
+        // 🔒 Notify remaining members
+        var remainingIds = channel.Members.Where(m => m.UserId != targetUserId).Select(m => m.UserId).ToList();
+        foreach (var rId in remainingIds)
+        {
+            try
+            {
+                await _hub.Clients.Group($"user_{rId}").SendAsync("InternalChatChannelUpdated", new { channelId });
+            }
+            catch {}
+        }
 
         return Ok(new { success = true });
     }
@@ -485,8 +672,10 @@ public class InternalChatController : ControllerBase
     [HttpPost("channels/cleanup-departments")]
     public async Task<IActionResult> CleanupDepartmentChannels()
     {
+        if (!User.IsInRole("Admin") && !User.IsInRole("SuperAdmin")) return Forbid();
+
         var depts = await _db.InternalChatChannels
-            .Where(c => c.Type != InternalChatChannelType.Direct)
+            .Where(c => c.Type != InternalChatChannelType.Direct && c.Type != InternalChatChannelType.Group)
             .ToListAsync();
         _db.InternalChatChannels.RemoveRange(depts);
         await _db.SaveChangesAsync();
@@ -528,48 +717,14 @@ public class InternalChatController : ControllerBase
             .ToListAsync();
     }
 
-    private async Task EnsureUserInGeneralChannelAsync(string userId)
-    {
-        var staffIds = await GetStaffUserIdsAsync();
-        if (!staffIds.Contains(userId)) return;
-
-        var general = await _db.InternalChatChannels
-            .Include(c => c.Members)
-            .FirstOrDefaultAsync(c => c.Type == InternalChatChannelType.General);
-
-        if (general == null)
-        {
-            general = new InternalChatChannel
-            {
-                Name = "📢 القناة العامة",
-                Description = "القناة العامة لجميع موظفي الشركة",
-                Type = InternalChatChannelType.General,
-                Icon = "📢",
-                CreatedByUserId = userId
-            };
-            _db.InternalChatChannels.Add(general);
-            await _db.SaveChangesAsync();
-        }
-
-        var isMember = general.Members.Any(m => m.UserId == userId);
-        if (!isMember)
-        {
-            _db.InternalChatMembers.Add(new InternalChatMember
-            {
-                ChannelId = general.Id,
-                UserId = userId,
-                UserName = UserName
-            });
-            await _db.SaveChangesAsync();
-        }
-    }
-
-    private static object MapMessage(InternalChatMessage m, string currentUserId)
+    private static object MapMessage(InternalChatMessage m, string currentUserId, string? channelName = null, string? channelType = null)
     {
         return new
         {
             id = m.Id,
             channelId = m.ChannelId,
+            channelName = channelName ?? m.Channel?.Name,
+            channelType = channelType ?? m.Channel?.Type.ToString(),
             senderId = m.SenderId,
             senderName = m.SenderName,
             senderAvatarUrl = m.SenderAvatarUrl,
@@ -613,7 +768,7 @@ public class InternalChatController : ControllerBase
     {
         public string? Name { get; set; }
         public string? Description { get; set; }
-        public string Type { get; set; } = "Department";
+        public string Type { get; set; } = "Group";
         public string? Icon { get; set; }
         public string? TargetUserId { get; set; } // For Direct messages
         public List<string>? MemberIds { get; set; }
