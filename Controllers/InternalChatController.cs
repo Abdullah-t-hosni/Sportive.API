@@ -156,13 +156,22 @@ public class InternalChatController : ControllerBase
             return BadRequest(new { message = "Message content is required" });
         }
 
+        int? replyToId = (req.ReplyToMessageId.HasValue && req.ReplyToMessageId.Value > 0 && req.ReplyToMessageId.Value <= int.MaxValue) 
+            ? (int)req.ReplyToMessageId.Value 
+            : null;
+        if (replyToId.HasValue)
+        {
+            var replyExists = await _db.InternalChatMessages.AnyAsync(m => m.Id == replyToId.Value && m.ChannelId == channelId);
+            if (!replyExists) replyToId = null;
+        }
+
         var msg = new InternalChatMessage
         {
             ChannelId = channelId,
             SenderId = userId,
             SenderName = userName,
             Text = text,
-            ReplyToMessageId = req.ReplyToMessageId,
+            ReplyToMessageId = replyToId,
             MentionedUserIds = req.MentionedUserIds,
             LinkedEntityType = req.LinkedEntityType,
             LinkedEntityId = req.LinkedEntityId,
@@ -185,13 +194,30 @@ public class InternalChatController : ControllerBase
             await _db.SaveChangesAsync();
         }
 
-        // Reload with reply info
-        await _db.Entry(msg).Reference(m => m.ReplyToMessage).LoadAsync();
+        // Reload with reply info only if replyTo exists
+        if (msg.ReplyToMessageId.HasValue)
+        {
+            try
+            {
+                await _db.Entry(msg).Reference(m => m.ReplyToMessage).LoadAsync();
+            }
+            catch
+            {
+                // Silently ignore load failure so msg persistence is never jeopardized
+            }
+        }
 
         var mapped = MapMessage(msg, userId);
 
         // Broadcast via SignalR to all channel members
-        await _hub.Clients.All.SendAsync("ReceiveInternalChatMessage", mapped);
+        try
+        {
+            await _hub.Clients.All.SendAsync("ReceiveInternalChatMessage", mapped);
+        }
+        catch
+        {
+            // Silently ignore SignalR broadcast failure so HTTP 200 is still returned
+        }
 
         // Send mention notifications
         if (!string.IsNullOrWhiteSpace(req.MentionedUserIds))
@@ -503,7 +529,7 @@ public class InternalChatController : ControllerBase
     public class SendMessageRequest
     {
         public string? Text { get; set; }
-        public int? ReplyToMessageId { get; set; }
+        public long? ReplyToMessageId { get; set; }
         public string? MentionedUserIds { get; set; }
         public string? LinkedEntityType { get; set; }
         public int? LinkedEntityId { get; set; }
