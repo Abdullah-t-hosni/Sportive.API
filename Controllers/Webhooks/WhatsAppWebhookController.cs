@@ -77,19 +77,30 @@ public class WhatsAppWebhookController : ControllerBase
             }
 
             // Clean up phone number (remove @s.whatsapp.net, +, spaces)
-            var cleanPhone = Regex.Replace(phone ?? string.Empty, @"[@a-zA-Z\.\+_\s-]", "");
-            if (cleanPhone.StartsWith("20") && cleanPhone.Length == 12)
-                cleanPhone = "0" + cleanPhone.Substring(2);
+            var rawDigits = Regex.Replace(phone ?? string.Empty, @"[@a-zA-Z\.\+_\s-]", "").Trim();
 
-            // Look up customer in database by phone or hash
+            // Normalize to local Egyptian format (01XXXXXXXXX = 11 digits)
+            string cleanPhone = rawDigits;
+            if (rawDigits.StartsWith("0020") && rawDigits.Length == 14)
+                cleanPhone = "0" + rawDigits.Substring(4);
+            else if (rawDigits.StartsWith("20") && rawDigits.Length == 12)
+                cleanPhone = "0" + rawDigits.Substring(2);
+            else if (!rawDigits.StartsWith("0") && rawDigits.Length == 10)
+                cleanPhone = "0" + rawDigits;
+
+            // Also keep international format for customer lookup
+            string intlPhone = cleanPhone.StartsWith("0") ? "2" + cleanPhone : "20" + cleanPhone;
+
+            // Look up customer in database by phone or hash (try both local and intl)
             Customer? customer = null;
             int? customerId = null;
 
             if (!string.IsNullOrEmpty(cleanPhone))
             {
-                var phoneHash = Customer.EncryptionHelper?.ComputeSearchHash(cleanPhone) ?? cleanPhone;
+                var phoneHashLocal = Customer.EncryptionHelper?.ComputeSearchHash(cleanPhone) ?? cleanPhone;
+                var phoneHashIntl = Customer.EncryptionHelper?.ComputeSearchHash(intlPhone) ?? intlPhone;
                 customer = await _db.Customers
-                    .FirstOrDefaultAsync(c => c.PhoneHash == phoneHash);
+                    .FirstOrDefaultAsync(c => c.PhoneHash == phoneHashLocal || c.PhoneHash == phoneHashIntl);
 
                 if (customer != null)
                 {
@@ -128,20 +139,28 @@ public class WhatsAppWebhookController : ControllerBase
             string? mediaUrl = GetPropCaseInsensitive(payload, "mediaUrl", "media_url");
             string? mediaType = GetPropCaseInsensitive(payload, "mediaType", "media_type");
             string? fileName = GetPropCaseInsensitive(payload, "fileName", "file_name");
+
+            // Handle timestamp: if it's Unix seconds (~10 digits), convert to ms
             long timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             if (payload.TryGetProperty("timestamp", out var tsEl) && tsEl.ValueKind == JsonValueKind.Number)
-                timestamp = tsEl.GetInt64();
+            {
+                var tsRaw = tsEl.GetInt64();
+                // If value is <= 2e10 (year ~2603 in seconds), it's Unix seconds, not ms
+                timestamp = tsRaw < 20_000_000_000L ? tsRaw * 1000L : tsRaw;
+            }
 
             // Save message to persistent storage (Database) — skip duplicates
+            // Check both local and international phone formats to prevent cross-format duplicates
             var isDuplicate = await _db.WhatsAppMessages
-                .AnyAsync(m => m.Phone == cleanPhone && m.Text == displayMsg && m.FromMe == fromMe
+                .AnyAsync(m => (m.Phone == cleanPhone || m.Phone == intlPhone || m.Phone == rawDigits)
+                            && m.Text == displayMsg && m.FromMe == fromMe
                             && Math.Abs(m.Timestamp - timestamp) < 10000); // within 10 seconds
 
             if (!isDuplicate)
             {
                 var waMessage = new WhatsAppMessage
                 {
-                    Phone = cleanPhone ?? string.Empty,
+                    Phone = cleanPhone ?? string.Empty, // Always store as local format
                     CustomerName = displayName,
                     Text = displayMsg,
                     FromMe = fromMe,

@@ -116,28 +116,38 @@ public class WhatsAppChatController : ControllerBase
 
         var recentMsgs = await messagesQuery
             .OrderByDescending(m => m.Timestamp)
-            .Take(2000)
+            .Take(3000)
             .ToListAsync();
 
-        var (lidToPhone, _) = await GetLidMapsAsync();
+        var (lidToPhone, phoneToLid) = await GetLidMapsAsync();
 
         var grouped = recentMsgs
             .GroupBy(m => {
                 var p = Regex.Replace(m.Phone ?? "", @"\D", "").Trim();
-                if (lidToPhone.TryGetValue(p, out var mappedPhone))
-                {
-                    p = mappedPhone;
-                }
-                if (p.StartsWith("20") && p.Length == 12) return "0" + p.Substring(2);
+                // LIDs are typically > 12 digits and don't start with 0 or 20
+                if (p.Length > 12 && lidToPhone.TryGetValue(p, out var mappedPhone))
+                    p = Regex.Replace(mappedPhone ?? "", @"\D", "").Trim();
+                else if (lidToPhone.TryGetValue(p, out var mp))
+                    p = Regex.Replace(mp ?? "", @"\D", "").Trim();
                 if (p.StartsWith("0020") && p.Length == 14) return "0" + p.Substring(4);
+                if (p.StartsWith("20") && p.Length == 12) return "0" + p.Substring(2);
+                if (!p.StartsWith("0") && p.Length == 10) return "0" + p;
                 return p;
             })
             .Where(g => !string.IsNullOrEmpty(g.Key))
             .Select(g => {
                 var latest = g.OrderByDescending(m => m.Timestamp).First();
-                var customerName = g.FirstOrDefault(m => !m.FromMe && !string.IsNullOrWhiteSpace(m.CustomerName) && !m.CustomerName.Contains("Store") && !m.CustomerName.Contains("المتجر"))?.CustomerName
-                                   ?? (!latest.FromMe ? latest.CustomerName : null)
-                                   ?? g.Key;
+                // Prefer customer name from recent incoming messages (exclude store/bot names and placeholder '.')
+                var customerName = g
+                    .Where(m => !m.FromMe && !string.IsNullOrWhiteSpace(m.CustomerName)
+                        && !m.CustomerName.Contains("Store") && !m.CustomerName.Contains("المتجر")
+                        && !m.CustomerName.Contains("Sportive") && m.CustomerName.Trim() != "."
+                        && m.CustomerName.Length > 1)
+                    .OrderByDescending(m => m.Timestamp)
+                    .FirstOrDefault()?.CustomerName
+                    ?? (!latest.FromMe && !string.IsNullOrWhiteSpace(latest.CustomerName)
+                        && latest.CustomerName.Trim() != "." ? latest.CustomerName : null)
+                    ?? g.Key;
                 return new
                 {
                     phone = g.Key,
@@ -185,10 +195,17 @@ public class WhatsAppChatController : ControllerBase
             int ordersCount = cust?.Orders?.Count ?? 0;
             decimal totalSpent = cust?.Orders?.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount) ?? 0;
 
+            // Prefer customer's real name from DB, then from messages, then phone
+            var displayName = !string.IsNullOrWhiteSpace(cust?.FullName)
+                ? cust.FullName
+                : (!string.IsNullOrWhiteSpace(g.customerName) && g.customerName != g.phone
+                    ? g.customerName
+                    : g.phone);
+
             return new
             {
                 phone = g.phone,
-                customerName = !string.IsNullOrWhiteSpace(cust?.FullName) ? cust.FullName : g.customerName,
+                customerName = displayName,
                 customerId = cust?.Id,
                 ordersCount = ordersCount,
                 totalSpent = totalSpent,
