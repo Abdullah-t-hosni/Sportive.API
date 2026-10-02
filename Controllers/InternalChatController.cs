@@ -152,7 +152,15 @@ public class InternalChatController : ControllerBase
             await _db.SaveChangesAsync();
         }
 
-        var result = messages.Select(m => MapMessage(m, userId)).ToList();
+        var otherMembers = await _db.InternalChatMembers
+            .AsNoTracking()
+            .Where(m => m.ChannelId == channelId && m.UserId != userId)
+            .Select(m => m.UserId)
+            .ToListAsync();
+
+        bool areOtherMembersOnline = otherMembers.Any(id => UserPresenceTracker.IsUserOnline(id));
+
+        var result = messages.Select(m => MapMessage(m, userId, null, null, areOtherMembersOnline || m.ReadReceipts.Count > 0)).ToList();
 
         return Ok(new { total, page, pageSize, messages = result });
     }
@@ -236,7 +244,21 @@ public class InternalChatController : ControllerBase
             .Select(m => m.UserId)
             .ToListAsync();
 
-        var mapped = MapMessage(msg, userId, channel.Name, channel.Type.ToString());
+        bool isInitiallyDelivered = false;
+        if (channel.Type == InternalChatChannelType.Direct)
+        {
+            var otherId = memberUserIds.FirstOrDefault(id => id != userId);
+            if (!string.IsNullOrEmpty(otherId) && UserPresenceTracker.IsUserOnline(otherId))
+            {
+                isInitiallyDelivered = true;
+            }
+        }
+        else
+        {
+            isInitiallyDelivered = memberUserIds.Any(id => id != userId && UserPresenceTracker.IsUserOnline(id));
+        }
+
+        var mapped = MapMessage(msg, userId, channel.Name, channel.Type.ToString(), isInitiallyDelivered);
 
         // 🔒 STRICT PRIVACY ISOLATION:
         // Broadcast via SignalR ONLY to verified channel members (Zero leaks to non-members)
@@ -498,6 +520,35 @@ public class InternalChatController : ControllerBase
         return Ok();
     }
 
+    // ── POST /api/internal-chat/messages/{id}/delivered ──────────────────────
+    [HttpPost("messages/{messageId}/delivered")]
+    public async Task<IActionResult> MarkDelivered(int messageId)
+    {
+        var userId = UserId;
+        var msg = await _db.InternalChatMessages.FindAsync(messageId);
+        if (msg == null) return NotFound();
+
+        var isMember = await _db.InternalChatMembers.AnyAsync(m => m.ChannelId == msg.ChannelId && m.UserId == userId);
+        if (!isMember) return Forbid();
+
+        // Notify message sender that message was delivered to recipient (Real-time double grey check)
+        if (msg.SenderId != userId)
+        {
+            try
+            {
+                await _hub.Clients.Group($"user_{msg.SenderId}").SendAsync("InternalChatMessageDelivered", new
+                {
+                    channelId = msg.ChannelId,
+                    messageId = msg.Id,
+                    deliveredToUserId = userId
+                });
+            }
+            catch {}
+        }
+
+        return Ok(new { success = true });
+    }
+
     // ── DELETE /api/internal-chat/messages/{id} ───────────────────────────────
     [HttpDelete("messages/{messageId}")]
     public async Task<IActionResult> DeleteMessage(int messageId)
@@ -682,6 +733,13 @@ public class InternalChatController : ControllerBase
         return Ok(new { deletedCount = depts.Count });
     }
 
+    // ── GET /api/internal-chat/online-users ──────────────────────────────────────
+    [HttpGet("online-users")]
+    public IActionResult GetOnlineUsers()
+    {
+        return Ok(UserPresenceTracker.GetOnlineUsers());
+    }
+
     // ── GET /api/internal-chat/users ─────────────────────────────────────────
     [HttpGet("users")]
     public async Task<IActionResult> GetUsers()
@@ -717,7 +775,7 @@ public class InternalChatController : ControllerBase
             .ToListAsync();
     }
 
-    private static object MapMessage(InternalChatMessage m, string currentUserId, string? channelName = null, string? channelType = null)
+    private static object MapMessage(InternalChatMessage m, string currentUserId, string? channelName = null, string? channelType = null, bool isDelivered = false)
     {
         return new
         {
@@ -746,6 +804,7 @@ public class InternalChatController : ControllerBase
             mediaType = m.MediaType,
             fileName = m.FileName,
             sentAt = m.SentAt,
+            isDelivered = isDelivered || m.ReadReceipts.Count > 0,
             readBy = m.ReadReceipts.Select(r => new { r.UserId, r.UserName, r.ReadAt }).ToList()
         };
     }

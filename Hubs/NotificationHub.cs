@@ -37,6 +37,15 @@ public class NotificationHub : Hub
             await Groups.AddToGroupAsync(connectionId, $"{prefix}_{userId}");
             await Groups.AddToGroupAsync(connectionId, $"global_{userId}");
             await Groups.AddToGroupAsync(connectionId, $"user_{userId}");
+
+            var becameOnline = UserPresenceTracker.UserConnected(userId, connectionId);
+            if (becameOnline)
+            {
+                await Clients.All.SendAsync("UserPresenceChanged", new { userId, isOnline = true });
+            }
+
+            // Immediately send current list of online users to caller
+            await Clients.Caller.SendAsync("OnlineUsersList", UserPresenceTracker.GetOnlineUsers());
         }
 
         // Admin / Staff print group
@@ -97,8 +106,20 @@ public class NotificationHub : Hub
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"{prefix}_All");
 
         if (!string.IsNullOrEmpty(userId))
+        {
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"{prefix}_{userId}");
+            var becameOffline = UserPresenceTracker.UserDisconnected(userId, Context.ConnectionId);
+            if (becameOffline)
+            {
+                await Clients.All.SendAsync("UserPresenceChanged", new { userId, isOnline = false });
+            }
+        }
 
         await base.OnDisconnectedAsync(exception);
+    }
+
+    public Task<List<string>> GetOnlineUsers()
+    {
+        return Task.FromResult(UserPresenceTracker.GetOnlineUsers());
     }
 }

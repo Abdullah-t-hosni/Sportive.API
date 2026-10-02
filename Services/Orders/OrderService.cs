@@ -93,10 +93,21 @@ public class OrderService : IOrderService
         if (branchId.HasValue) query = query.Where(o => o.BranchId == branchId.Value);
         if (warehouseId.HasValue) query = query.Where(o => o.WarehouseId == warehouseId.Value);
 
-        if (!string.IsNullOrEmpty(search))
+        // ⚠️ Search: return nothing when query is empty
+        if (string.IsNullOrWhiteSpace(search) && !customerId.HasValue)
         {
-            query = query.Where(o => o.OrderNumber.Contains(search) || 
-                                     o.Customer.FullName.Contains(search));
+            // No search term and not filtering by customer — return empty
+            query = query.Where(o => false);
+        }
+        else if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim().TrimStart('#').Trim();
+            // Hash the search term for encrypted phone lookup
+            var phoneHash = _encryptionHelper.ComputeSearchHash(s);
+            query = query.Where(o =>
+                o.OrderNumber.Contains(s) ||
+                (o.Customer != null && o.Customer.FullName.Contains(s)) ||
+                (o.Customer != null && o.Customer.PhoneHash != null && o.Customer.PhoneHash == phoneHash));
         }
 
         var total = await query.CountAsync();
