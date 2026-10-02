@@ -37,9 +37,6 @@ public class InternalChatController : ControllerBase
     {
         var userId = UserId;
 
-        // Ensure General channel exists and user is a member
-        await EnsureUserInGeneralChannelAsync(userId);
-
         var myMemberships = await _db.InternalChatMembers
             .AsNoTracking()
             .Where(m => m.UserId == userId)
@@ -50,7 +47,7 @@ public class InternalChatController : ControllerBase
             .AsNoTracking()
             .Include(c => c.Members)
             .Include(c => c.Messages.OrderByDescending(msg => msg.SentAt).Take(1))
-            .Where(c => myMemberships.Contains(c.Id) && !c.IsArchived)
+            .Where(c => myMemberships.Contains(c.Id) && !c.IsArchived && c.Type == InternalChatChannelType.Direct)
             .OrderByDescending(c => c.Messages.Max(m => (DateTime?)m.SentAt) ?? c.CreatedAt)
             .ToListAsync();
 
@@ -421,6 +418,33 @@ public class InternalChatController : ControllerBase
 
         await _hub.Clients.All.SendAsync("InternalChatMessageDeleted", new { channelId = msg.ChannelId, messageId });
         return Ok();
+    }
+
+    // ── DELETE /api/internal-chat/channels/{id} ───────────────────────────────
+    [HttpDelete("channels/{channelId}")]
+    public async Task<IActionResult> DeleteChannel(int channelId)
+    {
+        var channel = await _db.InternalChatChannels
+            .Include(c => c.Members)
+            .Include(c => c.Messages)
+            .FirstOrDefaultAsync(c => c.Id == channelId);
+        if (channel == null) return NotFound();
+
+        _db.InternalChatChannels.Remove(channel);
+        await _db.SaveChangesAsync();
+        return Ok(new { success = true });
+    }
+
+    // ── POST /api/internal-chat/channels/cleanup-departments ──────────────────
+    [HttpPost("channels/cleanup-departments")]
+    public async Task<IActionResult> CleanupDepartmentChannels()
+    {
+        var depts = await _db.InternalChatChannels
+            .Where(c => c.Type != InternalChatChannelType.Direct)
+            .ToListAsync();
+        _db.InternalChatChannels.RemoveRange(depts);
+        await _db.SaveChangesAsync();
+        return Ok(new { deletedCount = depts.Count });
     }
 
     // ── GET /api/internal-chat/users ─────────────────────────────────────────
