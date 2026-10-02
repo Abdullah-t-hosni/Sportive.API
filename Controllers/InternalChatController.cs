@@ -150,12 +150,18 @@ public class InternalChatController : ControllerBase
             .AnyAsync(m => m.ChannelId == channelId && m.UserId == userId);
         if (!isMember) return Forbid();
 
+        var text = req.Text?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(text) && string.IsNullOrWhiteSpace(req.MediaUrl))
+        {
+            return BadRequest(new { message = "Message content is required" });
+        }
+
         var msg = new InternalChatMessage
         {
             ChannelId = channelId,
             SenderId = userId,
             SenderName = userName,
-            Text = req.Text?.Trim() ?? "",
+            Text = text,
             ReplyToMessageId = req.ReplyToMessageId,
             MentionedUserIds = req.MentionedUserIds,
             LinkedEntityType = req.LinkedEntityType,
@@ -185,11 +191,7 @@ public class InternalChatController : ControllerBase
         var mapped = MapMessage(msg, userId);
 
         // Broadcast via SignalR to all channel members
-        await _hub.Clients.All.SendAsync("ReceiveInternalChatMessage", new
-        {
-            channelId = channelId,
-            message = mapped
-        });
+        await _hub.Clients.All.SendAsync("ReceiveInternalChatMessage", mapped);
 
         // Send mention notifications
         if (!string.IsNullOrWhiteSpace(req.MentionedUserIds))
