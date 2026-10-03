@@ -732,7 +732,8 @@ public class InternalChatBotService : IInternalChatBotService
 
                         var responseLines = new List<string>
                         {
-                            $"👤 بيانات العميل: {cust.FullName} ({phoneDisplay})",
+                            $"• العميل: {cust.FullName}",
+                            $"• الهاتف: {phoneDisplay}",
                             $"• إجمالي الطلبات: {totalOrders} طلب | المسلم بنجاح: {completedOrders}",
                             $"• إجمالي المشتريات: {totalSpent:N0} ج.م"
                         };
