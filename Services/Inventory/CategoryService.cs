@@ -33,13 +33,14 @@ public class CategoryService : ICategoryService
             .AsNoTracking()
             .Include(c => c.Parent)
             .Include(c => c.SizeGroup)
-            .Include(c => c.Products)
             .OrderBy(c => c.ParentId)
             .ThenBy(c => c.SortOrder)
             .ThenBy(c => c.NameAr)
             .ToListAsync();
 
-        var result = cats.Select(c => MapFlat(c)).ToList();
+        var productCounts = await GetCategoryProductCountsAsync(cats);
+
+        var result = cats.Select(c => MapFlat(c, productCounts.GetValueOrDefault(c.Id, 0))).ToList();
         await _cache.SetAsync(CacheKeyAll, result, TimeSpan.FromMinutes(10));
         return result;
     }
@@ -55,8 +56,9 @@ public class CategoryService : ICategoryService
         var allCats = await _db.Categories
             .AsNoTracking()
             .Include(c => c.SizeGroup)
-            .Include(c => c.Products)
             .ToListAsync();
+
+        var productCounts = await GetCategoryProductCountsAsync(allCats);
 
         var roots = allCats
             .Where(c => c.ParentId == null)
@@ -64,7 +66,7 @@ public class CategoryService : ICategoryService
             .ThenBy(x => x.NameAr)
             .ToList();
 
-        var result = roots.Select(r => BuildTreeRecursive(r, allCats)).ToList();
+        var result = roots.Select(r => BuildTreeRecursive(r, allCats, productCounts)).ToList();
         await _cache.SetAsync(CacheKeyTree, result, TimeSpan.FromMinutes(10));
         return result;
     }
@@ -74,12 +76,8 @@ public class CategoryService : ICategoryService
     // ──────────────────────────────────────────────────────────
     public async Task<CategoryDto?> GetByIdAsync(int id)
     {
-        // ✅ Optimized: only load the target category + all its descendants
-        //    by doing a targeted DB query. We still need all descendants to build the tree,
-        //    but we fetch only the subtree rooted at 'id' instead of the entire table.
         var target = await _db.Categories
             .Include(c => c.SizeGroup)
-            .Include(c => c.Products)
             .FirstOrDefaultAsync(c => c.Id == id);
 
         if (target == null) return null;
@@ -92,14 +90,15 @@ public class CategoryService : ICategoryService
         var subtree = new List<Category> { target };
         await LoadDescendantsAsync(subtree, id);
 
-        return BuildTreeRecursive(target, subtree);
+        var productCounts = await GetCategoryProductCountsAsync(subtree);
+
+        return BuildTreeRecursive(target, subtree, productCounts);
     }
 
     private async Task LoadDescendantsAsync(List<Category> result, int parentId)
     {
         var children = await _db.Categories
             .Include(c => c.SizeGroup)
-            .Include(c => c.Products)
             .Where(c => c.ParentId == parentId)
             .ToListAsync();
 
@@ -226,10 +225,77 @@ public class CategoryService : ICategoryService
         await _cache.RemoveAsync("CategoryTree");
     }
 
+    private async Task<Dictionary<int, int>> GetCategoryProductCountsAsync(List<Category> allCats)
+    {
+        var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
+        bool hideOutOfStock = store?.HideOutOfStock ?? false;
+
+        // 1. Fetch direct links for both primary and secondary categories in one query
+        var directLinks = await _db.Products
+            .AsNoTracking()
+            .Where(p => (p.Status == ProductStatus.Active || (!hideOutOfStock && p.Status == ProductStatus.OutOfStock)) && p.CategoryId.HasValue)
+            .Select(p => new { ProductId = p.Id, CategoryId = p.CategoryId!.Value })
+            .Concat(
+                _db.ProductSecondaryCategories
+                    .AsNoTracking()
+                    .Where(sc => sc.Product.Status == ProductStatus.Active || (!hideOutOfStock && sc.Product.Status == ProductStatus.OutOfStock))
+                    .Select(sc => new { ProductId = sc.ProductId, sc.CategoryId })
+            )
+            .Distinct()
+            .ToListAsync();
+
+        var directProductMap = directLinks
+            .GroupBy(x => x.CategoryId)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.ProductId).ToHashSet());
+
+        var result = new Dictionary<int, int>();
+
+        // Build parent -> children lookup for fast hierarchy traversal
+        var childrenLookup = allCats
+            .Where(c => c.ParentId.HasValue)
+            .GroupBy(c => c.ParentId!.Value)
+            .ToDictionary(g => g.Key, g => g.Select(c => c.Id).ToList());
+
+        foreach (var cat in allCats)
+        {
+            var allCatIds = new HashSet<int> { cat.Id };
+            var queue = new Queue<int>();
+            queue.Enqueue(cat.Id);
+
+            while (queue.Count > 0)
+            {
+                var cur = queue.Dequeue();
+                if (childrenLookup.TryGetValue(cur, out var kids))
+                {
+                    foreach (var k in kids)
+                    {
+                        if (allCatIds.Add(k))
+                        {
+                            queue.Enqueue(k);
+                        }
+                    }
+                }
+            }
+
+            var distinctProductIds = new HashSet<int>();
+            foreach (var cid in allCatIds)
+            {
+                if (directProductMap.TryGetValue(cid, out var pids))
+                {
+                    distinctProductIds.UnionWith(pids);
+                }
+            }
+
+            result[cat.Id] = distinctProductIds.Count;
+        }
+
+        return result;
+    }
+
     // ──────────────────────────────────────────────────────────
     // Helper — بناء الشجرة بشكل تكراري (أي عمق)
     // ──────────────────────────────────────────────────────────
-    private static CategoryDto BuildTreeRecursive(Category current, List<Category> all)
+    private static CategoryDto BuildTreeRecursive(Category current, List<Category> all, Dictionary<int, int> productCounts)
     {
         var children = all
             .Where(c => c.ParentId == current.Id)
@@ -241,12 +307,9 @@ public class CategoryService : ICategoryService
         foreach (var child in children)
             child.Parent = current;
 
-        var subDtos = children.Select(c => BuildTreeRecursive(c, all)).ToList();
+        var subDtos = children.Select(c => BuildTreeRecursive(c, all, productCounts)).ToList();
         
-        // حساب عدد المنتجات بشكل تراكمي (القسم الحالي + الأقسام الفرعية)
-        int directCount = current.Products?.Count(p => p.Status == ProductStatus.Active) ?? 0;
-        int childrenCount = subDtos.Sum(s => s.ProductCount);
-        int totalProductCount = directCount + childrenCount;
+        int totalProductCount = productCounts.GetValueOrDefault(current.Id, 0);
 
         return new CategoryDto(
             current.Id,
@@ -274,13 +337,13 @@ public class CategoryService : ICategoryService
     // ──────────────────────────────────────────────────────────
     // Helper — القائمة المسطحة (بدون أبناء)
     // ──────────────────────────────────────────────────────────
-    private static CategoryDto MapFlat(Category c)
+    private static CategoryDto MapFlat(Category c, int productCount = 0)
     {
         return new CategoryDto(
             c.Id, c.NameAr, c.NameEn, c.DescriptionAr, c.DescriptionEn,
             c.ImageUrl, c.IsActive,
             c.Type,
-            c.Products?.Count(p => p.Status == ProductStatus.Active) ?? 0, c.CreatedAt,
+            productCount, c.CreatedAt,
             c.SortOrder,
             c.ParentId,
             c.SizeGroupId,

@@ -125,7 +125,8 @@ public record ProductSummaryDto(
     [property: JsonPropertyName("onlinePrice")] decimal? OnlinePrice = null,
     [property: JsonPropertyName("onlineDiscountPrice")] decimal? OnlineDiscountPrice = null,
     [property: JsonPropertyName("bundleQuantity")] int BundleQuantity = 1,
-    [property: JsonPropertyName("bundleVariantId")] int? BundleVariantId = null
+    [property: JsonPropertyName("bundleVariantId")] int? BundleVariantId = null,
+    [property: JsonPropertyName("categoryId")] int? CategoryId = null
 );
 
 public record BundleItemConfigDto(

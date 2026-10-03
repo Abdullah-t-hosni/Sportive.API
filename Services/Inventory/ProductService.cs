@@ -532,6 +532,9 @@ public class ProductService : IProductService
         }
         
         await _db.SaveChangesAsync();
+        await _cache.RemoveAsync("Categories_All");
+        await _cache.RemoveAsync("Categories_Tree");
+        await _cache.RemoveAsync("CategoryTree");
 
         return await GetProductByIdAsync(product.Id)
             ?? throw new InvalidOperationException($"Product {product.Id} not found after creation");
@@ -596,6 +599,10 @@ public class ProductService : IProductService
         await UpdateTotalStockAsync(id);
 
         await _db.SaveChangesAsync();
+        await _cache.RemoveAsync("Categories_All");
+        await _cache.RemoveAsync("Categories_Tree");
+        await _cache.RemoveAsync("CategoryTree");
+
         return await GetProductByIdAsync(id) ?? throw new KeyNotFoundException($"Product {id} not found after update");
     }
 
@@ -610,6 +617,9 @@ public class ProductService : IProductService
         // Hard delete — variants and images cascade via DB
         _db.Products.Remove(product);
         await _db.SaveChangesAsync();
+        await _cache.RemoveAsync("Categories_All");
+        await _cache.RemoveAsync("Categories_Tree");
+        await _cache.RemoveAsync("CategoryTree");
     }
 
     public async Task<bool> UpdateStockAsync(int variantId, int quantity)
@@ -1580,6 +1590,31 @@ public class ProductService : IProductService
             string displayCatNameAr = effectiveCatObj.Id > 0 ? effectiveCatObj.NameAr : (p.Category != null ? p.Category.NameAr : _t.Get("Products.CategoryMissing"));
             string displayCatNameEn = effectiveCatObj.Id > 0 ? effectiveCatObj.NameEn : (p.Category != null ? p.Category.NameEn : _t.Get("Products.CategoryMissing"));
 
+            // Pick contextual main image based on effective category and context descendants
+            string? contextMainImageUrl = null;
+            if (p.Images != null && p.Images.Count > 0)
+            {
+                if (effectiveCatId.HasValue)
+                {
+                    contextMainImageUrl = p.Images.FirstOrDefault(i => i.CategoryId == effectiveCatId.Value && i.IsMain)?.ImageUrl
+                                       ?? p.Images.FirstOrDefault(i => i.CategoryId == effectiveCatId.Value)?.ImageUrl;
+                }
+
+                if (string.IsNullOrEmpty(contextMainImageUrl) && contextDescendants != null)
+                {
+                    contextMainImageUrl = p.Images.FirstOrDefault(i => i.CategoryId.HasValue && contextDescendants.Contains(i.CategoryId.Value) && i.IsMain)?.ImageUrl
+                                       ?? p.Images.FirstOrDefault(i => i.CategoryId.HasValue && contextDescendants.Contains(i.CategoryId.Value))?.ImageUrl;
+                }
+
+                if (string.IsNullOrEmpty(contextMainImageUrl))
+                {
+                    contextMainImageUrl = p.Images.FirstOrDefault(i => i.IsMain && !i.CategoryId.HasValue)?.ImageUrl
+                                       ?? p.Images.FirstOrDefault(i => !i.CategoryId.HasValue)?.ImageUrl
+                                       ?? p.Images.FirstOrDefault(i => i.IsMain)?.ImageUrl
+                                       ?? p.Images.FirstOrDefault()?.ImageUrl;
+                }
+            }
+
             resultList.Add(new ProductSummaryDto(
                 p.Id,
                 p.NameAr,
@@ -1587,7 +1622,7 @@ public class ProductService : IProductService
                 p.Slug,
                 effectiveBasePrice,
                 finalPrice,
-                p.Images?.FirstOrDefault(i => i.IsMain)?.ImageUrl ?? p.Images?.FirstOrDefault()?.ImageUrl,
+                contextMainImageUrl ?? p.Images?.FirstOrDefault(i => i.IsMain)?.ImageUrl ?? p.Images?.FirstOrDefault()?.ImageUrl,
                 displayCatNameAr,
                 displayCatNameEn,
                 p.Brand != null ? p.Brand.NameAr : null,
@@ -1644,7 +1679,10 @@ public class ProductService : IProductService
                 p.Images?.Select(i => new ProductImageDto(i.Id, i.ImageUrl, i.ImagePublicId, i.IsMain, i.SortOrder, i.ColorAr, i.CategoryId)).ToList() ?? new List<ProductImageDto>(),
                 p.SecondaryCategories?.Select(sc => sc.CategoryId).ToList() ?? new List<int>(),
                 p.OnlinePrice,
-                onlineFinalPrice < onlineBasePrice ? onlineFinalPrice : p.OnlineDiscountPrice
+                onlineFinalPrice < onlineBasePrice ? onlineFinalPrice : p.OnlineDiscountPrice,
+                1,
+                null,
+                effectiveCatId ?? p.CategoryId
             ));
         }
 
