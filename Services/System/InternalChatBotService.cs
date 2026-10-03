@@ -14,7 +14,7 @@ namespace Sportive.API.Services;
 
 public interface IInternalChatBotService
 {
-    Task EnsureSystemChannelsForUserAsync(string userId, string userName);
+    Task EnsureSystemChannelsExistAsync();
     Task PostOrderAlertAsync(int orderId, string trigger, string? note = null);
     Task PostStockAlertAsync(int productId, int? variantId, int remainingStock, int reorderLevel);
     Task PostShiftAlertAsync(int shiftId, string cashierName, decimal expectedAmount, decimal actualAmount, decimal difference);
@@ -50,9 +50,10 @@ public class InternalChatBotService : IInternalChatBotService
     }
 
     /// <summary>
-    /// Ensures default system channels exist and auto-enrolls the staff user
+    /// Ensures system channels exist in DB without adding any members.
+    /// Only Admin can manually add employees to these channels.
     /// </summary>
-    public async Task EnsureSystemChannelsForUserAsync(string userId, string userName)
+    public async Task EnsureSystemChannelsExistAsync()
     {
         try
         {
@@ -66,7 +67,6 @@ public class InternalChatBotService : IInternalChatBotService
             foreach (var def in defChannels)
             {
                 var ch = await _db.InternalChatChannels
-                    .Include(c => c.Members)
                     .FirstOrDefaultAsync(c => c.DirectKey == def.Key);
 
                 if (ch == null)
@@ -84,25 +84,11 @@ public class InternalChatBotService : IInternalChatBotService
                     _db.InternalChatChannels.Add(ch);
                     await _db.SaveChangesAsync();
                 }
-
-                if (!ch.Members.Any(m => m.UserId == userId))
-                {
-                    _db.InternalChatMembers.Add(new InternalChatMember
-                    {
-                        ChannelId = ch.Id,
-                        UserId = userId,
-                        UserName = userName,
-                        IsAdmin = false,
-                        JoinedAt = DateTime.UtcNow,
-                        LastReadAt = DateTime.UtcNow
-                    });
-                    await _db.SaveChangesAsync();
-                }
             }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Error ensuring bot system channels for user {UserId}", userId);
+            _logger.LogWarning(ex, "Error ensuring bot system channels exist");
         }
     }
 

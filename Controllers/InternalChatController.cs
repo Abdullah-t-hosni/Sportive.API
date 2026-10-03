@@ -51,9 +51,6 @@ public class InternalChatController : ControllerBase
         var userId = UserId;
         var userName = UserName;
 
-        // Auto-enroll staff/admins in system bot operational channels
-        await _chatBot.EnsureSystemChannelsForUserAsync(userId, userName);
-
         var myMemberships = await _db.InternalChatMembers
             .AsNoTracking()
             .Where(m => m.UserId == userId)
@@ -458,6 +455,12 @@ public class InternalChatController : ControllerBase
 
         if (req.MemberIds != null && req.MemberIds.Count > 0)
         {
+            var isAdmin = User.IsInRole("Admin") || User.IsInRole("SuperAdmin");
+            if (!isAdmin)
+            {
+                return StatusCode(403, new { message = "فقط مدير النظام (الآدمن) يمتلك صلاحية إضافة موظفين إلى المجموعات." });
+            }
+
             var members = await _db.Users
                 .Where(u => req.MemberIds.Contains(u.Id))
                 .ToListAsync();
@@ -673,11 +676,12 @@ public class InternalChatController : ControllerBase
         var channel = await _db.InternalChatChannels.Include(c => c.Members).FirstOrDefaultAsync(c => c.Id == channelId);
         if (channel == null || channel.Type == InternalChatChannelType.Direct) return BadRequest("Invalid channel");
 
-        // 🔒 Security check: only creator, channel admin, or system admin can add members
-        var canAdd = channel.CreatedByUserId == userId 
-            || channel.Members.Any(m => m.UserId == userId && m.IsAdmin) 
-            || User.IsInRole("Admin") || User.IsInRole("SuperAdmin");
-        if (!canAdd) return Forbid();
+        // 🔒 STRICT SECURITY: ONLY System Admin or SuperAdmin can add members to groups!
+        var isAdmin = User.IsInRole("Admin") || User.IsInRole("SuperAdmin");
+        if (!isAdmin)
+        {
+            return StatusCode(403, new { message = "فقط مدير النظام (الآدمن) يمتلك صلاحية إضافة موظفين إلى المجموعات." });
+        }
 
         if (string.IsNullOrEmpty(req.UserId)) return BadRequest("User ID is required");
 
