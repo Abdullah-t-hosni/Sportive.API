@@ -321,18 +321,34 @@ public class InventoryService : IInventoryService
                     {
                         var reorder = v.ReorderLevel > 0 ? v.ReorderLevel : v.Product.ReorderLevel;
                         if (reorder > 0 && v.StockQuantity <= reorder && v.StockQuantity >= 0)
+                        {
                             await notifications.SendAsync(null, t.Get("Inventory.LowStockAlertTitle"), "Low Stock Alert", 
                                 t.Get("Inventory.LowStockAlertDesc", v.Product.NameAr, v.StockQuantity, reorder),
                                 $"Product \"{v.Product.NameEn}\" reached {v.StockQuantity} units", "Alert", v.ProductId);
+
+                            var bot = scope.ServiceProvider.GetService<IInternalChatBotService>();
+                            if (bot != null)
+                            {
+                                await bot.PostStockAlertAsync(v.ProductId, v.Id, v.StockQuantity, reorder);
+                            }
+                        }
                     }
                 }
                 else if (productId.HasValue)
                 {
                     var p = await db.Products.FindAsync(productId);
                     if (p != null && p.ReorderLevel > 0 && p.TotalStock <= p.ReorderLevel && p.TotalStock >= 0)
+                    {
                         await notifications.SendAsync(null, t.Get("Inventory.LowStockAlertTitle"), "Low Stock Alert",
                             t.Get("Inventory.LowStockAlertDesc", p.NameAr, p.TotalStock, p.ReorderLevel),
                             $"Product \"{p.NameEn}\" reached {p.TotalStock} units", "Alert", p.Id);
+
+                        var bot = scope.ServiceProvider.GetService<IInternalChatBotService>();
+                        if (bot != null)
+                        {
+                            await bot.PostStockAlertAsync(p.Id, null, p.TotalStock, p.ReorderLevel);
+                        }
+                    }
                 }
             } catch { /* Suppress background errors */ }
         });

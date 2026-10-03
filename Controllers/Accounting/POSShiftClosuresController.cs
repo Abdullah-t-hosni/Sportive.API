@@ -22,11 +22,16 @@ namespace Sportive.API.Controllers
     {
         private readonly AppDbContext _db;
         private readonly Sportive.API.Services.IAuditService _audit;
+        private readonly Sportive.API.Services.IInternalChatBotService _chatBot;
 
-        public POSShiftClosuresController(AppDbContext db, Sportive.API.Services.IAuditService audit)
+        public POSShiftClosuresController(
+            AppDbContext db,
+            Sportive.API.Services.IAuditService audit,
+            Sportive.API.Services.IInternalChatBotService chatBot)
         {
             _db = db;
             _audit = audit;
+            _chatBot = chatBot;
         }
 
         [HttpPost]
@@ -74,6 +79,18 @@ namespace Sportive.API.Controllers
                 _db.POSShiftClosures.Add(closure);
                 await _db.SaveChangesAsync();
                 try { await _audit.LogAsync("CreatePOSClosure", "POSShiftClosure", closure.Id.ToString(), $"Created POS shift closure", User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), User.FindFirstValue(System.Security.Claims.ClaimTypes.Name)); } catch { }
+
+                try
+                {
+                    await _chatBot.PostShiftAlertAsync(
+                        closure.Id,
+                        closure.ClosedBy,
+                        closure.ExpectedCash,
+                        closure.ActualCash,
+                        closure.Variance
+                    );
+                }
+                catch { }
 
                 return Ok(closure);
             }
