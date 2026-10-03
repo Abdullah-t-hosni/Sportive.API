@@ -135,6 +135,7 @@ public class InternalChatController : ControllerBase
             .AsNoTracking()
             .Include(m => m.ReplyToMessage)
             .Include(m => m.ReadReceipts)
+            .Include(m => m.Reactions)
             .Where(m => m.ChannelId == channelId)
             .OrderByDescending(m => m.SentAt)
             .Skip((page - 1) * pageSize)
@@ -805,7 +806,8 @@ public class InternalChatController : ControllerBase
             fileName = m.FileName,
             sentAt = m.SentAt,
             isDelivered = isDelivered || m.ReadReceipts.Count > 0,
-            readBy = m.ReadReceipts.Select(r => new { r.UserId, r.UserName, r.ReadAt }).ToList()
+            readBy = m.ReadReceipts.Select(r => new { r.UserId, r.UserName, r.ReadAt }).ToList(),
+            reactions = m.Reactions == null ? Array.Empty<object>() : m.Reactions.Select(r => (object)new { r.UserId, r.UserName, r.Emoji }).ToArray()
         };
     }
 
