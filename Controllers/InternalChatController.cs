@@ -837,4 +837,59 @@ public class InternalChatController : ControllerBase
     {
         public string UserId { get; set; } = "";
     }
+
+    public class ReactRequest
+    {
+        public string Emoji { get; set; } = "";
+    }
+
+    // ── React to Message ───────────────────────────────────────────────────────
+    [HttpPost("messages/{messageId}/react")]
+    public async Task<IActionResult> ReactToMessage(int messageId, [FromBody] ReactRequest req)
+    {
+        var userId = UserId;
+        var userName = User.FindFirstValue(ClaimTypes.Name)
+                    ?? User.FindFirstValue("name")
+                    ?? User.FindFirstValue("FullName")
+                    ?? userId;
+
+        var msg = await _db.InternalChatMessages.FindAsync(messageId);
+        if (msg == null) return NotFound();
+
+        var isMember = await _db.InternalChatMembers
+            .AnyAsync(m => m.ChannelId == msg.ChannelId && m.UserId == userId);
+        if (!isMember) return Forbid();
+
+        var existing = await _db.InternalChatReactions
+            .FirstOrDefaultAsync(r => r.MessageId == messageId && r.UserId == userId);
+
+        if (existing != null && existing.Emoji == req.Emoji)
+        {
+            _db.InternalChatReactions.Remove(existing); // toggle off
+        }
+        else
+        {
+            if (existing != null) _db.InternalChatReactions.Remove(existing);
+            _db.InternalChatReactions.Add(new InternalChatReaction
+            {
+                MessageId = messageId,
+                UserId = userId,
+                UserName = userName,
+                Emoji = req.Emoji,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        await _db.SaveChangesAsync();
+
+        var reactions = await _db.InternalChatReactions
+            .Where(r => r.MessageId == messageId)
+            .Select(r => new { r.UserId, r.UserName, r.Emoji })
+            .ToListAsync();
+
+        await _hub.Clients.Group($"channel_{msg.ChannelId}")
+            .SendAsync("MessageReacted", new { messageId, reactions });
+
+        return Ok(new { messageId, reactions });
+    }
 }

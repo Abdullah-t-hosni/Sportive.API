@@ -107,6 +107,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<InternalChatMessage>     InternalChatMessages     { get; set; }
     public DbSet<InternalChatMember>      InternalChatMembers      { get; set; }
     public DbSet<InternalChatReadReceipt> InternalChatReadReceipts { get; set; }
+    public DbSet<InternalChatReaction>    InternalChatReactions    { get; set; }
 
     public DbSet<Department>           Departments           { get; set; }
 

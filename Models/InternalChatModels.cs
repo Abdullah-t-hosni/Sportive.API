@@ -103,6 +103,7 @@ public class InternalChatMessage
 
     // Navigation
     public List<InternalChatReadReceipt> ReadReceipts { get; set; } = new();
+    public List<InternalChatReaction> Reactions { get; set; } = new();
 }
 
 // ── Channel Member ─────────────────────────────────────────────────────────────
@@ -147,4 +148,25 @@ public class InternalChatReadReceipt
     public string UserName { get; set; } = "";
 
     public DateTime ReadAt { get; set; } = DateTime.UtcNow;
+}
+
+// ── Message Reaction ────────────────────────────────────────────────────────────
+public class InternalChatReaction
+{
+    [Key]
+    public int Id { get; set; }
+
+    public int MessageId { get; set; }
+    public InternalChatMessage Message { get; set; } = null!;
+
+    [Required]
+    public string UserId { get; set; } = "";
+
+    [MaxLength(200)]
+    public string UserName { get; set; } = "";
+
+    [Required, MaxLength(10)]
+    public string Emoji { get; set; } = "";
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
