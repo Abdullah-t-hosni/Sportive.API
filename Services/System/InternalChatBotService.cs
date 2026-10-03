@@ -28,9 +28,18 @@ public class InternalChatBotService : IInternalChatBotService
     public const string BotUserName = "سبورتيف بوت 🤖";
     public const string BotAvatarUrl = "/favicon.svg";
 
-    public const string ChannelKeyOrders = "sys_bot_orders";
+    public const string ChannelKeyOrders = "sys_bot_orders";      // طلبات المتجر الأونلاين (Website + General)
+    public const string ChannelKeyPos = "sys_bot_pos";            // فواتير الكاشير (POS)
     public const string ChannelKeyInventory = "sys_bot_inventory";
     public const string ChannelKeyTreasury = "sys_bot_treasury";
+
+    private const string LegacyOrdersChannelName = "📦 رادار الطلبات والعمليات";
+
+    // Keep Arabic readable in stored JSON (default encoder escapes every Arabic char to \uXXXX)
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
 
     private readonly AppDbContext _db;
     private readonly IHubContext<NotificationHub> _hub;
@@ -59,7 +68,8 @@ public class InternalChatBotService : IInternalChatBotService
         {
             var defChannels = new[]
             {
-                new { Key = ChannelKeyOrders, Name = "📦 رادار الطلبات والعمليات", Icon = "📦", Desc = "تنبيهات فورية للطلبات الجديدة، المرتجعات، وتحديثات الشحن" },
+                new { Key = ChannelKeyOrders, Name = "🛒 رادار طلبات المتجر", Icon = "🛒", Desc = "طلبات المتجر الأونلاين الجديدة، المرتجعات، وتحديثات الشحن" },
+                new { Key = ChannelKeyPos, Name = "🧾 رادار فواتير الكاشير", Icon = "🧾", Desc = "فواتير البيع من نقاط البيع (الكاشير) لحظة بلحظة" },
                 new { Key = ChannelKeyInventory, Name = "🚨 طوارئ المخزون والنواقص", Icon = "🚨", Desc = "تنبيهات الأصناف الناقصة واقتراب نفاد المقاسات" },
                 new { Key = ChannelKeyTreasury, Name = "💰 الخزينة والرقابة المالية", Icon = "💰", Desc = "تقارير إقفال الشفتات ومصروفات الخزينة اليومية" }
             };
@@ -84,6 +94,14 @@ public class InternalChatBotService : IInternalChatBotService
                     _db.InternalChatChannels.Add(ch);
                     await _db.SaveChangesAsync();
                 }
+                else if (def.Key == ChannelKeyOrders && ch.Name == LegacyOrdersChannelName)
+                {
+                    // Rename the old mixed channel → it now carries store orders only (members/history preserved)
+                    ch.Name = def.Name;
+                    ch.Icon = def.Icon;
+                    ch.Description = def.Desc;
+                    await _db.SaveChangesAsync();
+                }
             }
         }
         catch (Exception ex)
@@ -103,15 +121,21 @@ public class InternalChatBotService : IInternalChatBotService
 
             if (order == null) return;
 
+            bool isPos = order.Source == OrderSource.POS;
+            var targetKey = isPos ? ChannelKeyPos : ChannelKeyOrders;
+
             var channel = await _db.InternalChatChannels
                 .Include(c => c.Members)
-                .FirstOrDefaultAsync(c => c.DirectKey == ChannelKeyOrders);
+                .FirstOrDefaultAsync(c => c.DirectKey == targetKey);
 
             if (channel == null) return;
+
+            if (isPos && trigger == "NewOnlineOrder") trigger = "NewPosOrder";
 
             string triggerTitle = trigger switch
             {
                 "NewOnlineOrder" => "🛍️ طلب أونلاين جديد وارد",
+                "NewPosOrder" => "🧾 فاتورة كاشير جديدة",
                 "HighValueOrder" => "💎 طلب استثنائي بقيمة كبرى (VIP)",
                 "Cancelled" => "❌ تم إلغاء الطلب",
                 "ReturnRequest" => "🔄 طلب استرجاع / استبدال جديد",
@@ -249,6 +273,31 @@ public class InternalChatBotService : IInternalChatBotService
         string? linkedEntityType = "BotCommandResult";
         int? linkedEntityId = null;
         string? linkedEntityRef = cleanCmd;
+
+        // ── Channel scoping: each command belongs to a specific radar group ──
+        var channel = await _db.InternalChatChannels
+            .AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == channelId);
+
+        if (channel == null || string.IsNullOrEmpty(channel.DirectKey) || !channel.DirectKey.StartsWith("sys_bot_"))
+            throw new InvalidOperationException("أوامر الروبوت متاحة فقط داخل مجموعات الرادار التلقائي");
+
+        bool isMember = await _db.InternalChatMembers.AnyAsync(m => m.ChannelId == channelId && m.UserId == userId);
+        if (!isMember)
+            throw new UnauthorizedAccessException("لست عضواً في هذه المجموعة");
+
+        var allowedByChannel = new Dictionary<string, string[]>
+        {
+            [ChannelKeyOrders]    = new[] { "order", "طلب", "customer", "عميل", "sales", "مبيعات" },
+            [ChannelKeyInventory] = new[] { "stock", "مخزون" },
+            [ChannelKeyTreasury]  = new[] { "sales", "مبيعات" }
+        };
+
+        if (allowedByChannel.TryGetValue(channel.DirectKey, out var allowed) && !allowed.Contains(cleanCmd))
+        {
+            // Unknown / out-of-scope command → show this group's help only
+            cleanCmd = "help:" + channel.DirectKey;
+        }
 
         switch (cleanCmd)
         {
@@ -410,11 +459,21 @@ public class InternalChatBotService : IInternalChatBotService
                 break;
 
             default:
-                responseText = "🤖 أوامر سبورتيف بوت المتاحة:\n" +
-                               "• /مخزون [اسم/كود]: استعلام فوري عن رصيد ومقاسات صنف\n" +
-                               "• /طلب [رقم الطلب]: فحص حالة وبيانات أوردر\n" +
-                               "• /مبيعات: ملخص مبيعات اليوم اللحظية\n" +
-                               "• /عميل [هاتف/اسم]: كشف حساب ومشتريات عميل";
+                responseText = channel.DirectKey switch
+                {
+                    ChannelKeyOrders =>
+                        "🤖 أوامر رادار الطلبات المتاحة:\n" +
+                        "• /طلب [رقم الطلب]: فحص حالة وبيانات أوردر\n" +
+                        "• /عميل [هاتف/اسم]: سجل ومشتريات عميل\n" +
+                        "• /مبيعات: ملخص مبيعات اليوم اللحظية",
+                    ChannelKeyInventory =>
+                        "🤖 أوامر طوارئ المخزون المتاحة:\n" +
+                        "• /مخزون [اسم/كود]: رصيد الصنف بكل المقاسات والألوان",
+                    ChannelKeyTreasury =>
+                        "🤖 أوامر الخزينة المتاحة:\n" +
+                        "• /مبيعات: ملخص إيرادات اليوم اللحظية",
+                    _ => "🤖 لا توجد أوامر متاحة في هذه المجموعة"
+                };
                 break;
         }
 

@@ -540,6 +540,20 @@ public class InternalChatController : ControllerBase
             });
         }
 
+        // Ensure delivery receipt is also recorded
+        var alreadyDelivered = await _db.InternalChatDeliveryReceipts
+            .AnyAsync(r => r.MessageId == messageId && r.UserId == userId);
+        if (!alreadyDelivered)
+        {
+            _db.InternalChatDeliveryReceipts.Add(new InternalChatDeliveryReceipt
+            {
+                MessageId = messageId,
+                UserId = userId,
+                UserName = UserName,
+                DeliveredAt = DateTime.UtcNow
+            });
+        }
+
         // Update channel last read
         var membership = await _db.InternalChatMembers
             .FirstOrDefaultAsync(m => m.ChannelId == msg.ChannelId && m.UserId == userId);
@@ -578,6 +592,21 @@ public class InternalChatController : ControllerBase
         var isMember = await _db.InternalChatMembers.AnyAsync(m => m.ChannelId == msg.ChannelId && m.UserId == userId);
         if (!isMember) return Forbid();
 
+        // Persist delivery receipt in database
+        var already = await _db.InternalChatDeliveryReceipts
+            .AnyAsync(r => r.MessageId == messageId && r.UserId == userId);
+        if (!already)
+        {
+            _db.InternalChatDeliveryReceipts.Add(new InternalChatDeliveryReceipt
+            {
+                MessageId = messageId,
+                UserId = userId,
+                UserName = UserName,
+                DeliveredAt = DateTime.UtcNow
+            });
+            await _db.SaveChangesAsync();
+        }
+
         // Notify message sender that message was delivered to recipient (Real-time double grey check)
         if (msg.SenderId != userId)
         {
@@ -594,6 +623,145 @@ public class InternalChatController : ControllerBase
         }
 
         return Ok(new { success = true });
+    }
+
+    // ── GET /api/internal-chat/messages/{id}/info ─────────────────────────────
+    /// <summary>Detailed delivery & read breakdown per member for group messages</summary>
+    [HttpGet("messages/{messageId}/info")]
+    public async Task<IActionResult> GetMessageInfo(int messageId)
+    {
+        var userId = UserId;
+        var msg = await _db.InternalChatMessages
+            .AsNoTracking()
+            .Include(m => m.ReadReceipts)
+            .Include(m => m.DeliveryReceipts)
+            .Include(m => m.Channel)
+                .ThenInclude(c => c.Members)
+            .FirstOrDefaultAsync(m => m.Id == messageId);
+
+        if (msg == null) return NotFound(new { message = "الرسالة غير موجودة" });
+
+        // Caller must be a member of the channel
+        var isMember = msg.Channel.Members.Any(m => m.UserId == userId);
+        if (!isMember) return Forbid();
+
+        // Get profile image and info for all members
+        var memberUserIds = msg.Channel.Members.Select(m => m.UserId).Distinct().ToList();
+        var userProfiles = await _db.Users
+            .AsNoTracking()
+            .Where(u => memberUserIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => new
+            {
+                Name = string.IsNullOrWhiteSpace(u.FullName) ? (u.UserName ?? "موظف") : u.FullName,
+                AvatarUrl = u.ProfileImageUrl
+            });
+
+        var readMap = msg.ReadReceipts.ToDictionary(r => r.UserId, r => r.ReadAt);
+        var deliveryMap = msg.DeliveryReceipts.ToDictionary(r => r.UserId, r => r.DeliveredAt);
+
+        // Recipients are all channel members except the message sender
+        var recipients = msg.Channel.Members
+            .Where(m => m.UserId != msg.SenderId)
+            .ToList();
+
+        var readList = new List<object>();
+        var deliveredList = new List<object>();
+        var pendingList = new List<object>();
+
+        foreach (var rec in recipients)
+        {
+            var prof = userProfiles.TryGetValue(rec.UserId, out var p) ? p : null;
+            var displayName = prof?.Name ?? rec.UserName;
+            var avatarUrl = prof?.AvatarUrl;
+            bool isOnline = UserPresenceTracker.IsUserOnline(rec.UserId);
+
+            // Read detection: direct receipt OR member opened channel after message was sent
+            bool isRead = readMap.TryGetValue(rec.UserId, out var readAt);
+            if (!isRead && rec.LastReadAt.HasValue && rec.LastReadAt.Value >= msg.SentAt)
+            {
+                isRead = true;
+                readAt = rec.LastReadAt.Value;
+            }
+
+            // Delivery detection: delivered receipt OR isRead OR member currently online OR member was active
+            DateTime? deliveredAt = null;
+            bool hasDeliveryReceipt = deliveryMap.TryGetValue(rec.UserId, out var dReceiptTime);
+            if (hasDeliveryReceipt)
+            {
+                deliveredAt = dReceiptTime;
+            }
+
+            bool isDelivered = isRead || hasDeliveryReceipt;
+            if (!isDelivered && (isOnline || (rec.LastReadAt.HasValue && rec.LastReadAt.Value >= msg.SentAt)))
+            {
+                isDelivered = true;
+                deliveredAt = msg.SentAt;
+            }
+
+            if (isRead)
+            {
+                readList.Add(new
+                {
+                    userId = rec.UserId,
+                    userName = displayName,
+                    avatarUrl,
+                    isAdmin = rec.IsAdmin,
+                    isOnline,
+                    readAt,
+                    deliveredAt = deliveryMap.TryGetValue(rec.UserId, out var dAt) ? (DateTime?)dAt : readAt
+                });
+            }
+            else if (isDelivered)
+            {
+                deliveredList.Add(new
+                {
+                    userId = rec.UserId,
+                    userName = displayName,
+                    avatarUrl,
+                    isAdmin = rec.IsAdmin,
+                    isOnline,
+                    deliveredAt = (DateTime?)deliveredAt
+                });
+            }
+            else
+            {
+                pendingList.Add(new
+                {
+                    userId = rec.UserId,
+                    userName = displayName,
+                    avatarUrl,
+                    isAdmin = rec.IsAdmin,
+                    isOnline
+                });
+            }
+        }
+
+        return Ok(new
+        {
+            message = new
+            {
+                id = msg.Id,
+                channelId = msg.ChannelId,
+                channelName = msg.Channel?.Name,
+                senderId = msg.SenderId,
+                senderName = msg.SenderName,
+                text = msg.IsDeleted ? "🗑️ تم حذف هذه الرسالة" : msg.Text,
+                mediaUrl = msg.MediaUrl,
+                mediaType = msg.MediaType,
+                fileName = msg.FileName,
+                sentAt = msg.SentAt
+            },
+            summary = new
+            {
+                totalRecipients = recipients.Count,
+                readCount = readList.Count,
+                deliveredCount = deliveredList.Count + readList.Count,
+                pendingCount = pendingList.Count
+            },
+            read = readList,
+            delivered = deliveredList,
+            pending = pendingList
+        });
     }
 
     // ── DELETE /api/internal-chat/messages/{id} ───────────────────────────────
@@ -960,8 +1128,19 @@ public class InternalChatController : ControllerBase
     [HttpPost("bot/command")]
     public async Task<IActionResult> ExecuteBotCommand([FromBody] BotCommandRequest req)
     {
-        var res = await _chatBot.ExecuteSlashCommandAsync(req.ChannelId, UserId, UserName, req.Command, req.Query);
-        return Ok(res);
+        try
+        {
+            var res = await _chatBot.ExecuteSlashCommandAsync(req.ChannelId, UserId, UserName, req.Command, req.Query);
+            return Ok(res);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(403, new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     [HttpPost("bot/claim")]

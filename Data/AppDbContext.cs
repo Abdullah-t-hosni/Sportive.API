@@ -103,11 +103,12 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<WhatsAppMessage>      WhatsAppMessages      { get; set; }
 
     // ── Internal Staff Chat ────────────────────────────────────────────────────
-    public DbSet<InternalChatChannel>     InternalChatChannels     { get; set; }
-    public DbSet<InternalChatMessage>     InternalChatMessages     { get; set; }
-    public DbSet<InternalChatMember>      InternalChatMembers      { get; set; }
-    public DbSet<InternalChatReadReceipt> InternalChatReadReceipts { get; set; }
-    public DbSet<InternalChatReaction>    InternalChatReactions    { get; set; }
+    public DbSet<InternalChatChannel>         InternalChatChannels         { get; set; }
+    public DbSet<InternalChatMessage>         InternalChatMessages         { get; set; }
+    public DbSet<InternalChatMember>          InternalChatMembers          { get; set; }
+    public DbSet<InternalChatDeliveryReceipt> InternalChatDeliveryReceipts { get; set; }
+    public DbSet<InternalChatReadReceipt>     InternalChatReadReceipts     { get; set; }
+    public DbSet<InternalChatReaction>        InternalChatReactions        { get; set; }
 
     public DbSet<Department>           Departments           { get; set; }
 

@@ -102,6 +102,7 @@ public class InternalChatMessage
     public DateTime? EditedAt { get; set; }
 
     // Navigation
+    public List<InternalChatDeliveryReceipt> DeliveryReceipts { get; set; } = new();
     public List<InternalChatReadReceipt> ReadReceipts { get; set; } = new();
     public List<InternalChatReaction> Reactions { get; set; } = new();
 }
@@ -130,6 +131,24 @@ public class InternalChatMember
 
     /// <summary>Notification mute until this time (null = not muted)</summary>
     public DateTime? MutedUntil { get; set; }
+}
+
+// ── Delivery Receipt ───────────────────────────────────────────────────────────
+public class InternalChatDeliveryReceipt
+{
+    [Key]
+    public int Id { get; set; }
+
+    public int MessageId { get; set; }
+    public InternalChatMessage Message { get; set; } = null!;
+
+    [Required]
+    public string UserId { get; set; } = "";
+
+    [MaxLength(200)]
+    public string UserName { get; set; } = "";
+
+    public DateTime DeliveredAt { get; set; } = DateTime.UtcNow;
 }
 
 // ── Read Receipt ───────────────────────────────────────────────────────────────
