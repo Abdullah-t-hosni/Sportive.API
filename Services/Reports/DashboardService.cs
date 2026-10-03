@@ -842,9 +842,12 @@ public class DashboardService : IDashboardService
             .ToListAsync();
 
         var productIds = topProducts.Select(p => p.ProductId).ToList();
-        var imagesMap = await _db.ProductImages.AsNoTracking()
+        var imagesList = await _db.ProductImages.AsNoTracking()
             .Where(img => productIds.Contains(img.ProductId) && img.IsMain)
-            .ToDictionaryAsync(img => img.ProductId, img => img.ImageUrl);
+            .ToListAsync();
+        var imagesMap = imagesList
+            .GroupBy(img => img.ProductId)
+            .ToDictionary(g => g.Key, g => g.First().ImageUrl);
 
         // ── 5. المخططات (Charts) ──────────
         var startHourRange = fromDate ?? now.AddHours(-24);
@@ -1164,7 +1167,12 @@ public class DashboardService : IDashboardService
             .OrderByDescending(x => x.Sold).Take(count).ToListAsync();
 
         var pIds = top.Select(t => t.ProductId).ToList();
-        var imgs = await _db.ProductImages.AsNoTracking().Where(img => pIds.Contains(img.ProductId) && img.IsMain).ToDictionaryAsync(img => img.ProductId, img => img.ImageUrl);
+        var imgsList = await _db.ProductImages.AsNoTracking()
+            .Where(img => pIds.Contains(img.ProductId) && img.IsMain)
+            .ToListAsync();
+        var imgs = imgsList
+            .GroupBy(img => img.ProductId)
+            .ToDictionary(g => g.Key, g => g.First().ImageUrl);
 
         return top.Select(t => new TopProductDto(t.ProductId, t.ProductNameAr, t.ProductNameEn, t.ProductId.HasValue ? imgs.GetValueOrDefault(t.ProductId.Value) : null, t.Sold, t.Revenue)).ToList();
     }

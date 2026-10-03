@@ -1262,8 +1262,8 @@ public class ProductService : IProductService
                     .ToList();
 
                 var rawSummaries = await MapToSummaryListAsync(ordered, source, warehouseId);
-                var configMap = configs.ToDictionary(c => c.ProductId, c => c.Quantity);
-                var variantMap = configs.Where(c => c.ProductVariantId.HasValue).ToDictionary(c => c.ProductId, c => c.ProductVariantId);
+                var configMap = configs.GroupBy(c => c.ProductId).ToDictionary(g => g.Key, g => g.First().Quantity);
+                var variantMap = configs.Where(c => c.ProductVariantId.HasValue).GroupBy(c => c.ProductId).ToDictionary(g => g.Key, g => g.First().ProductVariantId);
 
                 bundleSummaries = rawSummaries
                     .Select(s => s with { 
