@@ -92,7 +92,7 @@ public class InternalChatMessage
     [MaxLength(50)]
     public string? MediaType { get; set; } // "image", "file", "video"
 
-    [MaxLength(200)]
+    [MaxLength(4000)]
     public string? FileName { get; set; }
 
     public bool IsDeleted { get; set; } = false;

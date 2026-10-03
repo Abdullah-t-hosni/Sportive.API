@@ -17,6 +17,7 @@ public interface IInternalChatBotService
     Task EnsureSystemChannelsExistAsync();
     Task PostOrderAlertAsync(int orderId, string trigger, string? note = null);
     Task PostStockAlertAsync(int productId, int? variantId, int remainingStock, int reorderLevel);
+    Task PostShiftAlertAsync(POSShiftClosure closure);
     Task PostShiftAlertAsync(int shiftId, string cashierName, decimal expectedAmount, decimal actualAmount, decimal difference);
     Task<object> ExecuteSlashCommandAsync(int channelId, string userId, string userName, string command, string query);
     Task<object> ClaimOrResolveMessageAsync(int messageId, string userId, string userName, string action, string? note);
@@ -166,7 +167,7 @@ public class InternalChatBotService : IInternalChatBotService
                 note
             };
 
-            string metaJson = JsonSerializer.Serialize(meta);
+            string metaJson = JsonSerializer.Serialize(meta, JsonOpts);
             string text = $"{triggerTitle}\nرقم الطلب: #{order.OrderNumber}\nالعميل: {custName} ({custPhone})\nالقيمة: {order.TotalAmount:N0} ج.م | الأصناف: {itemsSummary}";
 
             await SaveAndBroadcastBotMessageAsync(channel.Id, text, metaJson, "BotOrderAlert", order.Id, order.OrderNumber);
@@ -219,7 +220,7 @@ public class InternalChatBotService : IInternalChatBotService
                 imageUrl = variant?.ImageUrl ?? product.Images.FirstOrDefault()?.ImageUrl
             };
 
-            string metaJson = JsonSerializer.Serialize(meta);
+            string metaJson = JsonSerializer.Serialize(meta, JsonOpts);
             string text = $"{triggerTitle}\nالمنتج: {product.NameAr} {variantInfo}\nالكمية المتبقية: {remainingStock} قطعة (حد الطلب: {reorderLevel})\nكود الصنف: {product.SKU}";
 
             await SaveAndBroadcastBotMessageAsync(channel.Id, text, metaJson, "BotStockAlert", product.Id, product.SKU);
@@ -230,8 +231,73 @@ public class InternalChatBotService : IInternalChatBotService
         }
     }
 
+    public async Task PostShiftAlertAsync(POSShiftClosure closure)
+    {
+        try
+        {
+            var channel = await _db.InternalChatChannels
+                .Include(c => c.Members)
+                .FirstOrDefaultAsync(c => c.DirectKey == ChannelKeyTreasury);
+
+            if (channel == null) return;
+
+            string diffText = closure.Variance == 0 
+                ? "متطابق تماماً ✅" 
+                : (closure.Variance > 0 ? $"زيادة +{closure.Variance:N2} ج.م 🟢" : $"عجز {closure.Variance:N2} ج.م 🔴");
+
+            var meta = new
+            {
+                botType = "BotShiftAlert",
+                shiftId = closure.Id,
+                cashierName = closure.ClosedBy,
+                stationId = closure.StationId,
+                branchId = closure.BranchId,
+                closureDate = closure.ClosureDate,
+                expectedAmount = closure.ExpectedCash,
+                actualAmount = closure.ActualCash,
+                difference = closure.Variance,
+                diffText,
+                grossSales = closure.GrossSales,
+                netSales = closure.NetSales,
+                cashSales = closure.CashSales,
+                cardSales = closure.CardSales,
+                vodafoneCashSales = closure.VodafoneCashSales,
+                instapaySales = closure.InstapaySales,
+                walletSales = closure.WalletSales,
+                creditSales = closure.CreditSales,
+                expenses = closure.Expenses,
+                safeDrops = closure.SafeDrops,
+                returns = closure.Returns,
+                discounts = closure.Discounts,
+                startingBalance = closure.StartingBalance,
+                createdAt = closure.CreatedAt
+            };
+
+            string metaJson = JsonSerializer.Serialize(meta, JsonOpts);
+            string text = $"💰 تقرير تقفيل وردية كاشير #{closure.Id}\n" +
+                          $"• الكاشير: {closure.ClosedBy} | المحطة: {closure.StationId}\n" +
+                          $"• صافي المبيعات: {closure.NetSales:N2} ج.م (كاش: {closure.CashSales:N2} | فيزا: {closure.CardSales:N2})\n" +
+                          $"• المصروفات والمرتجع: {(closure.Expenses + closure.Returns):N2} ج.م\n" +
+                          $"• المتوقع بالدرج: {closure.ExpectedCash:N2} ج.م | الفعلي: {closure.ActualCash:N2} ج.م\n" +
+                          $"• النتيجة: {diffText}";
+
+            await SaveAndBroadcastBotMessageAsync(channel.Id, text, metaJson, "BotShiftAlert", closure.Id, $"SHIFT-{closure.Id}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to post bot shift alert for shift #{ShiftId}", closure.Id);
+        }
+    }
+
     public async Task PostShiftAlertAsync(int shiftId, string cashierName, decimal expectedAmount, decimal actualAmount, decimal difference)
     {
+        var closure = await _db.POSShiftClosures.FindAsync(shiftId);
+        if (closure != null)
+        {
+            await PostShiftAlertAsync(closure);
+            return;
+        }
+
         try
         {
             var channel = await _db.InternalChatChannels
@@ -255,8 +321,8 @@ public class InternalChatBotService : IInternalChatBotService
                 diffText
             };
 
-            string metaJson = JsonSerializer.Serialize(meta);
-            string text = $"💰 تقرير إغلاق شيفت الخزينة\nالكاشير: {cashierName}\nالمتوقع بالدرج: {expectedAmount:N2} ج.م | الفعلي: {actualAmount:N2} ج.م\nالنتيجة: {diffText}";
+            string metaJson = JsonSerializer.Serialize(meta, JsonOpts);
+            string text = $"💰 تقرير تقفيل شيفت الخزينة #{shiftId}\nالكاشير: {cashierName}\nالمتوقع بالدرج: {expectedAmount:N2} ج.م | الفعلي: {actualAmount:N2} ج.م\nالنتيجة: {diffText}";
 
             await SaveAndBroadcastBotMessageAsync(channel.Id, text, metaJson, "BotShiftAlert", shiftId, $"SHIFT-{shiftId}");
         }
@@ -772,7 +838,7 @@ public class InternalChatBotService : IInternalChatBotService
                 break;
         }
 
-        string metaJson = responseMeta != null ? JsonSerializer.Serialize(responseMeta) : "{}";
+        string metaJson = responseMeta != null ? JsonSerializer.Serialize(responseMeta, JsonOpts) : "{}";
         var botMsg = await SaveAndBroadcastBotMessageAsync(channelId, responseText, metaJson, linkedEntityType, linkedEntityId, linkedEntityRef);
         return botMsg;
     }

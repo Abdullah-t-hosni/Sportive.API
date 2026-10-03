@@ -23,15 +23,18 @@ namespace Sportive.API.Controllers
         private readonly AppDbContext _db;
         private readonly Sportive.API.Services.IAuditService _audit;
         private readonly Sportive.API.Services.IInternalChatBotService _chatBot;
+        private readonly ILogger<POSShiftClosuresController> _logger;
 
         public POSShiftClosuresController(
             AppDbContext db,
             Sportive.API.Services.IAuditService audit,
-            Sportive.API.Services.IInternalChatBotService chatBot)
+            Sportive.API.Services.IInternalChatBotService chatBot,
+            ILogger<POSShiftClosuresController> logger)
         {
             _db = db;
             _audit = audit;
             _chatBot = chatBot;
+            _logger = logger;
         }
 
         [HttpPost]
@@ -82,15 +85,12 @@ namespace Sportive.API.Controllers
 
                 try
                 {
-                    await _chatBot.PostShiftAlertAsync(
-                        closure.Id,
-                        closure.ClosedBy,
-                        closure.ExpectedCash,
-                        closure.ActualCash,
-                        closure.Variance
-                    );
+                    await _chatBot.PostShiftAlertAsync(closure);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to post shift alert for closure #{ClosureId}", closure.Id);
+                }
 
                 return Ok(closure);
             }
@@ -140,6 +140,28 @@ namespace Sportive.API.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, new { message = "Failed to retrieve shift closures", error = ex.Message });
+            }
+        }
+
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetById(int id)
+        {
+            try
+            {
+                var closure = await _db.POSShiftClosures
+                    .Include(c => c.Branch)
+                    .FirstOrDefaultAsync(c => c.Id == id);
+
+                if (closure == null)
+                {
+                    return NotFound(new { message = "Shift closure not found" });
+                }
+
+                return Ok(closure);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Failed to retrieve shift closure", error = ex.Message });
             }
         }
 
