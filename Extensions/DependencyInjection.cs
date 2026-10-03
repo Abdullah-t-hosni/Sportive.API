@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.Json;
 using System.Threading.RateLimiting;
 using FluentValidation;
@@ -352,6 +352,7 @@ public static class DependencyInjection
         services.AddScoped<IImageService, CloudinaryImageService>();
         services.AddScoped<IPaymobService, PaymobService>();
         services.AddScoped<INotificationService, NotificationService>();
+        services.AddScoped<IInternalChatBotService, InternalChatBotService>();
         services.AddScoped<IPdfService, PdfService>();
         services.AddScoped<AccountingCoreService>();
         services.AddScoped<SalesAccountingService>();

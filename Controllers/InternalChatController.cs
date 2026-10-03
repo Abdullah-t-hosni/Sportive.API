@@ -23,17 +23,20 @@ public class InternalChatController : ControllerBase
     private readonly AppDbContext _db;
     private readonly IHubContext<NotificationHub> _hub;
     private readonly INotificationService _notifications;
+    private readonly IInternalChatBotService _chatBot;
     private readonly ILogger<InternalChatController> _logger;
 
     public InternalChatController(
         AppDbContext db,
         IHubContext<NotificationHub> hub,
         INotificationService notifications,
+        IInternalChatBotService chatBot,
         ILogger<InternalChatController> logger)
     {
         _db = db;
         _hub = hub;
         _notifications = notifications;
+        _chatBot = chatBot;
         _logger = logger;
     }
 
@@ -46,6 +49,10 @@ public class InternalChatController : ControllerBase
     public async Task<IActionResult> GetMyChannels()
     {
         var userId = UserId;
+        var userName = UserName;
+
+        // Auto-enroll staff/admins in system bot operational channels
+        await _chatBot.EnsureSystemChannelsForUserAsync(userId, userName);
 
         var myMemberships = await _db.InternalChatMembers
             .AsNoTracking()
@@ -929,5 +936,34 @@ public class InternalChatController : ControllerBase
             .SendAsync("MessageReacted", new { messageId, reactions });
 
         return Ok(new { messageId, reactions });
+    }
+
+    // ── Bot Operations ────────────────────────────────────────────────────────
+    public class BotCommandRequest
+    {
+        public int ChannelId { get; set; }
+        public string Command { get; set; } = "";
+        public string Query { get; set; } = "";
+    }
+
+    public class BotClaimRequest
+    {
+        public int MessageId { get; set; }
+        public string Action { get; set; } = "claim"; // "claim" or "resolve"
+        public string? Note { get; set; }
+    }
+
+    [HttpPost("bot/command")]
+    public async Task<IActionResult> ExecuteBotCommand([FromBody] BotCommandRequest req)
+    {
+        var res = await _chatBot.ExecuteSlashCommandAsync(req.ChannelId, UserId, UserName, req.Command, req.Query);
+        return Ok(res);
+    }
+
+    [HttpPost("bot/claim")]
+    public async Task<IActionResult> ClaimBotMessage([FromBody] BotClaimRequest req)
+    {
+        var res = await _chatBot.ClaimOrResolveMessageAsync(req.MessageId, UserId, UserName, req.Action, req.Note);
+        return Ok(res);
     }
 }

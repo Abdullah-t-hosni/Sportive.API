@@ -248,6 +248,25 @@ public class NotificationService : INotificationService
             
             _ = Task.Run(() => SendWebPushAsync(notif.UserId, titleAr, titleEn, msgAr, msgEn, type, orderId, effectiveLink, isStaffRecipient));
         }
+
+        // Trigger Ops Bot Alert into dedicated bot channel
+        if (orderId.HasValue && (type == "OnlineOrder" || type == "Order" || type == "ReturnExchangeRequest"))
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    using var scope = _scopeFactory.CreateScope();
+                    var bot = scope.ServiceProvider.GetRequiredService<IInternalChatBotService>();
+                    var trig = type == "ReturnExchangeRequest" ? "ReturnRequest" : "NewOnlineOrder";
+                    await bot.PostOrderAlertAsync(orderId.Value, trig);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Background bot order alert failed for order #{OrderId}", orderId);
+                }
+            });
+        }
     }
 
     private async Task SendWebPushAsync(string userId, string titleAr, string titleEn, string msgAr, string msgEn, string type, int? orderId, string? link = null, bool isStaff = false)

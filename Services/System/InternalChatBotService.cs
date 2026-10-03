@@ -1,0 +1,558 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Sportive.API.Data;
+using Sportive.API.Hubs;
+using Sportive.API.Models;
+
+namespace Sportive.API.Services;
+
+public interface IInternalChatBotService
+{
+    Task EnsureSystemChannelsForUserAsync(string userId, string userName);
+    Task PostOrderAlertAsync(int orderId, string trigger, string? note = null);
+    Task PostStockAlertAsync(int productId, int? variantId, int remainingStock, int reorderLevel);
+    Task PostShiftAlertAsync(int shiftId, string cashierName, decimal expectedAmount, decimal actualAmount, decimal difference);
+    Task<object> ExecuteSlashCommandAsync(int channelId, string userId, string userName, string command, string query);
+    Task<object> ClaimOrResolveMessageAsync(int messageId, string userId, string userName, string action, string? note);
+}
+
+public class InternalChatBotService : IInternalChatBotService
+{
+    public const string BotUserId = "sportive-bot-ops";
+    public const string BotUserName = "سبورتيف بوت 🤖";
+    public const string BotAvatarUrl = "/favicon.svg";
+
+    public const string ChannelKeyOrders = "sys_bot_orders";
+    public const string ChannelKeyInventory = "sys_bot_inventory";
+    public const string ChannelKeyTreasury = "sys_bot_treasury";
+
+    private readonly AppDbContext _db;
+    private readonly IHubContext<NotificationHub> _hub;
+    private readonly INotificationService _notifications;
+    private readonly ILogger<InternalChatBotService> _logger;
+
+    public InternalChatBotService(
+        AppDbContext db,
+        IHubContext<NotificationHub> hub,
+        INotificationService notifications,
+        ILogger<InternalChatBotService> logger)
+    {
+        _db = db;
+        _hub = hub;
+        _notifications = notifications;
+        _logger = logger;
+    }
+
+    /// <summary>
+    /// Ensures default system channels exist and auto-enrolls the staff user
+    /// </summary>
+    public async Task EnsureSystemChannelsForUserAsync(string userId, string userName)
+    {
+        try
+        {
+            var defChannels = new[]
+            {
+                new { Key = ChannelKeyOrders, Name = "📦 رادار الطلبات والعمليات", Icon = "📦", Desc = "تنبيهات فورية للطلبات الجديدة، المرتجعات، وتحديثات الشحن" },
+                new { Key = ChannelKeyInventory, Name = "🚨 طوارئ المخزون والنواقص", Icon = "🚨", Desc = "تنبيهات الأصناف الناقصة واقتراب نفاد المقاسات" },
+                new { Key = ChannelKeyTreasury, Name = "💰 الخزينة والرقابة المالية", Icon = "💰", Desc = "تقارير إقفال الشفتات ومصروفات الخزينة اليومية" }
+            };
+
+            foreach (var def in defChannels)
+            {
+                var ch = await _db.InternalChatChannels
+                    .Include(c => c.Members)
+                    .FirstOrDefaultAsync(c => c.DirectKey == def.Key);
+
+                if (ch == null)
+                {
+                    ch = new InternalChatChannel
+                    {
+                        Name = def.Name,
+                        Description = def.Desc,
+                        Icon = def.Icon,
+                        DirectKey = def.Key,
+                        Type = InternalChatChannelType.Group,
+                        CreatedByUserId = BotUserId,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    _db.InternalChatChannels.Add(ch);
+                    await _db.SaveChangesAsync();
+                }
+
+                if (!ch.Members.Any(m => m.UserId == userId))
+                {
+                    _db.InternalChatMembers.Add(new InternalChatMember
+                    {
+                        ChannelId = ch.Id,
+                        UserId = userId,
+                        UserName = userName,
+                        IsAdmin = false,
+                        JoinedAt = DateTime.UtcNow,
+                        LastReadAt = DateTime.UtcNow
+                    });
+                    await _db.SaveChangesAsync();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error ensuring bot system channels for user {UserId}", userId);
+        }
+    }
+
+    public async Task PostOrderAlertAsync(int orderId, string trigger, string? note = null)
+    {
+        try
+        {
+            var order = await _db.Orders
+                .Include(o => o.Customer)
+                .Include(o => o.Items)
+                .FirstOrDefaultAsync(o => o.Id == orderId);
+
+            if (order == null) return;
+
+            var channel = await _db.InternalChatChannels
+                .Include(c => c.Members)
+                .FirstOrDefaultAsync(c => c.DirectKey == ChannelKeyOrders);
+
+            if (channel == null) return;
+
+            string triggerTitle = trigger switch
+            {
+                "NewOnlineOrder" => "🛍️ طلب أونلاين جديد وارد",
+                "HighValueOrder" => "💎 طلب استثنائي بقيمة كبرى (VIP)",
+                "Cancelled" => "❌ تم إلغاء الطلب",
+                "ReturnRequest" => "🔄 طلب استرجاع / استبدال جديد",
+                "DelayedShipping" => "⏳ طلب متأخر لدى شركة الشحن",
+                _ => "📦 تحديث على حالة الطلب"
+            };
+
+            string custName = order.Customer?.FullName ?? "عميل متجر";
+            string custPhone = order.Customer?.Phone ?? "";
+            string itemsSummary = string.Join(" • ", order.Items.Take(3).Select(i => $"{i.ProductNameAr} ({i.Quantity}x)"));
+
+            var meta = new
+            {
+                botType = "BotOrderAlert",
+                trigger,
+                orderId = order.Id,
+                orderNumber = order.OrderNumber,
+                customerName = custName,
+                customerPhone = custPhone,
+                totalAmount = order.TotalAmount,
+                status = order.Status.ToString(),
+                paymentMethod = order.PaymentMethod.ToString(),
+                itemsCount = order.Items.Count,
+                itemsSummary,
+                note
+            };
+
+            string metaJson = JsonSerializer.Serialize(meta);
+            string text = $"{triggerTitle}\nرقم الطلب: #{order.OrderNumber}\nالعميل: {custName} ({custPhone})\nالقيمة: {order.TotalAmount:N0} ج.م | الأصناف: {itemsSummary}";
+
+            await SaveAndBroadcastBotMessageAsync(channel.Id, text, metaJson, "BotOrderAlert", order.Id, order.OrderNumber);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to post bot order alert for order #{OrderId}", orderId);
+        }
+    }
+
+    public async Task PostStockAlertAsync(int productId, int? variantId, int remainingStock, int reorderLevel)
+    {
+        try
+        {
+            var product = await _db.Products
+                .Include(p => p.Images)
+                .FirstOrDefaultAsync(p => p.Id == productId);
+
+            if (product == null) return;
+
+            ProductVariant? variant = null;
+            if (variantId.HasValue)
+            {
+                variant = await _db.ProductVariants.FirstOrDefaultAsync(v => v.Id == variantId.Value);
+            }
+
+            var channel = await _db.InternalChatChannels
+                .Include(c => c.Members)
+                .FirstOrDefaultAsync(c => c.DirectKey == ChannelKeyInventory);
+
+            if (channel == null) return;
+
+            string variantInfo = variant != null 
+                ? $"({variant.ColorAr ?? variant.Color ?? ""} - مقاس {variant.Size ?? ""})".Trim() 
+                : "";
+
+            bool isZero = remainingStock <= 0;
+            string triggerTitle = isZero ? "⛔ نفاد المخزون بالكامل (رصيد صفر)" : "🚨 تنبيه اقتراب نفاد المخزون (تحت حد الطلب)";
+
+            var meta = new
+            {
+                botType = "BotStockAlert",
+                productId = product.Id,
+                variantId = variant?.Id,
+                productName = product.NameAr,
+                variantInfo,
+                sku = variant != null ? product.SKU : product.SKU,
+                remainingStock,
+                reorderLevel,
+                imageUrl = variant?.ImageUrl ?? product.Images.FirstOrDefault()?.ImageUrl
+            };
+
+            string metaJson = JsonSerializer.Serialize(meta);
+            string text = $"{triggerTitle}\nالمنتج: {product.NameAr} {variantInfo}\nالكمية المتبقية: {remainingStock} قطعة (حد الطلب: {reorderLevel})\nكود الصنف: {product.SKU}";
+
+            await SaveAndBroadcastBotMessageAsync(channel.Id, text, metaJson, "BotStockAlert", product.Id, product.SKU);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to post bot stock alert for product #{ProductId}", productId);
+        }
+    }
+
+    public async Task PostShiftAlertAsync(int shiftId, string cashierName, decimal expectedAmount, decimal actualAmount, decimal difference)
+    {
+        try
+        {
+            var channel = await _db.InternalChatChannels
+                .Include(c => c.Members)
+                .FirstOrDefaultAsync(c => c.DirectKey == ChannelKeyTreasury);
+
+            if (channel == null) return;
+
+            string diffText = difference == 0 
+                ? "متطابق تماماً ✅" 
+                : (difference > 0 ? $"زيادة +{difference:N2} ج.م 🟢" : $"عجز {difference:N2} ج.م 🔴");
+
+            var meta = new
+            {
+                botType = "BotShiftAlert",
+                shiftId,
+                cashierName,
+                expectedAmount,
+                actualAmount,
+                difference,
+                diffText
+            };
+
+            string metaJson = JsonSerializer.Serialize(meta);
+            string text = $"💰 تقرير إغلاق شيفت الخزينة\nالكاشير: {cashierName}\nالمتوقع بالدرج: {expectedAmount:N2} ج.م | الفعلي: {actualAmount:N2} ج.م\nالنتيجة: {diffText}";
+
+            await SaveAndBroadcastBotMessageAsync(channel.Id, text, metaJson, "BotShiftAlert", shiftId, $"SHIFT-{shiftId}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to post bot shift alert for shift #{ShiftId}", shiftId);
+        }
+    }
+
+    public async Task<object> ExecuteSlashCommandAsync(int channelId, string userId, string userName, string command, string query)
+    {
+        var cleanCmd = (command ?? "").Trim().ToLowerInvariant().TrimStart('/');
+        var cleanQuery = (query ?? "").Trim();
+
+        string responseText = "";
+        object? responseMeta = null;
+        string? linkedEntityType = "BotCommandResult";
+        int? linkedEntityId = null;
+        string? linkedEntityRef = cleanCmd;
+
+        switch (cleanCmd)
+        {
+            case "stock":
+            case "مخزون":
+                if (string.IsNullOrWhiteSpace(cleanQuery))
+                {
+                    responseText = "يرجى كتابة اسم الصنف أو الكود بعد الأمر، مثلاً:\n/مخزون ترينج نايكي أو /stock SPT-102";
+                }
+                else
+                {
+                    var products = await _db.Products
+                        .Include(p => p.Variants)
+                        .Include(p => p.Images)
+                        .Where(p => p.SKU == cleanQuery || p.NameAr.Contains(cleanQuery) || p.NameEn.Contains(cleanQuery))
+                        .Take(3)
+                        .ToListAsync();
+
+                    if (!products.Any())
+                    {
+                        responseText = $"🔍 لم يتم العثور على أي منتج يطابق: \"{cleanQuery}\"";
+                    }
+                    else
+                    {
+                        var first = products.First();
+                        linkedEntityId = first.Id;
+                        linkedEntityRef = first.SKU;
+
+                        var variantsList = first.Variants.Select(v => new
+                        {
+                            size = v.Size ?? "-",
+                            color = v.ColorAr ?? v.Color ?? "-",
+                            stock = v.StockQuantity,
+                            isLow = v.StockQuantity <= v.ReorderLevel
+                        }).ToList();
+
+                        responseMeta = new
+                        {
+                            botType = "BotStockQuery",
+                            productId = first.Id,
+                            name = first.NameAr,
+                            sku = first.SKU,
+                            price = first.Price,
+                            totalStock = first.TotalStock,
+                            variants = variantsList,
+                            imageUrl = first.Images.FirstOrDefault()?.ImageUrl
+                        };
+
+                        var varLines = string.Join("\n", variantsList.Select(v => $"  • {v.color} - مقاس {v.size}: {v.stock} قطعة {(v.stock <= 0 ? "❌ نفد" : (v.isLow ? "⚠️ ناقص" : "✅"))}"));
+                        responseText = $"📦 تقرير رصيد الصنف:\n{first.NameAr} (كود: {first.SKU})\nإجمالي المخزون: {first.TotalStock} قطعة | السعر: {first.Price:N0} ج.م\nتفاصيل المقاسات والألوان:\n{varLines}";
+                    }
+                }
+                break;
+
+            case "order":
+            case "طلب":
+                if (string.IsNullOrWhiteSpace(cleanQuery))
+                {
+                    responseText = "يرجى كتابة رقم الطلب بعد الأمر، مثلاً:\n/طلب 10482 أو /order SPT-2610-0042";
+                }
+                else
+                {
+                    var cleanOrderNum = cleanQuery.TrimStart('#');
+                    var order = await _db.Orders
+                        .Include(o => o.Customer)
+                        .Include(o => o.Items)
+                        .FirstOrDefaultAsync(o => o.OrderNumber == cleanOrderNum || o.Id.ToString() == cleanOrderNum);
+
+                    if (order == null)
+                    {
+                        responseText = $"🔍 لم يتم العثور على طلب برقم: \"{cleanQuery}\"";
+                    }
+                    else
+                    {
+                        linkedEntityId = order.Id;
+                        linkedEntityRef = order.OrderNumber;
+
+                        responseMeta = new
+                        {
+                            botType = "BotOrderQuery",
+                            orderId = order.Id,
+                            orderNumber = order.OrderNumber,
+                            customerName = order.Customer?.FullName ?? "عميل",
+                            phone = order.Customer?.Phone ?? "",
+                            total = order.TotalAmount,
+                            status = order.Status.ToString(),
+                            payment = order.PaymentMethod.ToString(),
+                            itemsCount = order.Items.Count,
+                            date = order.CreatedAt.ToString("yyyy-MM-dd HH:mm")
+                        };
+
+                        responseText = $"📋 تفاصيل الطلب #{order.OrderNumber}:\nالعميل: {order.Customer?.FullName} ({order.Customer?.Phone})\nالحالة: {order.Status} | الإجمالي: {order.TotalAmount:N0} ج.م\nطريقة الدفع: {order.PaymentMethod} | عدد الأصناف: {order.Items.Count} قطعة";
+                    }
+                }
+                break;
+
+            case "sales":
+            case "مبيعات":
+                var todayStart = DateTime.UtcNow.Date;
+                var todayOrders = await _db.Orders
+                    .AsNoTracking()
+                    .Where(o => o.CreatedAt >= todayStart && o.Status != OrderStatus.Cancelled)
+                    .ToListAsync();
+
+                var count = todayOrders.Count;
+                var revenue = todayOrders.Sum(o => o.TotalAmount);
+                var avg = count > 0 ? revenue / count : 0;
+                var deliveredCount = todayOrders.Count(o => o.Status == OrderStatus.Delivered);
+
+                responseMeta = new
+                {
+                    botType = "BotSalesSummary",
+                    date = DateTime.UtcNow.ToString("yyyy-MM-dd"),
+                    ordersCount = count,
+                    totalRevenue = revenue,
+                    avgOrderValue = avg,
+                    deliveredCount
+                };
+
+                responseText = $"📊 رادار مبيعات اليوم ({DateTime.UtcNow:dd/MM/yyyy}):\nإجمالي الإيراد: {revenue:N0} ج.م\nعدد الطلبات: {count} طلب\nمتوسط قيمة الطلب: {avg:N0} ج.م\nتم التسليم: {deliveredCount} طلب";
+                break;
+
+            case "customer":
+            case "عميل":
+                if (string.IsNullOrWhiteSpace(cleanQuery))
+                {
+                    responseText = "يرجى إدخال رقم هاتف العميل أو اسمه، مثلاً:\n/عميل 01012345678";
+                }
+                else
+                {
+                    var cust = await _db.Customers
+                        .Include(c => c.Orders)
+                        .FirstOrDefaultAsync(c => c.Phone == cleanQuery || c.FullName.Contains(cleanQuery));
+
+                    if (cust == null)
+                    {
+                        responseText = $"🔍 لم يتم العثور على عميل مسجل ببيانات: \"{cleanQuery}\"";
+                    }
+                    else
+                    {
+                        var totalOrders = cust.Orders.Count;
+                        var completedOrders = cust.Orders.Count(o => o.Status == OrderStatus.Delivered);
+                        var totalSpent = cust.Orders.Where(o => o.Status == OrderStatus.Delivered).Sum(o => o.TotalAmount);
+
+                        responseMeta = new
+                        {
+                            botType = "BotCustomerQuery",
+                            customerId = cust.Id,
+                            name = cust.FullName,
+                            phone = cust.Phone,
+                            totalOrders,
+                            completedOrders,
+                            totalSpent
+                        };
+
+                        responseText = $"👤 بيانات العميل: {cust.FullName} ({cust.Phone})\nإجمالي الطلبات: {totalOrders} طلب | المسلم بنجاح: {completedOrders}\nإجمالي المشتريات: {totalSpent:N0} ج.م";
+                    }
+                }
+                break;
+
+            default:
+                responseText = "🤖 أوامر سبورتيف بوت المتاحة:\n" +
+                               "• /مخزون [اسم/كود]: استعلام فوري عن رصيد ومقاسات صنف\n" +
+                               "• /طلب [رقم الطلب]: فحص حالة وبيانات أوردر\n" +
+                               "• /مبيعات: ملخص مبيعات اليوم اللحظية\n" +
+                               "• /عميل [هاتف/اسم]: كشف حساب ومشتريات عميل";
+                break;
+        }
+
+        string metaJson = responseMeta != null ? JsonSerializer.Serialize(responseMeta) : "{}";
+        var botMsg = await SaveAndBroadcastBotMessageAsync(channelId, responseText, metaJson, linkedEntityType, linkedEntityId, linkedEntityRef);
+        return botMsg;
+    }
+
+    public async Task<object> ClaimOrResolveMessageAsync(int messageId, string userId, string userName, string action, string? note)
+    {
+        var msg = await _db.InternalChatMessages
+            .Include(m => m.Channel)
+            .FirstOrDefaultAsync(m => m.Id == messageId);
+
+        if (msg == null) throw new InvalidOperationException("Message not found");
+
+        var resolutionTag = action == "resolve" 
+            ? $"resolved:{userId}:{userName}:{note ?? ""}:{DateTime.UtcNow:s}" 
+            : $"claimed:{userId}:{userName}::{DateTime.UtcNow:s}";
+
+        // Store claim tag in LinkedEntityRef
+        msg.LinkedEntityRef = resolutionTag;
+        await _db.SaveChangesAsync();
+
+        var updatedObj = new
+        {
+            messageId = msg.Id,
+            channelId = msg.ChannelId,
+            action,
+            userId,
+            userName,
+            note,
+            linkedEntityRef = resolutionTag,
+            updatedAt = DateTime.UtcNow
+        };
+
+        // Broadcast to channel members via SignalR
+        var memberUserIds = await _db.InternalChatMembers
+            .AsNoTracking()
+            .Where(m => m.ChannelId == msg.ChannelId)
+            .Select(m => m.UserId)
+            .ToListAsync();
+
+        foreach (var mid in memberUserIds)
+        {
+            try
+            {
+                await _hub.Clients.Group($"user_{mid}").SendAsync("InternalChatMessageUpdated", updatedObj);
+            }
+            catch { }
+        }
+
+        return updatedObj;
+    }
+
+    private async Task<object> SaveAndBroadcastBotMessageAsync(
+        int channelId, string text, string metaJson, string? linkedEntityType, int? linkedEntityId, string? linkedEntityRef)
+    {
+        var msg = new InternalChatMessage
+        {
+            ChannelId = channelId,
+            SenderId = BotUserId,
+            SenderName = BotUserName,
+            SenderAvatarUrl = BotAvatarUrl,
+            Text = text,
+            FileName = metaJson,
+            MediaType = "bot_card",
+            LinkedEntityType = linkedEntityType,
+            LinkedEntityId = linkedEntityId,
+            LinkedEntityRef = linkedEntityRef,
+            SentAt = DateTime.UtcNow
+        };
+
+        _db.InternalChatMessages.Add(msg);
+        await _db.SaveChangesAsync();
+
+        var channel = await _db.InternalChatChannels.AsNoTracking().FirstOrDefaultAsync(c => c.Id == channelId);
+        var channelName = channel?.Name ?? "شات العمليات";
+        var channelType = channel?.Type.ToString() ?? "Group";
+
+        var memberUserIds = await _db.InternalChatMembers
+            .AsNoTracking()
+            .Where(m => m.ChannelId == channelId)
+            .Select(m => m.UserId)
+            .ToListAsync();
+
+        var mapped = new
+        {
+            id = msg.Id,
+            channelId = msg.ChannelId,
+            channelName,
+            channelType,
+            senderId = msg.SenderId,
+            senderName = msg.SenderName,
+            senderAvatarUrl = msg.SenderAvatarUrl,
+            text = msg.Text,
+            fileName = msg.FileName,
+            mediaType = msg.MediaType,
+            linkedEntityType = msg.LinkedEntityType,
+            linkedEntityId = msg.LinkedEntityId,
+            linkedEntityRef = msg.LinkedEntityRef,
+            sentAt = msg.SentAt,
+            isMe = false,
+            isDelivered = true,
+            reactions = Array.Empty<object>()
+        };
+
+        // Broadcast via SignalR to channel members
+        foreach (var mid in memberUserIds)
+        {
+            try
+            {
+                await _hub.Clients.Group($"user_{mid}").SendAsync("ReceiveInternalChatMessage", mapped);
+            }
+            catch { }
+        }
+
+        // Web push notification to mobile devices of channel members
+        try
+        {
+            await _notifications.SendChatWebPushAsync(memberUserIds, BotUserName, channelName, true, text, channelId, "bot_card");
+        }
+        catch { }
+
+        return mapped;
+    }
+}
