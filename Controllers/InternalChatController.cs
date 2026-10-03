@@ -10,6 +10,8 @@ using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.Hubs;
 using Sportive.API.Models;
+using Sportive.API.Services;
+using Microsoft.Extensions.Logging;
 
 namespace Sportive.API.Controllers;
 
@@ -20,11 +22,19 @@ public class InternalChatController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IHubContext<NotificationHub> _hub;
+    private readonly INotificationService _notifications;
+    private readonly ILogger<InternalChatController> _logger;
 
-    public InternalChatController(AppDbContext db, IHubContext<NotificationHub> hub)
+    public InternalChatController(
+        AppDbContext db,
+        IHubContext<NotificationHub> hub,
+        INotificationService notifications,
+        ILogger<InternalChatController> logger)
     {
         _db = db;
         _hub = hub;
+        _notifications = notifications;
+        _logger = logger;
     }
 
     private string UserId => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
@@ -294,6 +304,32 @@ public class InternalChatController : ControllerBase
                 }
                 catch {}
             }
+        }
+
+        // 📱 MOBILE & DESKTOP NATIVE WEB PUSH:
+        // Send Web Push notifications to devices of all other channel members (wakes up mobile lock screen / background tab)
+        var recipientUserIds = memberUserIds.Where(id => id != userId).ToList();
+        if (recipientUserIds.Count > 0)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _notifications.SendChatWebPushAsync(
+                        recipientUserIds,
+                        userName,
+                        channel.Name,
+                        channel.Type == InternalChatChannelType.Group,
+                        msg.Text,
+                        channelId,
+                        msg.MediaType
+                    );
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to send chat web push for channel {ChannelId}", channelId);
+                }
+            });
         }
 
         return Ok(mapped);

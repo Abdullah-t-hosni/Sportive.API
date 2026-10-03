@@ -21,6 +21,7 @@ public interface INotificationService
     Task ClearAllAsync(string userId);
     Task<int> GetUnreadCountAsync(string userId);
     Task BroadcastStockUpdateAsync(int productId, int variantId, int newStock);
+    Task SendChatWebPushAsync(IEnumerable<string> recipientUserIds, string senderName, string channelName, bool isGroup, string text, int channelId, string? mediaType);
 }
 
 public class NotificationService : INotificationService
@@ -402,5 +403,95 @@ public class NotificationService : INotificationService
         var prefix = GetPrefix();
         await _hubContext.Clients.Group($"{prefix}_Admin")
             .SendAsync("StockUpdate", new { productId, variantId, newStock });
+    }
+
+    public async Task SendChatWebPushAsync(IEnumerable<string> recipientUserIds, string senderName, string channelName, bool isGroup, string text, int channelId, string? mediaType)
+    {
+        try
+        {
+            var userIdsList = recipientUserIds?.Distinct().ToList();
+            if (userIdsList == null || userIdsList.Count == 0) return;
+
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            var subscriptions = await db.PushSubscriptions
+                .Where(s => userIdsList.Contains(s.UserId))
+                .ToListAsync();
+
+            if (!subscriptions.Any()) return;
+
+            var subject = Environment.GetEnvironmentVariable("VAPID_SUBJECT") ?? _config["Vapid:Subject"];
+            var publicKey = Environment.GetEnvironmentVariable("VAPID_PUBLIC_KEY") ?? _config["Vapid:PublicKey"];
+            var privateKey = Environment.GetEnvironmentVariable("VAPID_PRIVATE_KEY") ?? _config["Vapid:PrivateKey"];
+
+            if (subject == "${VAPID_SUBJECT}") subject = null;
+            if (publicKey == "${VAPID_PUBLIC_KEY}") publicKey = null;
+            if (privateKey == "${VAPID_PRIVATE_KEY}") privateKey = null;
+
+            if (string.IsNullOrEmpty(subject) || string.IsNullOrEmpty(publicKey) || string.IsNullOrEmpty(privateKey))
+                return;
+
+            var vapidDetails = new VapidDetails(subject, publicKey, privateKey);
+            var webPushClient = new WebPushClient();
+
+            string titleAr = isGroup && !string.IsNullOrWhiteSpace(channelName)
+                ? $"{senderName} ({channelName})"
+                : $"{senderName} - شات الموظفين";
+
+            string titleEn = isGroup && !string.IsNullOrWhiteSpace(channelName)
+                ? $"{senderName} ({channelName})"
+                : $"{senderName} - Staff Chat";
+
+            string body = mediaType switch
+            {
+                "image" => "📷 أرسل صورة",
+                "audio" => "🎤 أرسل رسالة صوتية",
+                _ when !string.IsNullOrWhiteSpace(text) => text.Length > 80 ? text[..80] + "..." : text,
+                _ => "رسالة جديدة في الشات"
+            };
+
+            var payload = JsonSerializer.Serialize(new
+            {
+                titleAr,
+                titleEn,
+                msgAr = body,
+                msgEn = body,
+                type = "InternalChatMessage",
+                channelId,
+                link = $"/admin/staff-chat?channelId={channelId}",
+                isStaff = true,
+                isAdmin = true
+            });
+
+            bool hasRemovals = false;
+            foreach (var sub in subscriptions)
+            {
+                try
+                {
+                    var pushSubscription = new WebPush.PushSubscription(sub.Endpoint, sub.P256dh, sub.Auth);
+                    await webPushClient.SendNotificationAsync(pushSubscription, payload, vapidDetails);
+                    sub.LastUsedAt = DateTime.UtcNow;
+                }
+                catch (WebPushException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Gone || ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+                {
+                    db.PushSubscriptions.Remove(sub);
+                    hasRemovals = true;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to send chat push notification to endpoint {Endpoint}", sub.Endpoint);
+                }
+            }
+
+            if (hasRemovals)
+            {
+                await db.SaveChangesAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing chat push notifications");
+        }
     }
 }
