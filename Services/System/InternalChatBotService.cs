@@ -44,17 +44,20 @@ public class InternalChatBotService : IInternalChatBotService
     private readonly AppDbContext _db;
     private readonly IHubContext<NotificationHub> _hub;
     private readonly INotificationService _notifications;
+    private readonly Sportive.API.Utils.EncryptionHelper _encryptionHelper;
     private readonly ILogger<InternalChatBotService> _logger;
 
     public InternalChatBotService(
         AppDbContext db,
         IHubContext<NotificationHub> hub,
         INotificationService notifications,
+        Sportive.API.Utils.EncryptionHelper encryptionHelper,
         ILogger<InternalChatBotService> logger)
     {
         _db = db;
         _hub = hub;
         _notifications = notifications;
+        _encryptionHelper = encryptionHelper ?? Customer.EncryptionHelper!;
         _logger = logger;
     }
 
@@ -263,6 +266,48 @@ public class InternalChatBotService : IInternalChatBotService
         }
     }
 
+    private (List<string> phoneHashes, List<string> emailHashes) GetSearchHashes(string input)
+    {
+        var pHashes = new List<string>();
+        var eHashes = new List<string>();
+        if (string.IsNullOrWhiteSpace(input)) return (pHashes, eHashes);
+
+        var s = input.Trim();
+        var helper = _encryptionHelper ?? Customer.EncryptionHelper;
+        if (helper == null) return (pHashes, eHashes);
+
+        var variants = new List<string> { s, s.ToLowerInvariant() };
+        var digits = new string(s.Where(char.IsDigit).ToArray());
+
+        if (!string.IsNullOrEmpty(digits))
+        {
+            string local = digits.StartsWith("20") && digits.Length == 12 ? digits.Substring(2) : digits;
+            if (local.Length == 10 && !local.StartsWith("0")) local = "0" + local;
+            string intl = local.StartsWith("0") ? "2" + local : "20" + local;
+            string bare = local.StartsWith("0") ? local.Substring(1) : local;
+
+            variants.Add(digits);
+            variants.Add(local);
+            variants.Add(intl);
+            variants.Add(bare);
+        }
+
+        foreach (var v in variants.Distinct())
+        {
+            if (string.IsNullOrWhiteSpace(v)) continue;
+            var ph = helper.ComputeSearchHash(v);
+            if (!string.IsNullOrEmpty(ph) && !pHashes.Contains(ph)) pHashes.Add(ph);
+
+            var eh = helper.ComputeSearchHash($"{v}@sportive.com");
+            if (!string.IsNullOrEmpty(eh) && !eHashes.Contains(eh)) eHashes.Add(eh);
+
+            var directEh = helper.ComputeSearchHash(v);
+            if (!string.IsNullOrEmpty(directEh) && !eHashes.Contains(directEh)) eHashes.Add(directEh);
+        }
+
+        return (pHashes, eHashes);
+    }
+
     public async Task<object> ExecuteSlashCommandAsync(int channelId, string userId, string userName, string command, string query)
     {
         var cleanCmd = (command ?? "").Trim().ToLowerInvariant().TrimStart('/');
@@ -289,7 +334,7 @@ public class InternalChatBotService : IInternalChatBotService
         var allowedByChannel = new Dictionary<string, string[]>
         {
             [ChannelKeyOrders]    = new[] { "order", "طلب", "customer", "عميل", "sales", "مبيعات" },
-            [ChannelKeyPos]       = new[] { "order", "طلب", "invoice", "فاتورة", "sales", "مبيعات" },
+            [ChannelKeyPos]       = new[] { "order", "طلب", "invoice", "فاتورة", "customer", "عميل", "sales", "مبيعات" },
             [ChannelKeyInventory] = new[] { "stock", "مخزون" },
             [ChannelKeyTreasury]  = new[] { "sales", "مبيعات" }
         };
@@ -360,37 +405,129 @@ public class InternalChatBotService : IInternalChatBotService
                 if (string.IsNullOrWhiteSpace(cleanQuery))
                 {
                     responseText = channel.DirectKey == ChannelKeyPos
-                        ? "يرجى كتابة رقم الفاتورة بعد الأمر، مثلاً:\n/فاتورة 10482 أو /طلب POS-2610-0042"
-                        : "يرجى كتابة رقم الطلب بعد الأمر، مثلاً:\n/طلب 10482 أو /order SPT-2610-0042";
+                        ? "يرجى كتابة رقم الفاتورة أو آخر 4 أرقام بعد الأمر، مثلاً:\n/فاتورة 0051 أو /طلب POS-2610-0051"
+                        : "يرجى كتابة رقم الطلب أو آخر 4 أرقام بعد الأمر، مثلاً:\n/طلب 0015 أو /order SPT-2610-0015";
                 }
                 else
                 {
-                    var cleanOrderNum = cleanQuery.TrimStart('#');
-                    var order = await _db.Orders
+                    var raw = cleanQuery.Trim().TrimStart('#').Trim();
+                    int? parsedSeq = int.TryParse(raw, out var sNum) ? sNum : null;
+                    string? formatted4 = parsedSeq.HasValue ? parsedSeq.Value.ToString("D4") : null;
+                    string dashRaw = "-" + raw;
+                    string? dashD4 = formatted4 != null ? "-" + formatted4 : null;
+
+                    var ordersQuery = _db.Orders
                         .Include(o => o.Customer)
                         .Include(o => o.Items)
-                        .FirstOrDefaultAsync(o => o.OrderNumber == cleanOrderNum || o.Id.ToString() == cleanOrderNum);
+                        .AsNoTracking();
+
+                    List<Order> matchedOrders;
+                    if (parsedSeq.HasValue)
+                    {
+                        matchedOrders = await ordersQuery
+                            .Where(o => o.OrderNumber == raw ||
+                                        o.OrderNumber.EndsWith(dashRaw) ||
+                                        o.OrderNumber.EndsWith(dashD4!) ||
+                                        o.OrderNumber.EndsWith(raw) ||
+                                        o.Id == parsedSeq.Value ||
+                                        o.OrderNumber.Contains(raw))
+                            .OrderByDescending(o => o.CreatedAt)
+                            .Take(10)
+                            .ToListAsync();
+                    }
+                    else
+                    {
+                        matchedOrders = await ordersQuery
+                            .Where(o => o.OrderNumber == raw ||
+                                        o.OrderNumber.EndsWith(dashRaw) ||
+                                        o.OrderNumber.EndsWith(raw) ||
+                                        o.OrderNumber.Contains(raw))
+                            .OrderByDescending(o => o.CreatedAt)
+                            .Take(10)
+                            .ToListAsync();
+                    }
+
+                    // Fallback: If no order matched and input looks like a phone number, search by customer phone hash!
+                    if (!matchedOrders.Any() && raw.Length >= 9 && raw.All(char.IsDigit))
+                    {
+                        var (phoneHashes, _) = GetSearchHashes(raw);
+                        if (phoneHashes.Any())
+                        {
+                            var custIds = await _db.Customers
+                                .AsNoTracking()
+                                .Where(c => c.PhoneHash != null && phoneHashes.Contains(c.PhoneHash))
+                                .Select(c => c.Id)
+                                .ToListAsync();
+
+                            if (custIds.Any())
+                            {
+                                matchedOrders = await ordersQuery
+                                    .Where(o => custIds.Contains(o.CustomerId))
+                                    .OrderByDescending(o => o.CreatedAt)
+                                    .Take(5)
+                                    .ToListAsync();
+                            }
+                        }
+                    }
+
+                    Order? order = null;
+                    if (matchedOrders.Any())
+                    {
+                        // 1. Exact order number match has highest priority
+                        var exact = matchedOrders.FirstOrDefault(o => o.OrderNumber.Equals(raw, StringComparison.OrdinalIgnoreCase));
+                        if (exact != null)
+                        {
+                            order = exact;
+                        }
+                        // 2. Channel context priority
+                        else if (channel.DirectKey == ChannelKeyPos)
+                        {
+                            order = matchedOrders.FirstOrDefault(o => o.Source == OrderSource.POS) ?? matchedOrders.FirstOrDefault();
+                        }
+                        else if (channel.DirectKey == ChannelKeyOrders)
+                        {
+                            order = matchedOrders.FirstOrDefault(o => o.Source != OrderSource.POS) ?? matchedOrders.FirstOrDefault();
+                        }
+                        else
+                        {
+                            order = matchedOrders.FirstOrDefault();
+                        }
+                    }
 
                     if (order == null)
                     {
                         responseText = channel.DirectKey == ChannelKeyPos
-                            ? $"🔍 لم يتم العثور على فاتورة كاشير برقم: \"{cleanQuery}\""
-                            : $"🔍 لم يتم العثور على طلب برقم: \"{cleanQuery}\"";
+                            ? $"🔍 لم يتم العثور على فاتورة كاشير مطابقة لـ: \"{cleanQuery}\""
+                            : $"🔍 لم يتم العثور على طلب مطابق لـ: \"{cleanQuery}\"";
                     }
                     else
                     {
+                        linkedEntityType = "BotOrderQuery";
                         linkedEntityId = order.Id;
                         linkedEntityRef = order.OrderNumber;
 
                         bool isPosOrder = order.Source == OrderSource.POS;
+
+                        var customerName = order.Customer?.FullName ?? (isPosOrder ? "عميل كاشير نقدي" : "عميل");
+                        string customerPhone = "";
+                        if (order.Customer != null)
+                        {
+                            try
+                            {
+                                customerPhone = !string.IsNullOrEmpty(order.Customer.Phone)
+                                    ? order.Customer.Phone
+                                    : (!string.IsNullOrEmpty(order.Customer.PhoneEncrypted) ? (_encryptionHelper?.Decrypt(order.Customer.PhoneEncrypted) ?? "") : "");
+                            }
+                            catch { customerPhone = ""; }
+                        }
 
                         responseMeta = new
                         {
                             botType = "BotOrderQuery",
                             orderId = order.Id,
                             orderNumber = order.OrderNumber,
-                            customerName = order.Customer?.FullName ?? (isPosOrder ? "عميل كاشير نقدي" : "عميل"),
-                            phone = order.Customer?.Phone ?? "",
+                            customerName,
+                            phone = customerPhone,
                             total = order.TotalAmount,
                             status = order.Status.ToString(),
                             payment = order.PaymentMethod.ToString(),
@@ -399,10 +536,22 @@ public class InternalChatBotService : IInternalChatBotService
                         };
 
                         string typeTitle = isPosOrder ? "🧾 فاتورة كاشير" : "🛒 طلب متجر أونلاين";
-                        responseText = $"📋 تفاصيل {typeTitle} #{order.OrderNumber}:\n" +
-                                       $"العميل: {order.Customer?.FullName ?? (isPosOrder ? "عميل كاشير نقدي" : "عميل")} {(string.IsNullOrEmpty(order.Customer?.Phone) ? "" : $"({order.Customer?.Phone})")}\n" +
-                                       $"الحالة: {order.Status} | الإجمالي: {order.TotalAmount:N0} ج.م\n" +
-                                       $"طريقة الدفع: {order.PaymentMethod} | عدد الأصناف: {order.Items.Count} قطعة";
+                        string phoneSuffix = string.IsNullOrEmpty(customerPhone) ? "" : $" ({customerPhone})";
+
+                        var orderDetails = $"📋 تفاصيل {typeTitle} #{order.OrderNumber}:\n" +
+                                           $"العميل: {customerName}{phoneSuffix}\n" +
+                                           $"الحالة: {order.Status} | الإجمالي: {order.TotalAmount:N0} ج.م\n" +
+                                           $"طريقة الدفع: {order.PaymentMethod} | عدد الأصناف: {order.Items.Count} قطعة";
+
+                        // If multiple orders matched (e.g. from previous months or another source), inform user
+                        var otherMatches = matchedOrders.Where(o => o.Id != order.Id).Take(2).ToList();
+                        if (otherMatches.Any())
+                        {
+                            var otherRefs = string.Join(" ، ", otherMatches.Select(o => "#" + o.OrderNumber));
+                            orderDetails += $"\n💡 (أحدث طلب مطابق. يوجد طلبات أخرى: {otherRefs})";
+                        }
+
+                        responseText = orderDetails;
                     }
                 }
                 break;
@@ -507,13 +656,41 @@ public class InternalChatBotService : IInternalChatBotService
             case "عميل":
                 if (string.IsNullOrWhiteSpace(cleanQuery))
                 {
-                    responseText = "يرجى إدخال رقم هاتف العميل أو اسمه، مثلاً:\n/عميل 01012345678";
+                    responseText = "يرجى إدخال رقم هاتف العميل أو اسمه، مثلاً:\n/عميل 01012345678 أو /عميل أحمد";
                 }
                 else
                 {
-                    var cust = await _db.Customers
+                    var s = cleanQuery.Trim();
+                    var sLower = s.ToLowerInvariant();
+                    int? parsedCid = int.TryParse(s, out var cid) ? cid : null;
+
+                    var (phoneHashes, emailHashes) = GetSearchHashes(s);
+
+                    var custQuery = _db.Customers
                         .Include(c => c.Orders)
-                        .FirstOrDefaultAsync(c => c.Phone == cleanQuery || c.FullName.Contains(cleanQuery));
+                        .AsNoTracking();
+
+                    Customer? cust = null;
+                    if (phoneHashes.Any() || emailHashes.Any())
+                    {
+                        cust = await custQuery
+                            .Where(c => (c.PhoneHash != null && phoneHashes.Contains(c.PhoneHash)) ||
+                                        (c.EmailHash != null && emailHashes.Contains(c.EmailHash)) ||
+                                        (parsedCid.HasValue && c.Id == parsedCid.Value) ||
+                                        c.FullName.ToLower().Contains(sLower))
+                            .OrderByDescending(c => c.Orders.Count)
+                            .ThenByDescending(c => c.CreatedAt)
+                            .FirstOrDefaultAsync();
+                    }
+                    else
+                    {
+                        cust = await custQuery
+                            .Where(c => (parsedCid.HasValue && c.Id == parsedCid.Value) ||
+                                        c.FullName.ToLower().Contains(sLower))
+                            .OrderByDescending(c => c.Orders.Count)
+                            .ThenByDescending(c => c.CreatedAt)
+                            .FirstOrDefaultAsync();
+                    }
 
                     if (cust == null)
                     {
@@ -521,22 +698,51 @@ public class InternalChatBotService : IInternalChatBotService
                     }
                     else
                     {
+                        linkedEntityType = "BotCustomerQuery";
+                        linkedEntityId = cust.Id;
+                        linkedEntityRef = cust.FullName;
+
+                        string phoneDisplay = "";
+                        try
+                        {
+                            phoneDisplay = !string.IsNullOrEmpty(cust.Phone) 
+                                ? cust.Phone 
+                                : (!string.IsNullOrEmpty(cust.PhoneEncrypted) ? (_encryptionHelper?.Decrypt(cust.PhoneEncrypted) ?? "") : "");
+                        }
+                        catch { phoneDisplay = ""; }
+
+                        if (string.IsNullOrEmpty(phoneDisplay)) phoneDisplay = "غير مسجل";
+
                         var totalOrders = cust.Orders.Count;
                         var completedOrders = cust.Orders.Count(o => o.Status == OrderStatus.Delivered);
                         var totalSpent = cust.Orders.Where(o => o.Status == OrderStatus.Delivered).Sum(o => o.TotalAmount);
+                        var latestOrder = cust.Orders.OrderByDescending(o => o.CreatedAt).FirstOrDefault();
 
                         responseMeta = new
                         {
                             botType = "BotCustomerQuery",
                             customerId = cust.Id,
                             name = cust.FullName,
-                            phone = cust.Phone,
+                            phone = phoneDisplay,
                             totalOrders,
                             completedOrders,
-                            totalSpent
+                            totalSpent,
+                            latestOrder = latestOrder?.OrderNumber
                         };
 
-                        responseText = $"👤 بيانات العميل: {cust.FullName} ({cust.Phone})\nإجمالي الطلبات: {totalOrders} طلب | المسلم بنجاح: {completedOrders}\nإجمالي المشتريات: {totalSpent:N0} ج.م";
+                        var responseLines = new List<string>
+                        {
+                            $"👤 بيانات العميل: {cust.FullName} ({phoneDisplay})",
+                            $"• إجمالي الطلبات: {totalOrders} طلب | المسلم بنجاح: {completedOrders}",
+                            $"• إجمالي المشتريات: {totalSpent:N0} ج.م"
+                        };
+
+                        if (latestOrder != null)
+                        {
+                            responseLines.Add($"• أحدث طلب: #{latestOrder.OrderNumber} ({latestOrder.Status}) بتاريخ {latestOrder.CreatedAt:yyyy-MM-dd}");
+                        }
+
+                        responseText = string.Join("\n", responseLines);
                     }
                 }
                 break;
@@ -546,12 +752,13 @@ public class InternalChatBotService : IInternalChatBotService
                 {
                     ChannelKeyOrders =>
                         "🤖 أوامر رادار طلبات المتجر الأونلاين:\n" +
-                        "• /طلب [رقم الطلب]: فحص حالة وبيانات أوردر المتجر\n" +
+                        "• /طلب [رقم الطلب أو آخره]: فحص حالة وبيانات أوردر المتجر\n" +
                         "• /عميل [هاتف/اسم]: سجل ومشتريات العميل\n" +
                         "• /مبيعات: ملخص مبيعات المتجر الأونلاين فقط اليوم",
                     ChannelKeyPos =>
                         "🤖 أوامر رادار فواتير الكاشير:\n" +
-                        "• /طلب أو /فاتورة [رقم الفاتورة]: فحص بيانات فاتورة الكاشير\n" +
+                        "• /طلب أو /فاتورة [رقم الفاتورة أو آخرها]: فحص بيانات فاتورة الكاشير\n" +
+                        "• /عميل [هاتف/اسم]: سجل وبيانات العميل\n" +
                         "• /مبيعات: ملخص مبيعات وإيرادات الكاشير فقط اليوم",
                     ChannelKeyInventory =>
                         "🤖 أوامر طوارئ المخزون المتاحة:\n" +

@@ -559,7 +559,14 @@ public class InternalChatController : ControllerBase
             .FirstOrDefaultAsync(m => m.ChannelId == msg.ChannelId && m.UserId == userId);
         if (membership != null) membership.LastReadAt = DateTime.UtcNow;
 
-        await _db.SaveChangesAsync();
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            // Concurrent receipt already written by another request, ignore
+        }
 
         // Notify the message sender for real-time double blue check
         if (msg.SenderId != userId)
@@ -604,7 +611,14 @@ public class InternalChatController : ControllerBase
                 UserName = UserName,
                 DeliveredAt = DateTime.UtcNow
             });
-            await _db.SaveChangesAsync();
+            try
+            {
+                await _db.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                // Concurrent delivery receipt already written, ignore
+            }
         }
 
         // Notify message sender that message was delivered to recipient (Real-time double grey check)
@@ -647,21 +661,30 @@ public class InternalChatController : ControllerBase
 
         // Get profile image and info for all members
         var memberUserIds = msg.Channel.Members.Select(m => m.UserId).Distinct().ToList();
-        var userProfiles = await _db.Users
+        var userProfiles = (await _db.Users
             .AsNoTracking()
             .Where(u => memberUserIds.Contains(u.Id))
-            .ToDictionaryAsync(u => u.Id, u => new
+            .ToListAsync())
+            .GroupBy(u => u.Id)
+            .ToDictionary(g => g.Key, g => new
             {
-                Name = string.IsNullOrWhiteSpace(u.FullName) ? (u.UserName ?? "موظف") : u.FullName,
-                AvatarUrl = u.ProfileImageUrl
+                Name = string.IsNullOrWhiteSpace(g.First().FullName) ? (g.First().UserName ?? "موظف") : g.First().FullName,
+                AvatarUrl = g.First().ProfileImageUrl
             });
 
-        var readMap = msg.ReadReceipts.ToDictionary(r => r.UserId, r => r.ReadAt);
-        var deliveryMap = msg.DeliveryReceipts.ToDictionary(r => r.UserId, r => r.DeliveredAt);
+        var readMap = msg.ReadReceipts
+            .GroupBy(r => r.UserId)
+            .ToDictionary(g => g.Key, g => g.Min(r => r.ReadAt));
+
+        var deliveryMap = msg.DeliveryReceipts
+            .GroupBy(r => r.UserId)
+            .ToDictionary(g => g.Key, g => g.Min(r => r.DeliveredAt));
 
         // Recipients are all channel members except the message sender
         var recipients = msg.Channel.Members
             .Where(m => m.UserId != msg.SenderId)
+            .GroupBy(m => m.UserId)
+            .Select(g => g.First())
             .ToList();
 
         var readList = new List<object>();
