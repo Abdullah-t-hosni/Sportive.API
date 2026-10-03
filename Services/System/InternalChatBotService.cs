@@ -289,6 +289,7 @@ public class InternalChatBotService : IInternalChatBotService
         var allowedByChannel = new Dictionary<string, string[]>
         {
             [ChannelKeyOrders]    = new[] { "order", "طلب", "customer", "عميل", "sales", "مبيعات" },
+            [ChannelKeyPos]       = new[] { "order", "طلب", "invoice", "فاتورة", "sales", "مبيعات" },
             [ChannelKeyInventory] = new[] { "stock", "مخزون" },
             [ChannelKeyTreasury]  = new[] { "sales", "مبيعات" }
         };
@@ -354,9 +355,13 @@ public class InternalChatBotService : IInternalChatBotService
 
             case "order":
             case "طلب":
+            case "invoice":
+            case "فاتورة":
                 if (string.IsNullOrWhiteSpace(cleanQuery))
                 {
-                    responseText = "يرجى كتابة رقم الطلب بعد الأمر، مثلاً:\n/طلب 10482 أو /order SPT-2610-0042";
+                    responseText = channel.DirectKey == ChannelKeyPos
+                        ? "يرجى كتابة رقم الفاتورة بعد الأمر، مثلاً:\n/فاتورة 10482 أو /طلب POS-2610-0042"
+                        : "يرجى كتابة رقم الطلب بعد الأمر، مثلاً:\n/طلب 10482 أو /order SPT-2610-0042";
                 }
                 else
                 {
@@ -368,19 +373,23 @@ public class InternalChatBotService : IInternalChatBotService
 
                     if (order == null)
                     {
-                        responseText = $"🔍 لم يتم العثور على طلب برقم: \"{cleanQuery}\"";
+                        responseText = channel.DirectKey == ChannelKeyPos
+                            ? $"🔍 لم يتم العثور على فاتورة كاشير برقم: \"{cleanQuery}\""
+                            : $"🔍 لم يتم العثور على طلب برقم: \"{cleanQuery}\"";
                     }
                     else
                     {
                         linkedEntityId = order.Id;
                         linkedEntityRef = order.OrderNumber;
 
+                        bool isPosOrder = order.Source == OrderSource.POS;
+
                         responseMeta = new
                         {
                             botType = "BotOrderQuery",
                             orderId = order.Id,
                             orderNumber = order.OrderNumber,
-                            customerName = order.Customer?.FullName ?? "عميل",
+                            customerName = order.Customer?.FullName ?? (isPosOrder ? "عميل كاشير نقدي" : "عميل"),
                             phone = order.Customer?.Phone ?? "",
                             total = order.TotalAmount,
                             status = order.Status.ToString(),
@@ -389,7 +398,11 @@ public class InternalChatBotService : IInternalChatBotService
                             date = order.CreatedAt.ToString("yyyy-MM-dd HH:mm")
                         };
 
-                        responseText = $"📋 تفاصيل الطلب #{order.OrderNumber}:\nالعميل: {order.Customer?.FullName} ({order.Customer?.Phone})\nالحالة: {order.Status} | الإجمالي: {order.TotalAmount:N0} ج.م\nطريقة الدفع: {order.PaymentMethod} | عدد الأصناف: {order.Items.Count} قطعة";
+                        string typeTitle = isPosOrder ? "🧾 فاتورة كاشير" : "🛒 طلب متجر أونلاين";
+                        responseText = $"📋 تفاصيل {typeTitle} #{order.OrderNumber}:\n" +
+                                       $"العميل: {order.Customer?.FullName ?? (isPosOrder ? "عميل كاشير نقدي" : "عميل")} {(string.IsNullOrEmpty(order.Customer?.Phone) ? "" : $"({order.Customer?.Phone})")}\n" +
+                                       $"الحالة: {order.Status} | الإجمالي: {order.TotalAmount:N0} ج.م\n" +
+                                       $"طريقة الدفع: {order.PaymentMethod} | عدد الأصناف: {order.Items.Count} قطعة";
                     }
                 }
                 break;
@@ -397,27 +410,97 @@ public class InternalChatBotService : IInternalChatBotService
             case "sales":
             case "مبيعات":
                 var todayStart = DateTime.UtcNow.Date;
-                var todayOrders = await _db.Orders
+                var allTodayOrders = await _db.Orders
                     .AsNoTracking()
                     .Where(o => o.CreatedAt >= todayStart && o.Status != OrderStatus.Cancelled)
                     .ToListAsync();
 
-                var count = todayOrders.Count;
-                var revenue = todayOrders.Sum(o => o.TotalAmount);
-                var avg = count > 0 ? revenue / count : 0;
-                var deliveredCount = todayOrders.Count(o => o.Status == OrderStatus.Delivered);
-
-                responseMeta = new
+                if (channel.DirectKey == ChannelKeyOrders)
                 {
-                    botType = "BotSalesSummary",
-                    date = DateTime.UtcNow.ToString("yyyy-MM-dd"),
-                    ordersCount = count,
-                    totalRevenue = revenue,
-                    avgOrderValue = avg,
-                    deliveredCount
-                };
+                    // 🛒 رادار طلبات المتجر الأونلاين فقط
+                    var onlineOrders = allTodayOrders.Where(o => o.Source != OrderSource.POS).ToList();
+                    var count = onlineOrders.Count;
+                    var revenue = onlineOrders.Sum(o => o.TotalAmount);
+                    var avg = count > 0 ? revenue / count : 0;
+                    var delivered = onlineOrders.Count(o => o.Status == OrderStatus.Delivered);
+                    var processing = onlineOrders.Count(o => o.Status == OrderStatus.Processing || o.Status == OrderStatus.Confirmed || o.Status == OrderStatus.OutForDelivery);
 
-                responseText = $"📊 رادار مبيعات اليوم ({DateTime.UtcNow:dd/MM/yyyy}):\nإجمالي الإيراد: {revenue:N0} ج.م\nعدد الطلبات: {count} طلب\nمتوسط قيمة الطلب: {avg:N0} ج.م\nتم التسليم: {deliveredCount} طلب";
+                    responseMeta = new
+                    {
+                        botType = "BotSalesSummary",
+                        channel = "orders",
+                        date = DateTime.UtcNow.ToString("yyyy-MM-dd"),
+                        ordersCount = count,
+                        totalRevenue = revenue,
+                        avgOrderValue = avg,
+                        deliveredCount = delivered
+                    };
+
+                    responseText = $"🛒 رادار مبيعات المتجر الأونلاين اليوم ({DateTime.UtcNow:dd/MM/yyyy}):\n" +
+                                   $"• إجمالي مبيعات المتجر: {revenue:N0} ج.م\n" +
+                                   $"• عدد طلبات المتجر: {count} طلب أونلاين\n" +
+                                   $"• متوسط قيمة الطلب: {avg:N0} ج.م\n" +
+                                   $"• تم التوصيل: {delivered} طلب\n" +
+                                   $"• قيد التجهيز والشحن: {processing} طلب";
+                }
+                else if (channel.DirectKey == ChannelKeyPos)
+                {
+                    // 🧾 رادار فواتير الكاشير فقط
+                    var posOrders = allTodayOrders.Where(o => o.Source == OrderSource.POS).ToList();
+                    var count = posOrders.Count;
+                    var revenue = posOrders.Sum(o => o.TotalAmount);
+                    var avg = count > 0 ? revenue / count : 0;
+                    var cashRev = posOrders.Where(o => o.PaymentMethod == PaymentMethod.Cash).Sum(o => o.TotalAmount);
+                    var cardRev = posOrders.Where(o => o.PaymentMethod == PaymentMethod.CreditCard || o.PaymentMethod == PaymentMethod.Bank || o.PaymentMethod == PaymentMethod.InstaPay).Sum(o => o.TotalAmount);
+
+                    responseMeta = new
+                    {
+                        botType = "BotSalesSummary",
+                        channel = "pos",
+                        date = DateTime.UtcNow.ToString("yyyy-MM-dd"),
+                        ordersCount = count,
+                        totalRevenue = revenue,
+                        avgOrderValue = avg,
+                        cashRevenue = cashRev,
+                        cardRevenue = cardRev
+                    };
+
+                    responseText = $"🧾 رادار فواتير الكاشير اليوم ({DateTime.UtcNow:dd/MM/yyyy}):\n" +
+                                   $"• إجمالي مبيعات الكاشير: {revenue:N0} ج.م\n" +
+                                   $"• عدد فواتير البيع: {count} فاتورة كاشير\n" +
+                                   $"• متوسط الفاتورة: {avg:N0} ج.م\n" +
+                                   $"• مدفوع نقداً (كاش): {cashRev:N0} ج.م\n" +
+                                   $"• مدفوع إلكتروني (فيزا/شبكة): {cardRev:N0} ج.م";
+                }
+                else
+                {
+                    // 💰 الخزينة والرقابة المالية: إجمالي الشركة العام (متجر + كاشير)
+                    var onlineOrders = allTodayOrders.Where(o => o.Source != OrderSource.POS).ToList();
+                    var posOrders = allTodayOrders.Where(o => o.Source == OrderSource.POS).ToList();
+
+                    var totalRev = allTodayOrders.Sum(o => o.TotalAmount);
+                    var onlineRev = onlineOrders.Sum(o => o.TotalAmount);
+                    var posRev = posOrders.Sum(o => o.TotalAmount);
+
+                    responseMeta = new
+                    {
+                        botType = "BotSalesSummary",
+                        channel = "treasury",
+                        date = DateTime.UtcNow.ToString("yyyy-MM-dd"),
+                        ordersCount = allTodayOrders.Count,
+                        totalRevenue = totalRev,
+                        onlineRevenue = onlineRev,
+                        onlineCount = onlineOrders.Count,
+                        posRevenue = posRev,
+                        posCount = posOrders.Count
+                    };
+
+                    responseText = $"💰 تقرير مبيعات وخزينة الشركة الشامل اليوم ({DateTime.UtcNow:dd/MM/yyyy}):\n" +
+                                   $"• إجمالي إيرادات اليوم: {totalRev:N0} ج.م ({allTodayOrders.Count} عملية)\n" +
+                                   $"  ├─ 🛒 مبيعات المتجر الأونلاين: {onlineRev:N0} ج.م ({onlineOrders.Count} طلب)\n" +
+                                   $"  └─ 🧾 مبيعات فواتير الكاشير: {posRev:N0} ج.م ({posOrders.Count} فاتورة)\n" +
+                                   $"• متوسط المعاملة: {(allTodayOrders.Count > 0 ? totalRev / allTodayOrders.Count : 0):N0} ج.م";
+                }
                 break;
 
             case "customer":
@@ -462,16 +545,20 @@ public class InternalChatBotService : IInternalChatBotService
                 responseText = channel.DirectKey switch
                 {
                     ChannelKeyOrders =>
-                        "🤖 أوامر رادار الطلبات المتاحة:\n" +
-                        "• /طلب [رقم الطلب]: فحص حالة وبيانات أوردر\n" +
-                        "• /عميل [هاتف/اسم]: سجل ومشتريات عميل\n" +
-                        "• /مبيعات: ملخص مبيعات اليوم اللحظية",
+                        "🤖 أوامر رادار طلبات المتجر الأونلاين:\n" +
+                        "• /طلب [رقم الطلب]: فحص حالة وبيانات أوردر المتجر\n" +
+                        "• /عميل [هاتف/اسم]: سجل ومشتريات العميل\n" +
+                        "• /مبيعات: ملخص مبيعات المتجر الأونلاين فقط اليوم",
+                    ChannelKeyPos =>
+                        "🤖 أوامر رادار فواتير الكاشير:\n" +
+                        "• /طلب أو /فاتورة [رقم الفاتورة]: فحص بيانات فاتورة الكاشير\n" +
+                        "• /مبيعات: ملخص مبيعات وإيرادات الكاشير فقط اليوم",
                     ChannelKeyInventory =>
                         "🤖 أوامر طوارئ المخزون المتاحة:\n" +
                         "• /مخزون [اسم/كود]: رصيد الصنف بكل المقاسات والألوان",
                     ChannelKeyTreasury =>
-                        "🤖 أوامر الخزينة المتاحة:\n" +
-                        "• /مبيعات: ملخص إيرادات اليوم اللحظية",
+                        "🤖 أوامر الخزينة والرقابة المالية:\n" +
+                        "• /مبيعات: ملخص مبيعات الشركة الشامل (المتجر + الكاشير)",
                     _ => "🤖 لا توجد أوامر متاحة في هذه المجموعة"
                 };
                 break;
