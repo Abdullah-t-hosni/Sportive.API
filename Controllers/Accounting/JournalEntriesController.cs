@@ -285,14 +285,18 @@ public class JournalEntriesController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreateJournalEntryDto dto)
     {
         try {
-            var advancesAccount = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1105");
-            if (advancesAccount != null)
+            var advancesAccountIds = await _db.Accounts
+                .Where(a => a.Code == "1105" || (a.Code != null && a.Code.StartsWith("1105")))
+                .Select(a => a.Id)
+                .ToListAsync();
+
+            if (advancesAccountIds.Any())
             {
                 foreach (var line in dto.Lines)
                 {
-                    if (line.AccountId == advancesAccount.Id && line.Debit > 0 && !line.EmployeeId.HasValue)
+                    if (advancesAccountIds.Contains(line.AccountId) && line.Debit > 0 && !line.EmployeeId.HasValue)
                     {
-                        return BadRequest("يجب اختيار الموظف عند استخدام حساب سلف الموظفين");
+                        return BadRequest("يجب اختيار الموظف عند استخدام حساب سلف الموظفين (1105)");
                     }
                 }
             }
@@ -316,6 +320,22 @@ public class JournalEntriesController : ControllerBase
     public async Task<IActionResult> Update(int id, [FromBody] UpdateJournalEntryDto dto)
     {
         try {
+            var advancesAccountIds = await _db.Accounts
+                .Where(a => a.Code == "1105" || (a.Code != null && a.Code.StartsWith("1105")))
+                .Select(a => a.Id)
+                .ToListAsync();
+
+            if (advancesAccountIds.Any())
+            {
+                foreach (var line in dto.Lines)
+                {
+                    if (advancesAccountIds.Contains(line.AccountId) && line.Debit > 0 && !line.EmployeeId.HasValue)
+                    {
+                        return BadRequest("يجب اختيار الموظف عند استخدام حساب سلف الموظفين (1105)");
+                    }
+                }
+            }
+
             var oldEntry = await _db.JournalEntries.AsNoTracking().Include(e => e.Lines).FirstOrDefaultAsync(e => e.Id == id);
             var entry = await _accounting.UpdateManualEntryAsync(id, dto, User);
             try { Hangfire.BackgroundJob.Enqueue<IAccountingService>(a => a.SyncPayrollForVoucherAsync(entry.Id)); } catch { /* non-critical */ }
