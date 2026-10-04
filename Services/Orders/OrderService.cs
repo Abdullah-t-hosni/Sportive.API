@@ -1068,6 +1068,8 @@ public class OrderService : IOrderService
                 }
 
                 decimal? deliveryThreshold = store?.FreeDeliveryAt ?? 2000;
+                // Base zone/fixed fee. The free-shipping threshold is applied later, AFTER all discounts.
+                decimal baseDeliveryFee = 0;
                 if (order.Source == OrderSource.Website && order.FulfillmentType == FulfillmentType.Delivery)
                 {
                     decimal fee = store?.FixedDeliveryFee ?? 50;
@@ -1132,7 +1134,8 @@ public class OrderService : IOrderService
                         }
                     }
 
-                    order.DeliveryFee = (deliveryThreshold.HasValue && deliveryThreshold.Value > 0 && order.SubTotal >= deliveryThreshold.Value) ? 0 : fee;
+                    baseDeliveryFee = fee;
+                    order.DeliveryFee = fee; // threshold re-evaluated after discounts below
                 }
 
                 // 🎁 NEW: Special Bundle/Quantity Offers Logic (Multi-offer priority & unit tracking)
@@ -1320,14 +1323,13 @@ public class OrderService : IOrderService
                     order.DiscountAmount += (dto.DiscountAmount ?? 0);
                 }
 
-                // 🚀 Re-check Free Shipping after discounts: if effective items total meets the threshold, free shipping!
+                // 🚀 Free Shipping is evaluated on the NET items total AFTER all discounts
+                // (product/bundle discounts, special offers, coupon and loyalty). Shipping itself is excluded.
                 if (order.Source == OrderSource.Website && order.FulfillmentType == FulfillmentType.Delivery)
                 {
-                    decimal effectiveNetItems = Math.Max(0, order.SubTotal - order.TemporalDiscount - order.DiscountAmount);
-                    if (deliveryThreshold.HasValue && deliveryThreshold.Value > 0 && effectiveNetItems >= deliveryThreshold.Value)
-                    {
-                        order.DeliveryFee = 0;
-                    }
+                    decimal effectiveNetItems = Math.Max(0, order.SubTotal - order.TemporalDiscount - order.DiscountAmount - order.LoyaltyDiscountAmount);
+                    bool qualifiesForFree = deliveryThreshold.HasValue && deliveryThreshold.Value > 0 && effectiveNetItems >= deliveryThreshold.Value;
+                    order.DeliveryFee = qualifiesForFree ? 0 : baseDeliveryFee;
                 }
 
                 order.TotalAmount = Math.Max(0, order.SubTotal + order.DeliveryFee - order.DiscountAmount - order.TemporalDiscount - order.LoyaltyDiscountAmount);

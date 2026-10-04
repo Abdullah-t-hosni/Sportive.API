@@ -379,19 +379,26 @@ public class OrdersController : ControllerBase
             if (order.DeliveryAddress != null && !string.IsNullOrEmpty(order.DeliveryAddress.City))
             {
                 var city = order.DeliveryAddress.City.Trim().ToLower();
-                var matched = zones.FirstOrDefault(z => z.Governorates.ToLower().Split(',').Any(g => g.Trim() == city));
+                var districtStr = !string.IsNullOrWhiteSpace(order.DeliveryAddress.District)
+                    ? $"{city} - {order.DeliveryAddress.District.Trim().ToLower()}"
+                    : city;
+
+                // Same matching as order creation: exact district first, then governorate
+                var matched = zones.FirstOrDefault(z => z.Governorates.ToLower().Split(',').Any(g => g.Trim() == districtStr))
+                           ?? zones.FirstOrDefault(z => z.Governorates.ToLower().Split(',').Any(g => g.Trim() == city));
                 
                 decimal fee = matched?.Fee ?? store?.FixedDeliveryFee ?? 50;
                 decimal? threshold = (matched?.FreeThreshold.HasValue == true && matched.FreeThreshold.Value > 0)
                     ? matched.FreeThreshold.Value
                     : (store?.FreeDeliveryAt ?? 2000);
                 
-                decimal effectiveSub = Math.Max(0, order.SubTotal - order.DiscountAmount - order.TemporalDiscount);
+                // Free shipping threshold is evaluated on the net items total AFTER all discounts
+                decimal effectiveSub = Math.Max(0, order.SubTotal - order.DiscountAmount - order.TemporalDiscount - order.LoyaltyDiscountAmount);
                 decimal correctFee = (threshold.HasValue && threshold.Value > 0 && effectiveSub >= threshold.Value) ? 0 : fee;
                 if (correctFee != order.DeliveryFee)
                 {
                     order.DeliveryFee = correctFee;
-                    order.TotalAmount = Math.Max(0, order.SubTotal + order.DeliveryFee - order.DiscountAmount - order.TemporalDiscount);
+                    order.TotalAmount = Math.Max(0, order.SubTotal + order.DeliveryFee - order.DiscountAmount - order.TemporalDiscount - order.LoyaltyDiscountAmount);
                     updatedCount++;
                 }
             }

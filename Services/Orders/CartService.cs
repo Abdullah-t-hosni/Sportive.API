@@ -484,9 +484,10 @@ public class CartService : ICartService
 
         var subTotal = Math.Max(0, dtos.Sum(d => d.TotalPrice));
 
-        // Apply free-delivery threshold from store settings
+        // Apply free-delivery threshold from store settings on the NET items total (after all discounts)
         var freeAt = store?.FreeDeliveryAt ?? 2000m;
-        var appliedFee = subTotal >= freeAt ? 0m : deliveryFee;
+        var netForShipping = Math.Max(0, subTotal - temporalDiscount);
+        var appliedFee = (freeAt > 0 && netForShipping >= freeAt) ? 0m : deliveryFee;
 
         var finalTotal = Math.Max(0, subTotal + appliedFee - temporalDiscount);
 
