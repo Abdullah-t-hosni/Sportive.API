@@ -51,6 +51,44 @@ public class InternalChatController : ControllerBase
         var userId = UserId;
         var userName = UserName;
 
+        // Auto-enroll Admin/Manager to the Partners channel if not already enrolled
+        try
+        {
+            if (User.IsInRole(AppRoles.SuperAdmin) || User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.Manager))
+            {
+                var partnerChan = await _db.InternalChatChannels
+                    .FirstOrDefaultAsync(c => c.DirectKey == InternalChatBotService.ChannelKeyPartners);
+
+                if (partnerChan == null)
+                {
+                    await _chatBot.EnsureSystemChannelsExistAsync();
+                    partnerChan = await _db.InternalChatChannels
+                        .FirstOrDefaultAsync(c => c.DirectKey == InternalChatBotService.ChannelKeyPartners);
+                }
+
+                if (partnerChan != null)
+                {
+                    var isMember = await _db.InternalChatMembers
+                        .AnyAsync(m => m.ChannelId == partnerChan.Id && m.UserId == userId);
+                    if (!isMember)
+                    {
+                        _db.InternalChatMembers.Add(new InternalChatMember
+                        {
+                            ChannelId = partnerChan.Id,
+                            UserId = userId,
+                            UserName = userName,
+                            JoinedAt = DateTime.UtcNow
+                        });
+                        await _db.SaveChangesAsync();
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to auto-enroll partner in GetMyChannels");
+        }
+
         var myMemberships = await _db.InternalChatMembers
             .AsNoTracking()
             .Where(m => m.UserId == userId)

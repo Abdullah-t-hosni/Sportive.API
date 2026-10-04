@@ -380,6 +380,13 @@ try
         service => service.RunBackupAsync("Scheduled", System.Threading.CancellationToken.None),
         "0 23 * * *");
 
+    // ✅ Daily Partners & Online Store Report to "الشركاء" channel — runs every day at 8:00 AM Egypt Time
+    backgroundJobs.AddOrUpdate<IInternalChatBotService>(
+        "DailyPartnersAndStoreReport",
+        bot => bot.PostDailyPartnersAndStoreReportAsync(null),
+        "0 8 * * *",
+        new RecurringJobOptions { TimeZone = TimeHelper.GetStoreTimeZone() });
+
     // ── Nightly jobs (commented out — heavy DB load, re-enable on dedicated server) ──
     //     backgroundJobs.AddOrUpdate<IOrderService>(
     //         "SyncOrderAccounting",
@@ -454,6 +461,9 @@ _ = Task.Run(async () =>
         try { await db.Database.ExecuteSqlRawAsync("ALTER TABLE `PayrollRuns` ADD COLUMN `PeriodType` int NOT NULL DEFAULT 1;"); } catch {}
         try { await db.Database.ExecuteSqlRawAsync("ALTER TABLE `PayrollRuns` ADD COLUMN `FromDate` datetime NULL;"); } catch {}
         try { await db.Database.ExecuteSqlRawAsync("ALTER TABLE `PayrollRuns` ADD COLUMN `ToDate` datetime NULL;"); } catch {}
+
+        var chatBot = scope.ServiceProvider.GetRequiredService<IInternalChatBotService>();
+        await chatBot.EnsureSystemChannelsExistAsync();
     }
     catch (Exception ex)
     {

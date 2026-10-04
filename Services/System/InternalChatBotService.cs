@@ -10,6 +10,8 @@ using Sportive.API.Data;
 using Sportive.API.Hubs;
 using Sportive.API.Models;
 
+using Sportive.API.Utils;
+
 namespace Sportive.API.Services;
 
 public interface IInternalChatBotService
@@ -19,6 +21,7 @@ public interface IInternalChatBotService
     Task PostStockAlertAsync(int productId, int? variantId, int remainingStock, int reorderLevel);
     Task PostShiftAlertAsync(POSShiftClosure closure);
     Task PostShiftAlertAsync(int shiftId, string cashierName, decimal expectedAmount, decimal actualAmount, decimal difference);
+    Task PostDailyPartnersAndStoreReportAsync(DateTime? forDate = null);
     Task<object> ExecuteSlashCommandAsync(int channelId, string userId, string userName, string command, string query);
     Task<object> ClaimOrResolveMessageAsync(int messageId, string userId, string userName, string action, string? note);
 }
@@ -33,6 +36,7 @@ public class InternalChatBotService : IInternalChatBotService
     public const string ChannelKeyPos = "sys_bot_pos";            // فواتير الكاشير (POS)
     public const string ChannelKeyInventory = "sys_bot_inventory";
     public const string ChannelKeyTreasury = "sys_bot_treasury";
+    public const string ChannelKeyPartners = "sys_bot_partners";  // تقارير الشركاء ومحاسبة المتجر اليومية
 
     private const string LegacyOrdersChannelName = "📦 رادار الطلبات والعمليات";
 
@@ -75,7 +79,8 @@ public class InternalChatBotService : IInternalChatBotService
                 new { Key = ChannelKeyOrders, Name = "🛒 رادار طلبات المتجر", Icon = "🛒", Desc = "طلبات المتجر الأونلاين الجديدة، المرتجعات، وتحديثات الشحن" },
                 new { Key = ChannelKeyPos, Name = "🧾 رادار فواتير الكاشير", Icon = "🧾", Desc = "فواتير البيع من نقاط البيع (الكاشير) لحظة بلحظة" },
                 new { Key = ChannelKeyInventory, Name = "🚨 طوارئ المخزون والنواقص", Icon = "🚨", Desc = "تنبيهات الأصناف الناقصة واقتراب نفاد المقاسات" },
-                new { Key = ChannelKeyTreasury, Name = "💰 الخزينة والرقابة المالية", Icon = "💰", Desc = "تقارير إقفال الشفتات ومصروفات الخزينة اليومية" }
+                new { Key = ChannelKeyTreasury, Name = "💰 الخزينة والرقابة المالية", Icon = "💰", Desc = "تقارير إقفال الشفتات ومصروفات الخزينة اليومية" },
+                new { Key = ChannelKeyPartners, Name = "🤝 الشركاء", Icon = "🤝", Desc = "التقارير اليومية الشاملة للشركاء ومحاسبة وأرباح المتجر الإلكتروني" }
             };
 
             foreach (var def in defChannels)
@@ -105,6 +110,51 @@ public class InternalChatBotService : IInternalChatBotService
                     ch.Icon = def.Icon;
                     ch.Description = def.Desc;
                     await _db.SaveChangesAsync();
+                }
+
+                // Auto-enroll Admins & Managers into Partners channel
+                if (def.Key == ChannelKeyPartners)
+                {
+                    var partnerRoleIds = await _db.Roles
+                        .Where(r => r.Name == AppRoles.SuperAdmin || r.Name == AppRoles.Admin || r.Name == AppRoles.Manager)
+                        .Select(r => r.Id)
+                        .ToListAsync();
+
+                    var partnerUserIds = await _db.UserRoles
+                        .Where(ur => partnerRoleIds.Contains(ur.RoleId))
+                        .Select(ur => ur.UserId)
+                        .Distinct()
+                        .ToListAsync();
+
+                    var partnerUsers = await _db.Users
+                        .Where(u => u.IsActive && partnerUserIds.Contains(u.Id))
+                        .Select(u => new { u.Id, u.FullName, u.UserName })
+                        .ToListAsync();
+
+                    var existingMemberIds = await _db.InternalChatMembers
+                        .Where(m => m.ChannelId == ch.Id)
+                        .Select(m => m.UserId)
+                        .ToListAsync();
+
+                    bool addedMember = false;
+                    foreach (var u in partnerUsers)
+                    {
+                        if (!existingMemberIds.Contains(u.Id))
+                        {
+                            _db.InternalChatMembers.Add(new InternalChatMember
+                            {
+                                ChannelId = ch.Id,
+                                UserId = u.Id,
+                                UserName = string.IsNullOrWhiteSpace(u.FullName) ? (u.UserName ?? "شريك") : u.FullName,
+                                JoinedAt = DateTime.UtcNow
+                            });
+                            addedMember = true;
+                        }
+                    }
+                    if (addedMember)
+                    {
+                        await _db.SaveChangesAsync();
+                    }
                 }
             }
         }
@@ -332,6 +382,292 @@ public class InternalChatBotService : IInternalChatBotService
         }
     }
 
+    public async Task PostDailyPartnersAndStoreReportAsync(DateTime? forDate = null)
+    {
+        try
+        {
+            await EnsureSystemChannelsExistAsync();
+
+            var channel = await _db.InternalChatChannels
+                .Include(c => c.Members)
+                .FirstOrDefaultAsync(c => c.DirectKey == ChannelKeyPartners);
+
+            if (channel == null)
+            {
+                _logger.LogWarning("Channel sys_bot_partners not found. Skipping daily report.");
+                return;
+            }
+
+            var storeNow = TimeHelper.GetEgyptTime();
+            var targetDate = (forDate ?? storeNow.Date.AddDays(-1)).Date;
+            var endHour = TimeHelper.GetBusinessDayEndHour();
+
+            var dayStart = targetDate.AddHours(endHour);
+            var dayEnd = targetDate.AddDays(1).AddHours(endHour).AddTicks(-1);
+
+            string dateDisplay = targetDate.ToString("yyyy-MM-dd");
+            string dayNameAr = targetDate.ToString("dddd", new System.Globalization.CultureInfo("ar-EG"));
+
+            // ════════════════════════════════════════════════════════════
+            // 1. تقرير الشركاء المالي الشامل (PARTNERS COMPREHENSIVE REPORT)
+            // ════════════════════════════════════════════════════════════
+            var salesQuery = _db.Orders.AsNoTracking().Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Returned);
+            var posDailyGross = await salesQuery.Where(o => o.Source == OrderSource.POS && o.CreatedAt >= dayStart && o.CreatedAt <= dayEnd).SumAsync(o => (decimal?)o.TotalAmount) ?? 0m;
+            var webDailyGross = await salesQuery.Where(o => o.Source == OrderSource.Website && o.CreatedAt >= dayStart && o.CreatedAt <= dayEnd).SumAsync(o => (decimal?)o.TotalAmount) ?? 0m;
+
+            var salesReturnsQuery = _db.JournalEntries.AsNoTracking().Where(j => j.Type == JournalEntryType.SalesReturn);
+            var dailyPosReturns = await salesReturnsQuery
+                .Where(j => j.EntryDate >= dayStart && j.EntryDate <= dayEnd && j.Order != null && j.Order.Source == OrderSource.POS)
+                .SelectMany(j => j.Lines).Where(l => l.Account.Type == AccountType.Asset)
+                .SumAsync(l => (decimal?)l.Credit) ?? 0m;
+
+            var dailyWebReturns = await salesReturnsQuery
+                .Where(j => j.EntryDate >= dayStart && j.EntryDate <= dayEnd && j.Order != null && j.Order.Source == OrderSource.Website)
+                .SelectMany(j => j.Lines).Where(l => l.Account.Type == AccountType.Asset)
+                .SumAsync(l => (decimal?)l.Credit) ?? 0m;
+
+            var posNet = posDailyGross - dailyPosReturns;
+            var webNet = webDailyGross - dailyWebReturns;
+            var totalNetSales = posNet + webNet;
+            var totalReturns = dailyPosReturns + dailyWebReturns;
+
+            // Cash Flow
+            var cashAccTypes = new[] { "1101", "1102", "1103" };
+            var cashAccounts = await _db.Accounts.AsNoTracking()
+                .Where(a => cashAccTypes.Any(c => a.Code.StartsWith(c)) 
+                         && a.IsLeaf 
+                         && a.Code != "110106"
+                         && !a.NameAr.Contains("جرد") 
+                         && !a.NameAr.Contains("مخزون") 
+                         && !a.NameAr.Contains("عجز") 
+                         && !a.NameAr.Contains("زيادة") 
+                         && !a.NameAr.Contains("تقفيل"))
+                .Select(a => a.Id)
+                .ToListAsync();
+
+            var jlQuery = _db.JournalLines.AsNoTracking().Where(l => cashAccounts.Contains(l.AccountId));
+            var dailyCollections = await jlQuery.Where(l => l.JournalEntry.Type != JournalEntryType.Manual && l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => (decimal?)l.Debit) ?? 0m;
+            var dailyOutflows = await jlQuery.Where(l => l.JournalEntry.Type != JournalEntryType.OpeningBalance && l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => (decimal?)l.Credit) ?? 0m;
+            var dailyNetCashFlow = dailyCollections - dailyOutflows;
+
+            // Liquidity up to dayEnd
+            var balanceAccounts = await _db.Accounts.AsNoTracking()
+                .Where(a => a.IsLeaf && (a.Code.StartsWith("1101") || a.Code.StartsWith("1102") || a.Code.StartsWith("1103")))
+                .Where(a => a.Code != "1106" && a.Code != "110104" && a.Code != "110106" && !a.Code.StartsWith("1105") && !a.Code.StartsWith("1107") && !a.NameAr.Contains("مخزون") && !a.NameAr.Contains("جرد") && !a.NameAr.Contains("عجز") && !a.NameAr.Contains("زيادة") && (!a.NameAr.Contains("تقفيل") || a.Code == "110105"))
+                .ToListAsync();
+
+            decimal totalCashSafes = 0;
+            decimal totalBanksAndWallets = 0;
+            foreach (var acc in balanceAccounts)
+            {
+                var lq = _db.JournalLines.AsNoTracking().Where(l => l.AccountId == acc.Id);
+                decimal cumulative = await lq.Where(l => l.JournalEntry.EntryDate <= dayEnd).SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0m;
+                cumulative += acc.OpeningBalance;
+
+                if (acc.Code.StartsWith("1102") || acc.Code.StartsWith("1103"))
+                    totalBanksAndWallets += cumulative;
+                else
+                    totalCashSafes += cumulative;
+            }
+            decimal totalLiquidity = totalCashSafes + totalBanksAndWallets;
+
+            // Debts
+            var customerAccountIds = await _db.Accounts.AsNoTracking().Where(a => a.Code.StartsWith("1107") && a.IsLeaf).Select(a => a.Id).ToListAsync();
+            var customerDebt = await _db.JournalLines.AsNoTracking().Where(l => customerAccountIds.Contains(l.AccountId)).SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0m;
+
+            var supplierAccountIds = await _db.Accounts.AsNoTracking().Where(a => a.Code.StartsWith("2101") && a.IsLeaf).Select(a => a.Id).ToListAsync();
+            var supplierDebt = await _db.JournalLines.AsNoTracking().Where(l => supplierAccountIds.Contains(l.AccountId)).SumAsync(l => (decimal?)l.Credit - (decimal?)l.Debit) ?? 0m;
+
+            var expenseAccounts = await _db.Accounts.AsNoTracking().Where(a => a.Type == AccountType.Expense).Select(a => a.Id).ToListAsync();
+            var topExpenses = await _db.JournalLines.AsNoTracking()
+                .Where(l => expenseAccounts.Contains(l.AccountId) && l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd)
+                .GroupBy(l => l.Account.NameAr)
+                .Select(g => new { Name = g.Key, Amount = g.Sum(l => l.Debit - l.Credit) })
+                .Where(x => x.Amount > 0)
+                .OrderByDescending(x => x.Amount)
+                .Take(3)
+                .ToListAsync();
+
+            var partnersMeta = new
+            {
+                botType = "BotPartnersReport",
+                reportDate = dateDisplay,
+                dayName = dayNameAr,
+                totalNetSales,
+                posNet,
+                webNet,
+                totalReturns,
+                dailyCollections,
+                dailyOutflows,
+                dailyNetCashFlow,
+                totalCashSafes,
+                totalBanksAndWallets,
+                totalLiquidity,
+                customerDebt,
+                supplierDebt,
+                topExpenses = topExpenses.Select(e => new { e.Name, e.Amount }).ToList()
+            };
+
+            string topExpText = topExpenses.Any() 
+                ? "\n📌 أهم بنود المصروفات:\n" + string.Join("\n", topExpenses.Select(e => $"  • {e.Name}: {e.Amount:N0} ج.م"))
+                : "";
+
+            string partnersText = 
+                $"🤝 تقرير الشركاء المالي والتشغيلي\n" +
+                $"📅 ليوم: {dayNameAr} ({dateDisplay})\n" +
+                $"━━━━━━━━━━━━━━━━━━━━━\n" +
+                $"📊 المبيعات اليومية:\n" +
+                $"• إجمالي صافي المبيعات: {totalNetSales:N0} ج.م\n" +
+                $"  - مبيعات الفروع والكاشير (POS): {posNet:N0} ج.م\n" +
+                $"  - مبيعات المتجر الأونلاين (Website): {webNet:N0} ج.م\n" +
+                (totalReturns > 0 ? $"  - المرتجعات المخصومة: {totalReturns:N0} ج.م\n" : "") +
+                $"━━━━━━━━━━━━━━━━━━━━━\n" +
+                $"💵 حركة النقدية اليومية:\n" +
+                $"• المقبوضات والتحصيلات: {dailyCollections:N0} ج.م\n" +
+                $"• المدفوعات والمصروفات: {dailyOutflows:N0} ج.م\n" +
+                $"• صافي التدفق اليومي: {(dailyNetCashFlow >= 0 ? "+" : "")}{dailyNetCashFlow:N0} ج.م {(dailyNetCashFlow >= 0 ? "🟢" : "🔴")}\n" +
+                $"━━━━━━━━━━━━━━━━━━━━━\n" +
+                $"🏦 أرصدة السيولة المتاحة:\n" +
+                $"• الخزائن النقدية: {totalCashSafes:N0} ج.م\n" +
+                $"• البنوك والمحافظ الإلكترونية: {totalBanksAndWallets:N0} ج.م\n" +
+                $"• إجمالي السيولة الحالية: {totalLiquidity:N0} ج.م 💰\n" +
+                $"━━━━━━━━━━━━━━━━━━━━━\n" +
+                $"⚖️ المديونيات والمستحقات:\n" +
+                $"• مديونيات العملاء (لنا): {customerDebt:N0} ج.م\n" +
+                $"• مستحقات الموردين (علينا): {supplierDebt:N0} ج.م" +
+                topExpText;
+
+            await SaveAndBroadcastBotMessageAsync(channel.Id, partnersText, JsonSerializer.Serialize(partnersMeta, JsonOpts), "BotPartnersReport", null, $"PARTNERS-{dateDisplay}");
+
+            // Short pause between messages for clean sequencing
+            await Task.Delay(1000);
+
+            // ════════════════════════════════════════════════════════════
+            // 2. تقرير محاسبة وأرباح المتجر الإلكتروني (STORE ACCOUNTING)
+            // ════════════════════════════════════════════════════════════
+            var storeOrders = await _db.Orders
+                .AsNoTracking()
+                .Include(o => o.Items).ThenInclude(i => i.Product)
+                .Include(o => o.ShippingCompany)
+                .Where(o => o.Source == OrderSource.Website && o.CreatedAt >= dayStart && o.CreatedAt <= dayEnd)
+                .ToListAsync();
+
+            int storeTotalOrders = storeOrders.Count;
+            int storeDelivered = storeOrders.Count(o => o.Status == OrderStatus.Delivered);
+            int storeInShipping = storeOrders.Count(o => o.Status == OrderStatus.OutForDelivery || o.Status == OrderStatus.ReturnInShipping);
+            int storeReturned = storeOrders.Count(o => o.Status == OrderStatus.Returned);
+            int storePending = storeOrders.Count(o => o.Status == OrderStatus.Pending || o.Status == OrderStatus.Confirmed || o.Status == OrderStatus.Processing);
+
+            var deliveredOrders = storeOrders.Where(o => o.Status == OrderStatus.Delivered).ToList();
+            decimal deliveredSalesVal = deliveredOrders.Sum(o => o.TotalAmount);
+            decimal storeDeliveryRevenue = storeOrders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.DeliveryFee);
+
+            decimal storeCogs = deliveredOrders.Sum(o => o.Items.Sum(i => (i.Product?.CostPrice ?? 0) * (i.Quantity > 0 ? i.Quantity : 1)));
+            decimal deliveredGrossItems = deliveredOrders.Sum(o => (o.SubTotal > 0 ? o.SubTotal : o.Items.Sum(i => i.TotalPrice)) - (o.DiscountAmount + o.TemporalDiscount));
+            decimal storeGrossProfit = deliveredGrossItems - storeCogs;
+
+            decimal storeCourierCost = deliveredOrders.Sum(o => o.ActualDeliveryCost);
+            decimal storeReturnShippingLoss = storeOrders.Where(o => o.Status == OrderStatus.Returned || o.Status == OrderStatus.ReturnInShipping).Sum(o => o.ActualDeliveryCost);
+
+            var delivAcc = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "5220706" || a.NameAr.Contains("مصروف خدمة التوصيل"));
+            var postedDeliveryExpense = await _db.JournalLines.AsNoTracking()
+                .Where(l => (l.AccountId == (delivAcc != null ? delivAcc.Id : 0) || l.Account.Code == "5220706" || l.Account.NameAr.Contains("مصروف خدمة التوصيل"))
+                         && l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd && l.JournalEntry.Status == JournalEntryStatus.Posted)
+                .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0m;
+
+            if (postedDeliveryExpense > 0) storeCourierCost = postedDeliveryExpense;
+
+            var eComBranch = await _db.Branches.FirstOrDefaultAsync(b => b.Name.Contains("متجر") || b.Name.Contains("الموقع") || b.Name.Contains("أونلاين") || b.Name.Contains("Online") || b.Name.Contains("الويب") || b.Name.Contains("Website"));
+            int? eComBranchId = eComBranch?.Id;
+
+            var storeGeneralExpenses = await _db.JournalLines.AsNoTracking()
+                .Where(l => l.JournalEntry.EntryDate >= dayStart && l.JournalEntry.EntryDate <= dayEnd
+                         && l.JournalEntry.Status == JournalEntryStatus.Posted
+                         && l.JournalEntry.Type != JournalEntryType.SalesInvoice
+                         && l.JournalEntry.Type != JournalEntryType.SalesReturn
+                         && l.JournalEntry.OrderId == null
+                         && l.OrderId == null
+                         && (l.CostCenter == OrderSource.Website || (eComBranchId.HasValue && l.BranchId == eComBranchId.Value))
+                         && (l.Account.Type == AccountType.Expense || l.Account.Code.StartsWith("5"))
+                         && l.Account.Code != "51101" && l.Account.Code != "5220706" && !l.Account.NameAr.Contains("مصروف خدمة التوصيل")
+                         && l.Debit > 0)
+                .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0m;
+
+            decimal netOperatingProfit = (storeGrossProfit + storeDeliveryRevenue) - (storeCourierCost + storeReturnShippingLoss + storeGeneralExpenses);
+            decimal profitMarginPct = deliveredSalesVal > 0 ? Math.Round((netOperatingProfit / deliveredSalesVal) * 100m, 1) : 0m;
+
+            var courierGroups = storeOrders
+                .GroupBy(o => o.ShippingCompany?.NameAr ?? (!string.IsNullOrEmpty(o.ShippingCarrierName) ? o.ShippingCarrierName : (o.ShippingType == "Pickup" ? "استلام فرع" : "غير محدد")))
+                .Select(g => new
+                {
+                    Carrier = g.Key,
+                    Count = g.Count(),
+                    Delivered = g.Count(o => o.Status == OrderStatus.Delivered),
+                    Returned = g.Count(o => o.Status == OrderStatus.Returned)
+                })
+                .OrderByDescending(x => x.Count)
+                .Take(3)
+                .ToList();
+
+            var storeMeta = new
+            {
+                botType = "BotStoreReport",
+                reportDate = dateDisplay,
+                dayName = dayNameAr,
+                storeTotalOrders,
+                storeDelivered,
+                storeInShipping,
+                storeReturned,
+                storePending,
+                deliveredSalesVal,
+                storeCogs,
+                storeGrossProfit,
+                storeDeliveryRevenue,
+                storeCourierCost,
+                storeReturnShippingLoss,
+                storeGeneralExpenses,
+                netOperatingProfit,
+                profitMarginPct,
+                couriers = courierGroups
+            };
+
+            string couriersText = courierGroups.Any()
+                ? "\n🚚 توزيع شركات الشحن:\n" + string.Join("\n", courierGroups.Select(c => $"  • {c.Carrier}: {c.Count} طلب (تم تسليم {c.Delivered} | مرتجع {c.Returned})"))
+                : "";
+
+            string storeText = 
+                $"🛒 تقرير محاسبة وأرباح المتجر الإلكتروني\n" +
+                $"📅 ليوم: {dayNameAr} ({dateDisplay})\n" +
+                $"━━━━━━━━━━━━━━━━━━━━━\n" +
+                $"📦 نشاط طلبات المتجر:\n" +
+                $"• إجمالي الطلبات الواردة: {storeTotalOrders} طلب\n" +
+                $"  - مسلم للعملاء: {storeDelivered} طلب ({deliveredSalesVal:N0} ج.م) ✅\n" +
+                $"  - جاري الشحن والتوصيل: {storeInShipping} طلب 🚚\n" +
+                $"  - قيد المعالجة والتأكيد: {storePending} طلب ⏳\n" +
+                $"  - مرتجعات: {storeReturned} طلب 🔄\n" +
+                $"━━━━━━━━━━━━━━━━━━━━━\n" +
+                $"💰 الربحية وتكلفة البضاعة:\n" +
+                $"• قيمة المبيعات المسلمة: {deliveredSalesVal:N0} ج.م\n" +
+                $"• تكلفة البضاعة المباعة (COGS): {storeCogs:N0} ج.م\n" +
+                $"• مجمل ربح المنتجات: {storeGrossProfit:N0} ج.م\n" +
+                $"• إيرادات الشحن المحصلة: {storeDeliveryRevenue:N0} ج.م\n" +
+                $"• مصاريف شركات الشحن والمرتجعات: {(storeCourierCost + storeReturnShippingLoss):N0} ج.م\n" +
+                (storeGeneralExpenses > 0 ? $"• مصاريف تشغيل وإعلانات المتجر: {storeGeneralExpenses:N0} ج.م\n" : "") +
+                $"━━━━━━━━━━━━━━━━━━━━━\n" +
+                $"📈 صافي الربح التشغيلي لليوم:\n" +
+                $"• صافي الربح: {(netOperatingProfit >= 0 ? "+" : "")}{netOperatingProfit:N0} ج.م {(netOperatingProfit >= 0 ? "🟢" : "🔴")}\n" +
+                $"• نسبة هامش الربح: {profitMarginPct}%" +
+                couriersText;
+
+            await SaveAndBroadcastBotMessageAsync(channel.Id, storeText, JsonSerializer.Serialize(storeMeta, JsonOpts), "BotStoreReport", null, $"STORE-{dateDisplay}");
+            _logger.LogInformation("Posted daily partners and store report for {TargetDate}", dateDisplay);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to post daily partners and store report");
+        }
+    }
+
     private (List<string> phoneHashes, List<string> emailHashes) GetSearchHashes(string input)
     {
         var pHashes = new List<string>();
@@ -402,7 +738,8 @@ public class InternalChatBotService : IInternalChatBotService
             [ChannelKeyOrders]    = new[] { "order", "طلب", "customer", "عميل", "sales", "مبيعات" },
             [ChannelKeyPos]       = new[] { "order", "طلب", "invoice", "فاتورة", "customer", "عميل", "sales", "مبيعات" },
             [ChannelKeyInventory] = new[] { "stock", "مخزون" },
-            [ChannelKeyTreasury]  = new[] { "sales", "مبيعات" }
+            [ChannelKeyTreasury]  = new[] { "sales", "مبيعات" },
+            [ChannelKeyPartners]  = new[] { "report", "تقرير", "partners", "شركاء", "store", "متجر", "sales", "مبيعات" }
         };
 
         if (allowedByChannel.TryGetValue(channel.DirectKey, out var allowed) && !allowed.Contains(cleanCmd))
@@ -814,6 +1151,21 @@ public class InternalChatBotService : IInternalChatBotService
                 }
                 break;
 
+            case "report":
+            case "تقرير":
+            case "partners":
+            case "شركاء":
+            case "store":
+            case "متجر":
+                DateTime? customDate = null;
+                if (!string.IsNullOrWhiteSpace(cleanQuery) && DateTime.TryParse(cleanQuery, out var parsedD))
+                {
+                    customDate = parsedD;
+                }
+                await PostDailyPartnersAndStoreReportAsync(customDate);
+                responseText = "✅ تم استخراج وإرسال تقرير اليوم السابق للشركاء والمتجر في المجموعة بنجاح.";
+                break;
+
             default:
                 responseText = channel.DirectKey switch
                 {
@@ -833,6 +1185,11 @@ public class InternalChatBotService : IInternalChatBotService
                     ChannelKeyTreasury =>
                         "🤖 أوامر الخزينة والرقابة المالية:\n" +
                         "• /مبيعات: ملخص مبيعات الشركة الشامل (المتجر + الكاشير)",
+                    ChannelKeyPartners =>
+                        "🤝 أوامر روبوت الشركاء:\n" +
+                        "• /تقرير أو /شركاء: توليد وإرسال التقرير الشامل لليوم السابق (أو كتابة تاريخ محدد مثل: /تقرير 2026-10-04)\n" +
+                        "• /متجر: ملخص تقرير أرباح ومحاسبة المتجر الإلكتروني\n" +
+                        "• /مبيعات: ملخص مبيعات اليوم اللحظية",
                     _ => "🤖 لا توجد أوامر متاحة في هذه المجموعة"
                 };
                 break;
