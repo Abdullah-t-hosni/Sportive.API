@@ -150,6 +150,8 @@ public class InternalChatController : ControllerBase
                 name = displayName,
                 originalName = c.Name,
                 description = c.Description,
+                directKey = c.DirectKey,
+                code = c.DirectKey,
                 type = c.Type.ToString(),
                 icon = c.Icon ?? (c.Type == InternalChatChannelType.Group ? "👥" : null),
                 unreadCount = unread,

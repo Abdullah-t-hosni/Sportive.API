@@ -464,6 +464,17 @@ _ = Task.Run(async () =>
 
         var chatBot = scope.ServiceProvider.GetRequiredService<IInternalChatBotService>();
         await chatBot.EnsureSystemChannelsExistAsync();
+
+        var partnersChan = await db.InternalChatChannels
+            .FirstOrDefaultAsync(c => c.DirectKey == InternalChatBotService.ChannelKeyPartners);
+        if (partnersChan != null)
+        {
+            var hasMsg = await db.InternalChatMessages.AnyAsync(m => m.ChannelId == partnersChan.Id);
+            if (!hasMsg)
+            {
+                await chatBot.PostDailyPartnersAndStoreReportAsync(null);
+            }
+        }
     }
     catch (Exception ex)
     {
