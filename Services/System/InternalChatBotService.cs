@@ -431,6 +431,34 @@ public class InternalChatBotService : IInternalChatBotService
             var totalNetSales = posNet + webNet;
             var totalReturns = dailyPosReturns + dailyWebReturns;
 
+            // ── Week-over-Week (WoW) Comparison: Same day of previous week ──
+            var prevWeekDate = targetDate.AddDays(-7);
+            var prevWeekStart = prevWeekDate.AddHours(endHour);
+            var prevWeekEnd = prevWeekDate.AddDays(1).AddHours(endHour).AddTicks(-1);
+
+            var prevPosDailyGross = await salesQuery.Where(o => o.Source == OrderSource.POS && o.CreatedAt >= prevWeekStart && o.CreatedAt <= prevWeekEnd).SumAsync(o => (decimal?)o.TotalAmount) ?? 0m;
+            var prevWebDailyGross = await salesQuery.Where(o => o.Source == OrderSource.Website && o.CreatedAt >= prevWeekStart && o.CreatedAt <= prevWeekEnd).SumAsync(o => (decimal?)o.TotalAmount) ?? 0m;
+
+            var prevDailyPosReturns = await salesReturnsQuery
+                .Where(j => j.EntryDate >= prevWeekStart && j.EntryDate <= prevWeekEnd && j.Order != null && j.Order.Source == OrderSource.POS)
+                .SelectMany(j => j.Lines).Where(l => l.Account.Type == AccountType.Asset)
+                .SumAsync(l => (decimal?)l.Credit) ?? 0m;
+
+            var prevDailyWebReturns = await salesReturnsQuery
+                .Where(j => j.EntryDate >= prevWeekStart && j.EntryDate <= prevWeekEnd && j.Order != null && j.Order.Source == OrderSource.Website)
+                .SelectMany(j => j.Lines).Where(l => l.Account.Type == AccountType.Asset)
+                .SumAsync(l => (decimal?)l.Credit) ?? 0m;
+
+            var prevPosNet = prevPosDailyGross - prevDailyPosReturns;
+            var prevWebNet = prevWebDailyGross - prevDailyWebReturns;
+            var prevTotalNetSales = prevPosNet + prevWebNet;
+
+            decimal? salesGrowthPct = null;
+            if (prevTotalNetSales > 0)
+            {
+                salesGrowthPct = Math.Round(((totalNetSales - prevTotalNetSales) / prevTotalNetSales) * 100m, 1);
+            }
+
             // Cash Flow
             var cashAccTypes = new[] { "1101", "1102", "1103" };
             var cashAccounts = await _db.Accounts.AsNoTracking()
@@ -497,6 +525,11 @@ public class InternalChatBotService : IInternalChatBotService
                 posNet,
                 webNet,
                 totalReturns,
+                prevTotalNetSales,
+                salesGrowthPct,
+                prevPosNet,
+                prevWebNet,
+                prevWeekDate = prevWeekDate.ToString("yyyy-MM-dd"),
                 dailyCollections,
                 dailyOutflows,
                 dailyNetCashFlow,
@@ -512,12 +545,24 @@ public class InternalChatBotService : IInternalChatBotService
                 ? "\n📌 أهم بنود المصروفات:\n" + string.Join("\n", topExpenses.Select(e => $"  • {e.Name}: {e.Amount:N0} ج.م"))
                 : "";
 
+            string salesTrendText = "";
+            if (salesGrowthPct.HasValue)
+            {
+                string sign = salesGrowthPct.Value >= 0 ? "+" : "";
+                string icon = salesGrowthPct.Value > 0 ? "🟢" : (salesGrowthPct.Value < 0 ? "🔴" : "⚪");
+                salesTrendText = $" ({icon} {sign}{salesGrowthPct.Value}% عن الأسبوع السابق: {prevTotalNetSales:N0} ج.م)";
+            }
+            else if (prevTotalNetSales == 0 && totalNetSales > 0)
+            {
+                salesTrendText = " 🟢 (جديد)";
+            }
+
             string partnersText = 
                 $"🤝 تقرير الشركاء المالي والتشغيلي\n" +
                 $"📅 ليوم: {dayNameAr} ({dateDisplay})\n" +
                 $"━━━━━━━━━━━━━━━━━━━━━\n" +
                 $"📊 المبيعات اليومية:\n" +
-                $"• إجمالي صافي المبيعات: {totalNetSales:N0} ج.م\n" +
+                $"• إجمالي صافي المبيعات: {totalNetSales:N0} ج.م{salesTrendText}\n" +
                 $"  - مبيعات الفروع والكاشير (POS): {posNet:N0} ج.م\n" +
                 $"  - مبيعات المتجر الأونلاين (Website): {webNet:N0} ج.م\n" +
                 (totalReturns > 0 ? $"  - المرتجعات المخصومة: {totalReturns:N0} ج.م\n" : "") +
@@ -596,6 +641,35 @@ public class InternalChatBotService : IInternalChatBotService
             decimal netOperatingProfit = (storeGrossProfit + storeDeliveryRevenue) - (storeCourierCost + storeReturnShippingLoss + storeGeneralExpenses);
             decimal profitMarginPct = deliveredSalesVal > 0 ? Math.Round((netOperatingProfit / deliveredSalesVal) * 100m, 1) : 0m;
 
+            // ── Week-over-Week (WoW) Store Comparison ──
+            var prevStoreOrders = await _db.Orders
+                .AsNoTracking()
+                .Include(o => o.Items).ThenInclude(i => i.Product)
+                .Where(o => o.Source == OrderSource.Website && o.CreatedAt >= prevWeekStart && o.CreatedAt <= prevWeekEnd)
+                .ToListAsync();
+
+            var prevDeliveredOrders = prevStoreOrders.Where(o => o.Status == OrderStatus.Delivered).ToList();
+            decimal prevDeliveredSalesVal = prevDeliveredOrders.Sum(o => o.TotalAmount);
+            decimal? storeSalesGrowthPct = null;
+            if (prevDeliveredSalesVal > 0)
+            {
+                storeSalesGrowthPct = Math.Round(((deliveredSalesVal - prevDeliveredSalesVal) / prevDeliveredSalesVal) * 100m, 1);
+            }
+
+            decimal prevStoreCogs = prevDeliveredOrders.Sum(o => o.Items.Sum(i => (i.Product?.CostPrice ?? 0) * (i.Quantity > 0 ? i.Quantity : 1)));
+            decimal prevDeliveredGrossItems = prevDeliveredOrders.Sum(o => (o.SubTotal > 0 ? o.SubTotal : o.Items.Sum(i => i.TotalPrice)) - (o.DiscountAmount + o.TemporalDiscount));
+            decimal prevStoreGrossProfit = prevDeliveredGrossItems - prevStoreCogs;
+            decimal prevStoreDeliveryRevenue = prevStoreOrders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.DeliveryFee);
+            decimal prevStoreCourierCost = prevDeliveredOrders.Sum(o => o.ActualDeliveryCost);
+            decimal prevStoreReturnShippingLoss = prevStoreOrders.Where(o => o.Status == OrderStatus.Returned || o.Status == OrderStatus.ReturnInShipping).Sum(o => o.ActualDeliveryCost);
+            decimal prevNetOperatingProfit = (prevStoreGrossProfit + prevStoreDeliveryRevenue) - (prevStoreCourierCost + prevStoreReturnShippingLoss);
+
+            decimal? profitGrowthPct = null;
+            if (prevNetOperatingProfit != 0)
+            {
+                profitGrowthPct = Math.Round(((netOperatingProfit - prevNetOperatingProfit) / Math.Abs(prevNetOperatingProfit)) * 100m, 1);
+            }
+
             var courierGroups = storeOrders
                 .GroupBy(o => o.ShippingCompany?.NameAr ?? (!string.IsNullOrEmpty(o.ShippingCarrierName) ? o.ShippingCarrierName : (o.ShippingType == "Pickup" ? "استلام فرع" : "غير محدد")))
                 .Select(g => new
@@ -628,12 +702,33 @@ public class InternalChatBotService : IInternalChatBotService
                 storeGeneralExpenses,
                 netOperatingProfit,
                 profitMarginPct,
+                prevDeliveredSalesVal,
+                storeSalesGrowthPct,
+                prevNetOperatingProfit,
+                profitGrowthPct,
+                prevWeekDate = prevWeekDate.ToString("yyyy-MM-dd"),
                 couriers = courierGroups
             };
 
             string couriersText = courierGroups.Any()
                 ? "\n🚚 توزيع شركات الشحن:\n" + string.Join("\n", courierGroups.Select(c => $"  • {c.Carrier}: {c.Count} طلب (تم تسليم {c.Delivered} | مرتجع {c.Returned})"))
                 : "";
+
+            string storeSalesTrendText = "";
+            if (storeSalesGrowthPct.HasValue)
+            {
+                string sign = storeSalesGrowthPct.Value >= 0 ? "+" : "";
+                string icon = storeSalesGrowthPct.Value > 0 ? "🟢" : (storeSalesGrowthPct.Value < 0 ? "🔴" : "⚪");
+                storeSalesTrendText = $" ({icon} {sign}{storeSalesGrowthPct.Value}% عن الأسبوع السابق: {prevDeliveredSalesVal:N0} ج.م)";
+            }
+
+            string storeProfitTrendText = "";
+            if (profitGrowthPct.HasValue)
+            {
+                string sign = profitGrowthPct.Value >= 0 ? "+" : "";
+                string icon = profitGrowthPct.Value > 0 ? "🟢" : (profitGrowthPct.Value < 0 ? "🔴" : "⚪");
+                storeProfitTrendText = $" ({icon} {sign}{profitGrowthPct.Value}% WoW)";
+            }
 
             string storeText = 
                 $"🛒 تقرير محاسبة وأرباح المتجر الإلكتروني\n" +
@@ -647,7 +742,7 @@ public class InternalChatBotService : IInternalChatBotService
                 $"  - مرتجعات: {storeReturned} طلب 🔄\n" +
                 $"━━━━━━━━━━━━━━━━━━━━━\n" +
                 $"💰 الربحية وتكلفة البضاعة:\n" +
-                $"• قيمة المبيعات المسلمة: {deliveredSalesVal:N0} ج.م\n" +
+                $"• قيمة المبيعات المسلمة: {deliveredSalesVal:N0} ج.م{storeSalesTrendText}\n" +
                 $"• تكلفة البضاعة المباعة (COGS): {storeCogs:N0} ج.م\n" +
                 $"• مجمل ربح المنتجات: {storeGrossProfit:N0} ج.م\n" +
                 $"• إيرادات الشحن المحصلة: {storeDeliveryRevenue:N0} ج.م\n" +
@@ -655,7 +750,7 @@ public class InternalChatBotService : IInternalChatBotService
                 (storeGeneralExpenses > 0 ? $"• مصاريف تشغيل وإعلانات المتجر: {storeGeneralExpenses:N0} ج.م\n" : "") +
                 $"━━━━━━━━━━━━━━━━━━━━━\n" +
                 $"📈 صافي الربح التشغيلي لليوم:\n" +
-                $"• صافي الربح: {(netOperatingProfit >= 0 ? "+" : "")}{netOperatingProfit:N0} ج.م {(netOperatingProfit >= 0 ? "🟢" : "🔴")}\n" +
+                $"• صافي الربح: {(netOperatingProfit >= 0 ? "+" : "")}{netOperatingProfit:N0} ج.م {(netOperatingProfit >= 0 ? "🟢" : "🔴")}{storeProfitTrendText}\n" +
                 $"• نسبة هامش الربح: {profitMarginPct}%" +
                 couriersText;
 
@@ -738,8 +833,8 @@ public class InternalChatBotService : IInternalChatBotService
             [ChannelKeyOrders]    = new[] { "order", "طلب", "customer", "عميل", "sales", "مبيعات" },
             [ChannelKeyPos]       = new[] { "order", "طلب", "invoice", "فاتورة", "customer", "عميل", "sales", "مبيعات" },
             [ChannelKeyInventory] = new[] { "stock", "مخزون" },
-            [ChannelKeyTreasury]  = new[] { "sales", "مبيعات" },
-            [ChannelKeyPartners]  = new[] { "report", "تقرير", "partners", "شركاء", "store", "متجر", "sales", "مبيعات" }
+            [ChannelKeyTreasury]  = new[] { "sales", "مبيعات", "vaults", "خزن", "خزائن", "سيولة", "debts", "مديونيات", "ديون", "month", "شهر", "شهري" },
+            [ChannelKeyPartners]  = new[] { "report", "تقرير", "partners", "شركاء", "store", "متجر", "sales", "مبيعات", "vaults", "خزن", "خزائن", "سيولة", "debts", "مديونيات", "ديون", "month", "شهر", "شهري" }
         };
 
         if (allowedByChannel.TryGetValue(channel.DirectKey, out var allowed) && !allowed.Contains(cleanCmd))
@@ -1166,6 +1261,34 @@ public class InternalChatBotService : IInternalChatBotService
                 responseText = "✅ تم استخراج وإرسال تقرير اليوم السابق للشركاء والمتجر في المجموعة بنجاح.";
                 break;
 
+            case "vaults":
+            case "خزن":
+            case "خزائن":
+            case "سيولة":
+                var (liqText, liqMeta) = await GetLiquiditySummaryAsync();
+                responseText = liqText;
+                responseMeta = liqMeta;
+                linkedEntityType = "BotLiquiditySummary";
+                break;
+
+            case "debts":
+            case "مديونيات":
+            case "ديون":
+                var (debtsText, debtsMeta) = await GetDebtsSummaryAsync();
+                responseText = debtsText;
+                responseMeta = debtsMeta;
+                linkedEntityType = "BotDebtsSummary";
+                break;
+
+            case "month":
+            case "شهر":
+            case "شهري":
+                var (monthText, monthMeta) = await GetMonthlySummaryAsync();
+                responseText = monthText;
+                responseMeta = monthMeta;
+                linkedEntityType = "BotMonthlySummary";
+                break;
+
             default:
                 responseText = channel.DirectKey switch
                 {
@@ -1184,10 +1307,16 @@ public class InternalChatBotService : IInternalChatBotService
                         "• /مخزون [اسم/كود]: رصيد الصنف بكل المقاسات والألوان",
                     ChannelKeyTreasury =>
                         "🤖 أوامر الخزينة والرقابة المالية:\n" +
+                        "• /خزن أو /سيولة: كشف أرصدة الخزائن والبنوك والسيولة الحالية\n" +
+                        "• /مديونيات: موقف المديونيات والمستحقات المالية\n" +
+                        "• /شهر: ملخص أداء الشهر المالي التراكمي\n" +
                         "• /مبيعات: ملخص مبيعات الشركة الشامل (المتجر + الكاشير)",
                     ChannelKeyPartners =>
                         "🤝 أوامر روبوت الشركاء:\n" +
-                        "• /تقرير أو /شركاء: توليد وإرسال التقرير الشامل لليوم السابق (أو كتابة تاريخ محدد مثل: /تقرير 2026-10-04)\n" +
+                        "• /تقرير أو /شركاء: توليد وإرسال التقرير الشامل لليوم السابق (أو كتابة تاريخ محدد: /تقرير 2026-10-04)\n" +
+                        "• /خزن أو /سيولة: كشف تفصيلي بأرصدة كل الخزائن والبنوك والسيولة اللحظية\n" +
+                        "• /مديونيات: كشف بأعلى العملاء المدينين ومستحقات الموردين وصافي الموقف المالي\n" +
+                        "• /شهر: ملخص تراكمي للمبيعات والأرباح والتدفقات النقدية للشهر الحالي\n" +
                         "• /متجر: ملخص تقرير أرباح ومحاسبة المتجر الإلكتروني\n" +
                         "• /مبيعات: ملخص مبيعات اليوم اللحظية",
                     _ => "🤖 لا توجد أوامر متاحة في هذه المجموعة"
@@ -1245,6 +1374,298 @@ public class InternalChatBotService : IInternalChatBotService
         }
 
         return updatedObj;
+    }
+
+    private async Task<(string text, object meta)> GetLiquiditySummaryAsync()
+    {
+        var now = TimeHelper.GetEgyptTime();
+        var balanceAccounts = await _db.Accounts.AsNoTracking()
+            .Where(a => a.IsLeaf && (a.Code.StartsWith("1101") || a.Code.StartsWith("1102") || a.Code.StartsWith("1103")))
+            .Where(a => a.Code != "1106" && a.Code != "110104" && a.Code != "110106" && !a.Code.StartsWith("1105") && !a.Code.StartsWith("1107") && !a.NameAr.Contains("مخزون") && !a.NameAr.Contains("جرد") && !a.NameAr.Contains("عجز") && !a.NameAr.Contains("زيادة") && (!a.NameAr.Contains("تقفيل") || a.Code == "110105"))
+            .OrderBy(a => a.Code)
+            .ToListAsync();
+
+        var safesList = new List<dynamic>();
+        var banksList = new List<dynamic>();
+        decimal totalSafes = 0;
+        decimal totalBanks = 0;
+
+        foreach (var acc in balanceAccounts)
+        {
+            decimal sum = await _db.JournalLines.AsNoTracking()
+                .Where(l => l.AccountId == acc.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
+                .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0m;
+            decimal bal = acc.OpeningBalance + sum;
+
+            if (acc.Code.StartsWith("1102") || acc.Code.StartsWith("1103"))
+            {
+                banksList.Add(new { name = acc.NameAr, code = acc.Code, balance = bal });
+                totalBanks += bal;
+            }
+            else
+            {
+                safesList.Add(new { name = acc.NameAr, code = acc.Code, balance = bal });
+                totalSafes += bal;
+            }
+        }
+
+        decimal totalLiquidity = totalSafes + totalBanks;
+
+        var safesLines = safesList.Select(s => $"• {s.name}: {((decimal)s.balance):N0} ج.م");
+        var banksLines = banksList.Select(b => $"• {b.name}: {((decimal)b.balance):N0} ج.م");
+
+        string text = 
+            $"🏦 كشف أرصدة الخزائن والبنوك والسيولة الحالية\n" +
+            $"⏰ حتى اللحظة: {now:yyyy-MM-dd hh:mm tt}\n" +
+            $"━━━━━━━━━━━━━━━━━━━━━\n" +
+            $"💵 الخزائن النقدية:\n" +
+            (safesLines.Any() ? string.Join("\n", safesLines) + $"\n  ⬅️ إجمالي الخزائن: {totalSafes:N0} ج.م\n" : "• لا توجد خزائن نقدية مسجلة\n") +
+            $"━━━━━━━━━━━━━━━━━━━━━\n" +
+            $"🏛️ الحسابات البنكية والمحافظ:\n" +
+            (banksLines.Any() ? string.Join("\n", banksLines) + $"\n  ⬅️ إجمالي البنوك والمحافظ: {totalBanks:N0} ج.م\n" : "• لا توجد حسابات بنكية مسجلة\n") +
+            $"━━━━━━━━━━━━━━━━━━━━━\n" +
+            $"💰 إجمالي السيولة المتاحة الآن: {totalLiquidity:N0} ج.م";
+
+        var meta = new
+        {
+            botType = "BotLiquiditySummary",
+            timestamp = now.ToString("yyyy-MM-dd HH:mm"),
+            totalSafes,
+            totalBanks,
+            totalLiquidity,
+            safes = safesList,
+            banks = banksList
+        };
+
+        return (text, meta);
+    }
+
+    private async Task<(string text, object meta)> GetDebtsSummaryAsync()
+    {
+        var now = TimeHelper.GetEgyptTime();
+
+        // 1. Top debtor customers
+        var topCustomersRaw = await _db.Customers.AsNoTracking()
+            .Where(c => c.IsActive)
+            .Select(c => new
+            {
+                c.Id,
+                c.FullName,
+                c.Phone,
+                c.PhoneEncrypted,
+                Balance = (c.MainAccount != null ? c.MainAccount.OpeningBalance : 0m) + (_db.JournalLines
+                    .Where(l => l.CustomerId == c.Id && l.Account.Code.StartsWith("1107") && l.JournalEntry.Status != JournalEntryStatus.Draft)
+                    .Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0m)
+            })
+            .Where(c => c.Balance > 10)
+            .OrderByDescending(c => c.Balance)
+            .Take(5)
+            .ToListAsync();
+
+        var topCustomers = topCustomersRaw.Select(c => {
+            string phone = !string.IsNullOrEmpty(c.Phone) ? c.Phone : (_encryptionHelper != null && !string.IsNullOrEmpty(c.PhoneEncrypted) ? _encryptionHelper.Decrypt(c.PhoneEncrypted) : "");
+            return new { id = c.Id, name = c.FullName, phone, balance = c.Balance };
+        }).ToList();
+
+        // Total customer debt from ledger
+        var totalCustomerDebt = await _db.JournalLines.AsNoTracking()
+            .Where(l => l.Account.Code.StartsWith("1107") && l.Account.IsLeaf && l.JournalEntry.Status != JournalEntryStatus.Draft)
+            .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0m;
+
+        // 2. Top creditor suppliers
+        var topSuppliersRaw = await _db.Suppliers.AsNoTracking()
+            .Where(s => s.IsActive)
+            .Select(s => new
+            {
+                s.Id,
+                s.Name,
+                s.Phone,
+                s.CompanyName,
+                Balance = s.OpeningBalance + (_db.JournalLines
+                    .Where(l => l.SupplierId == s.Id && l.Account.Code.StartsWith("2101") && l.JournalEntry.Status != JournalEntryStatus.Draft)
+                    .Sum(l => (decimal?)l.Credit - (decimal?)l.Debit) ?? 0m)
+            })
+            .Where(s => s.Balance > 10)
+            .OrderByDescending(s => s.Balance)
+            .Take(5)
+            .ToListAsync();
+
+        var topSuppliers = topSuppliersRaw.Select(s => new {
+            id = s.Id,
+            name = s.Name,
+            phone = s.Phone,
+            company = s.CompanyName,
+            balance = s.Balance
+        }).ToList();
+
+        // Total supplier debt from ledger
+        var totalSupplierDebt = await _db.JournalLines.AsNoTracking()
+            .Where(l => l.Account.Code.StartsWith("2101") && l.Account.IsLeaf && l.JournalEntry.Status != JournalEntryStatus.Draft)
+            .SumAsync(l => (decimal?)l.Credit - (decimal?)l.Debit) ?? 0m;
+
+        decimal netPosition = totalCustomerDebt - totalSupplierDebt;
+
+        var custLines = topCustomers.Select((c, i) => $"  {i + 1}. {c.name}{(string.IsNullOrEmpty(c.phone) ? "" : $" ({c.phone})")}: {c.balance:N0} ج.م");
+        var suppLines = topSuppliers.Select((s, i) => $"  {i + 1}. {s.name}{(string.IsNullOrEmpty(s.company) ? "" : $" [{s.company}]")}: {s.balance:N0} ج.م");
+
+        string text =
+            $"⚖️ موقف المديونيات والمستحقات المالية\n" +
+            $"⏰ حتى اللحظة: {now:yyyy-MM-dd hh:mm tt}\n" +
+            $"━━━━━━━━━━━━━━━━━━━━━\n" +
+            $"👥 مستحقات لنا عند العملاء:\n" +
+            $"• إجمالي مديونيات العملاء: {totalCustomerDebt:N0} ج.م\n" +
+            (custLines.Any() ? "📌 أعلى العملاء مدينين:\n" + string.Join("\n", custLines) + "\n" : "• لا توجد مديونيات متأخرة على العملاء 🎉\n") +
+            $"━━━━━━━━━━━━━━━━━━━━━\n" +
+            $"🏭 مستحقات للموردين علينا:\n" +
+            $"• إجمالي مستحقات الموردين: {totalSupplierDebt:N0} ج.م\n" +
+            (suppLines.Any() ? "📌 أعلى الموردين مستحقات:\n" + string.Join("\n", suppLines) + "\n" : "• لا توجد مستحقات معلقة للموردين 🎉\n") +
+            $"━━━━━━━━━━━━━━━━━━━━━\n" +
+            $"📊 صافي الموقف المالي للمديونيات:\n" +
+            (netPosition >= 0 
+                ? $"• فائض مستحقات لصالحنا: +{netPosition:N0} ج.م 🟢" 
+                : $"• التزامات صافية واجبة السداد: {Math.Abs(netPosition):N0} ج.م 🔴");
+
+        var meta = new
+        {
+            botType = "BotDebtsSummary",
+            timestamp = now.ToString("yyyy-MM-dd HH:mm"),
+            totalCustomerDebt,
+            totalSupplierDebt,
+            netPosition,
+            topCustomers,
+            topSuppliers
+        };
+
+        return (text, meta);
+    }
+
+    private async Task<(string text, object meta)> GetMonthlySummaryAsync()
+    {
+        var storeNow = TimeHelper.GetEgyptTime();
+        var endHour = TimeHelper.GetBusinessDayEndHour();
+        var monthStart = new DateTime(storeNow.Year, storeNow.Month, 1).AddHours(endHour);
+        var monthNow = storeNow;
+
+        string monthNameAr = storeNow.ToString("MMMM", new System.Globalization.CultureInfo("ar-EG"));
+
+        // Previous month same period
+        var prevMonthDate = storeNow.AddMonths(-1);
+        var prevMonthStart = new DateTime(prevMonthDate.Year, prevMonthDate.Month, 1).AddHours(endHour);
+        int daysIntoMonth = Math.Min(storeNow.Day, DateTime.DaysInMonth(prevMonthDate.Year, prevMonthDate.Month));
+        var prevMonthEnd = new DateTime(prevMonthDate.Year, prevMonthDate.Month, daysIntoMonth, storeNow.Hour, storeNow.Minute, storeNow.Second);
+
+        // Current Month Sales
+        var salesQuery = _db.Orders.AsNoTracking().Where(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Returned);
+        var mtdPosGross = await salesQuery.Where(o => o.Source == OrderSource.POS && o.CreatedAt >= monthStart && o.CreatedAt <= monthNow).SumAsync(o => (decimal?)o.TotalAmount) ?? 0m;
+        var mtdWebGross = await salesQuery.Where(o => o.Source == OrderSource.Website && o.CreatedAt >= monthStart && o.CreatedAt <= monthNow).SumAsync(o => (decimal?)o.TotalAmount) ?? 0m;
+
+        var salesReturnsQuery = _db.JournalEntries.AsNoTracking().Where(j => j.Type == JournalEntryType.SalesReturn);
+        var mtdPosReturns = await salesReturnsQuery
+            .Where(j => j.EntryDate >= monthStart && j.EntryDate <= monthNow && j.Order != null && j.Order.Source == OrderSource.POS)
+            .SelectMany(j => j.Lines).Where(l => l.Account.Type == AccountType.Asset)
+            .SumAsync(l => (decimal?)l.Credit) ?? 0m;
+        var mtdWebReturns = await salesReturnsQuery
+            .Where(j => j.EntryDate >= monthStart && j.EntryDate <= monthNow && j.Order != null && j.Order.Source == OrderSource.Website)
+            .SelectMany(j => j.Lines).Where(l => l.Account.Type == AccountType.Asset)
+            .SumAsync(l => (decimal?)l.Credit) ?? 0m;
+
+        var mtdPosNet = mtdPosGross - mtdPosReturns;
+        var mtdWebNet = mtdWebGross - mtdWebReturns;
+        var mtdTotalNetSales = mtdPosNet + mtdWebNet;
+        var mtdTotalReturns = mtdPosReturns + mtdWebReturns;
+
+        // Previous Month Sales for same day range
+        var prevPosGross = await salesQuery.Where(o => o.Source == OrderSource.POS && o.CreatedAt >= prevMonthStart && o.CreatedAt <= prevMonthEnd).SumAsync(o => (decimal?)o.TotalAmount) ?? 0m;
+        var prevWebGross = await salesQuery.Where(o => o.Source == OrderSource.Website && o.CreatedAt >= prevMonthStart && o.CreatedAt <= prevMonthEnd).SumAsync(o => (decimal?)o.TotalAmount) ?? 0m;
+        var prevPosReturns = await salesReturnsQuery
+            .Where(j => j.EntryDate >= prevMonthStart && j.EntryDate <= prevMonthEnd && j.Order != null && j.Order.Source == OrderSource.POS)
+            .SelectMany(j => j.Lines).Where(l => l.Account.Type == AccountType.Asset)
+            .SumAsync(l => (decimal?)l.Credit) ?? 0m;
+        var prevWebReturns = await salesReturnsQuery
+            .Where(j => j.EntryDate >= prevMonthStart && j.EntryDate <= prevMonthEnd && j.Order != null && j.Order.Source == OrderSource.Website)
+            .SelectMany(j => j.Lines).Where(l => l.Account.Type == AccountType.Asset)
+            .SumAsync(l => (decimal?)l.Credit) ?? 0m;
+
+        var prevMonthNetSales = (prevPosGross - prevPosReturns) + (prevWebGross - prevWebReturns);
+        decimal? mtdGrowthPct = prevMonthNetSales > 0 ? Math.Round(((mtdTotalNetSales - prevMonthNetSales) / prevMonthNetSales) * 100m, 1) : null;
+
+        // Cash flow for month
+        var cashAccTypes = new[] { "1101", "1102", "1103" };
+        var cashAccounts = await _db.Accounts.AsNoTracking()
+            .Where(a => cashAccTypes.Any(c => a.Code.StartsWith(c)) && a.IsLeaf && a.Code != "110106" && !a.NameAr.Contains("جرد") && !a.NameAr.Contains("مخزون") && !a.NameAr.Contains("عجز") && !a.NameAr.Contains("زيادة") && !a.NameAr.Contains("تقفيل"))
+            .Select(a => a.Id).ToListAsync();
+
+        var jlQuery = _db.JournalLines.AsNoTracking().Where(l => cashAccounts.Contains(l.AccountId));
+        var mtdCollections = await jlQuery.Where(l => l.JournalEntry.Type != JournalEntryType.Manual && l.JournalEntry.EntryDate >= monthStart && l.JournalEntry.EntryDate <= monthNow).SumAsync(l => (decimal?)l.Debit) ?? 0m;
+        var mtdOutflows = await jlQuery.Where(l => l.JournalEntry.Type != JournalEntryType.OpeningBalance && l.JournalEntry.EntryDate >= monthStart && l.JournalEntry.EntryDate <= monthNow).SumAsync(l => (decimal?)l.Credit) ?? 0m;
+        var mtdNetCashFlow = mtdCollections - mtdOutflows;
+
+        // Online Store MTD
+        var mtdStoreOrders = await _db.Orders
+            .AsNoTracking()
+            .Include(o => o.Items).ThenInclude(i => i.Product)
+            .Where(o => o.Source == OrderSource.Website && o.CreatedAt >= monthStart && o.CreatedAt <= monthNow)
+            .ToListAsync();
+
+        var mtdDelivered = mtdStoreOrders.Where(o => o.Status == OrderStatus.Delivered).ToList();
+        decimal mtdDeliveredSales = mtdDelivered.Sum(o => o.TotalAmount);
+        decimal mtdStoreCogs = mtdDelivered.Sum(o => o.Items.Sum(i => (i.Product?.CostPrice ?? 0) * (i.Quantity > 0 ? i.Quantity : 1)));
+        decimal mtdGrossItems = mtdDelivered.Sum(o => (o.SubTotal > 0 ? o.SubTotal : o.Items.Sum(i => i.TotalPrice)) - (o.DiscountAmount + o.TemporalDiscount));
+        decimal mtdStoreGrossProfit = mtdGrossItems - mtdStoreCogs;
+        decimal mtdDeliveryRev = mtdStoreOrders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.DeliveryFee);
+        decimal mtdCourierCost = mtdDelivered.Sum(o => o.ActualDeliveryCost);
+        decimal mtdReturnLoss = mtdStoreOrders.Where(o => o.Status == OrderStatus.Returned || o.Status == OrderStatus.ReturnInShipping).Sum(o => o.ActualDeliveryCost);
+
+        decimal mtdStoreNetProfit = (mtdStoreGrossProfit + mtdDeliveryRev) - (mtdCourierCost + mtdReturnLoss);
+
+        string wowMtdText = "";
+        if (mtdGrowthPct.HasValue)
+        {
+            string sign = mtdGrowthPct.Value >= 0 ? "+" : "";
+            string icon = mtdGrowthPct.Value > 0 ? "🟢" : (mtdGrowthPct.Value < 0 ? "🔴" : "⚪");
+            wowMtdText = $" ({icon} {sign}{mtdGrowthPct.Value}% عن نفس الفترة بالشهر السابق: {prevMonthNetSales:N0} ج.م)";
+        }
+
+        string text = 
+            $"📅 ملخص الأداء المالي والتشغيلي التراكمي للشهر\n" +
+            $"🗓️ شهر {monthNameAr} {storeNow.Year} (حتى {storeNow:yyyy-MM-dd})\n" +
+            $"━━━━━━━━━━━━━━━━━━━━━\n" +
+            $"📊 صافي المبيعات التراكمية:\n" +
+            $"• إجمالي المبيعات: {mtdTotalNetSales:N0} ج.م{wowMtdText}\n" +
+            $"  - مبيعات الفروع والكاشير (POS): {mtdPosNet:N0} ج.م\n" +
+            $"  - مبيعات المتجر الأونلاين: {mtdWebNet:N0} ج.م\n" +
+            (mtdTotalReturns > 0 ? $"  - المرتجعات المخصومة: {mtdTotalReturns:N0} ج.م\n" : "") +
+            $"━━━━━━━━━━━━━━━━━━━━━\n" +
+            $"💵 حركة السيولة للشهر:\n" +
+            $"• إجمالي المقبوضات: {mtdCollections:N0} ج.م\n" +
+            $"• إجمالي المدفوعات: {mtdOutflows:N0} ج.م\n" +
+            $"• صافي التدفق التراكمي: {(mtdNetCashFlow >= 0 ? "+" : "")}{mtdNetCashFlow:N0} ج.م {(mtdNetCashFlow >= 0 ? "🟢" : "🔴")}\n" +
+            $"━━━━━━━━━━━━━━━━━━━━━\n" +
+            $"🛒 أداء المتجر الإلكتروني التراكمي:\n" +
+            $"• عدد الطلبات المسلمة: {mtdDelivered.Count} طلب\n" +
+            $"• قيمة المبيعات المسلمة: {mtdDeliveredSales:N0} ج.م\n" +
+            $"• صافي ربح المتجر التقديري: {(mtdStoreNetProfit >= 0 ? "+" : "")}{mtdStoreNetProfit:N0} ج.م {(mtdStoreNetProfit >= 0 ? "🟢" : "🔴")}";
+
+        var meta = new
+        {
+            botType = "BotMonthlySummary",
+            monthName = monthNameAr,
+            year = storeNow.Year,
+            mtdTotalNetSales,
+            mtdPosNet,
+            mtdWebNet,
+            mtdTotalReturns,
+            mtdCollections,
+            mtdOutflows,
+            mtdNetCashFlow,
+            mtdDeliveredCount = mtdDelivered.Count,
+            mtdDeliveredSales,
+            mtdStoreNetProfit,
+            prevMonthNetSales,
+            mtdGrowthPct
+        };
+
+        return (text, meta);
     }
 
     private async Task<object> SaveAndBroadcastBotMessageAsync(
