@@ -380,12 +380,11 @@ try
         service => service.RunBackupAsync("Scheduled", System.Threading.CancellationToken.None),
         "0 23 * * *");
 
-    // ✅ Daily Partners & Online Store Report to "الشركاء" channel — runs every day at 8:00 AM Egypt Time
+    // ✅ Daily Partners & Online Store Report to "الشركاء" channel — runs every day at 8:00 AM Egypt Time (5:00 AM UTC)
     backgroundJobs.AddOrUpdate<IInternalChatBotService>(
         "DailyPartnersAndStoreReport",
         bot => bot.PostDailyPartnersAndStoreReportAsync(null),
-        "0 8 * * *",
-        new RecurringJobOptions { TimeZone = TimeHelper.GetStoreTimeZone() });
+        "0 5 * * *");
 
     // ── Nightly jobs (commented out — heavy DB load, re-enable on dedicated server) ──
     //     backgroundJobs.AddOrUpdate<IOrderService>(
@@ -465,14 +464,20 @@ _ = Task.Run(async () =>
         var chatBot = scope.ServiceProvider.GetRequiredService<IInternalChatBotService>();
         await chatBot.EnsureSystemChannelsExistAsync();
 
-        var partnersChan = await db.InternalChatChannels
-            .FirstOrDefaultAsync(c => c.DirectKey == InternalChatBotService.ChannelKeyPartners);
-        if (partnersChan != null)
+        var egyptNow = TimeHelper.GetEgyptTime();
+        if (egyptNow.Hour >= 8)
         {
-            var hasMsg = await db.InternalChatMessages.AnyAsync(m => m.ChannelId == partnersChan.Id);
-            if (!hasMsg)
+            var targetD = egyptNow.Date.AddDays(-1);
+            var reportRef = $"PARTNERS-{targetD:yyyy-MM-dd}";
+            var partnersChan = await db.InternalChatChannels
+                .FirstOrDefaultAsync(c => c.DirectKey == InternalChatBotService.ChannelKeyPartners);
+            if (partnersChan != null)
             {
-                await chatBot.PostDailyPartnersAndStoreReportAsync(null);
+                var hasReport = await db.InternalChatMessages.AnyAsync(m => m.ChannelId == partnersChan.Id && m.LinkedEntityRef == reportRef);
+                if (!hasReport)
+                {
+                    await chatBot.PostDailyPartnersAndStoreReportAsync(targetD);
+                }
             }
         }
     }

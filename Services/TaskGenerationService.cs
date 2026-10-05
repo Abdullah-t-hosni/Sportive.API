@@ -30,8 +30,17 @@ namespace Sportive.API.Services
                     _logger.LogError(ex, "Error generating daily tasks.");
                 }
 
-                // Run every 1 hour to check if new day started or new blueprints added for today
-                await Task.Delay(TimeSpan.FromHours(1), stoppingToken);
+                try
+                {
+                    await CheckAndPostDailyPartnersReportAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error checking/posting daily partners report.");
+                }
+
+                // Check every 15 minutes to guarantee timely execution and recover from app sleep/restarts
+                await Task.Delay(TimeSpan.FromMinutes(15), stoppingToken);
             }
         }
 
@@ -146,6 +155,36 @@ namespace Sportive.API.Services
             {
                 await db.SaveChangesAsync();
                 _logger.LogInformation("Generated daily employee tasks.");
+            }
+        }
+
+        private async Task CheckAndPostDailyPartnersReportAsync()
+        {
+            var egyptTime = TimeHelper.GetEgyptTime();
+            // تقرير الشركاء والمتجر يصدر تلقائياً ابتداءً من الساعة 8:00 صباحاً بتوقيت مصر
+            if (egyptTime.Hour < 8) return;
+
+            using var scope = _serviceProvider.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            var targetDate = egyptTime.Date.AddDays(-1);
+            var reportRef = $"PARTNERS-{targetDate:yyyy-MM-dd}";
+
+            var partnersChan = await db.InternalChatChannels
+                .AsNoTracking()
+                .FirstOrDefaultAsync(c => c.DirectKey == InternalChatBotService.ChannelKeyPartners);
+
+            if (partnersChan == null) return;
+
+            var alreadyPosted = await db.InternalChatMessages
+                .AsNoTracking()
+                .AnyAsync(m => m.ChannelId == partnersChan.Id && m.LinkedEntityRef == reportRef);
+
+            if (!alreadyPosted)
+            {
+                var chatBot = scope.ServiceProvider.GetRequiredService<IInternalChatBotService>();
+                _logger.LogInformation("Automatic daily partners report triggered by background runner for date {TargetDate}", targetDate.ToString("yyyy-MM-dd"));
+                await chatBot.PostDailyPartnersAndStoreReportAsync(targetDate);
             }
         }
     }
