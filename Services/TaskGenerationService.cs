@@ -39,6 +39,36 @@ namespace Sportive.API.Services
                     _logger.LogError(ex, "Error checking/posting daily partners report.");
                 }
 
+                // ── Radar Rule 1: Delayed orders alert (OutForDelivery or Processing > 72h) ──
+                try
+                {
+                    await CheckDelayedOrdersAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error checking delayed orders radar.");
+                }
+
+                // ── Radar Rule 3.2: Cash over threshold alert (default 15,000 EGP) ──
+                try
+                {
+                    await CheckCashOverThresholdAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error checking cash over threshold radar.");
+                }
+
+                // ── Radar Rule 3.3: New expense alert (any posted expense in last 20 minutes) ──
+                try
+                {
+                    await CheckNewExpensesAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error checking new expenses radar.");
+                }
+
                 // Check every 15 minutes to guarantee timely execution and recover from app sleep/restarts
                 await Task.Delay(TimeSpan.FromMinutes(15), stoppingToken);
             }
@@ -185,6 +215,60 @@ namespace Sportive.API.Services
                 var chatBot = scope.ServiceProvider.GetRequiredService<IInternalChatBotService>();
                 _logger.LogInformation("Automatic daily partners report triggered by background runner for date {TargetDate}", targetDate.ToString("yyyy-MM-dd"));
                 await chatBot.PostDailyPartnersAndStoreReportAsync(targetDate);
+            }
+        }
+
+        // ──────────────────────────────────────────────────────────────────────
+        // Radar Rule 1 — Check delayed online orders (Processing or OutForDelivery > 72h)
+        // ──────────────────────────────────────────────────────────────────────
+        private async Task CheckDelayedOrdersAsync()
+        {
+            using var scope = _serviceProvider.CreateScope();
+            var chatBot = scope.ServiceProvider.GetRequiredService<IInternalChatBotService>();
+            await chatBot.PostDelayedOrdersAlertAsync();
+        }
+
+        // ──────────────────────────────────────────────────────────────────────
+        // Radar Rule 3.2 — Check cash safes balance over 15,000 EGP threshold
+        // ──────────────────────────────────────────────────────────────────────
+        private async Task CheckCashOverThresholdAsync()
+        {
+            using var scope = _serviceProvider.CreateScope();
+            var chatBot = scope.ServiceProvider.GetRequiredService<IInternalChatBotService>();
+            await chatBot.PostCashOverThresholdAlertAsync(threshold: 15_000m);
+        }
+
+        // ──────────────────────────────────────────────────────────────────────
+        // Radar Rule 3.3 — Alert on newly posted expense journal entries
+        // ──────────────────────────────────────────────────────────────────────
+        private async Task CheckNewExpensesAsync()
+        {
+            using var scope = _serviceProvider.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var chatBot = scope.ServiceProvider.GetRequiredService<IInternalChatBotService>();
+
+            // Look for posted journal entries with expense lines created in the last 20 minutes
+            var since = DateTime.UtcNow.AddMinutes(-20);
+
+            var expenseEntryIds = await db.JournalEntries
+                .AsNoTracking()
+                .Where(j => j.Status == JournalEntryStatus.Posted
+                         && j.CreatedAt >= since
+                         && j.Type != JournalEntryType.SalesInvoice
+                         && j.Type != JournalEntryType.SalesReturn
+                         && j.Type != JournalEntryType.PurchaseInvoice
+                         && j.Type != JournalEntryType.PurchaseReturn
+                         && j.Type != JournalEntryType.ReceiptVoucher
+                         && j.Type != JournalEntryType.OpeningBalance
+                         && j.OrderId == null
+                         && j.Lines.Any(l => l.Debit > 0 &&
+                                           (l.Account.Type == AccountType.Expense || l.Account.Code.StartsWith("5"))))
+                .Select(j => j.Id)
+                .ToListAsync();
+
+            foreach (var jeId in expenseEntryIds)
+            {
+                await chatBot.PostExpenseAlertAsync(jeId);
             }
         }
     }

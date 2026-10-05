@@ -22,6 +22,13 @@ public interface IInternalChatBotService
     Task PostShiftAlertAsync(POSShiftClosure closure);
     Task PostShiftAlertAsync(int shiftId, string cashierName, decimal expectedAmount, decimal actualAmount, decimal difference);
     Task PostDailyPartnersAndStoreReportAsync(DateTime? forDate = null);
+    // ── Radar Rules ──────────────────────────────────────────────────────────
+    /// <summary>Rule 1: Alert for store orders stuck in OutForDelivery or Processing for more than 72 hours.</summary>
+    Task PostDelayedOrdersAlertAsync();
+    /// <summary>Rule 3.2: Alert when any cash safe balance exceeds the threshold (default 15,000 EGP).</summary>
+    Task PostCashOverThresholdAlertAsync(decimal threshold = 15_000m);
+    /// <summary>Rule 3.3: Alert whenever any expense journal entry is posted, regardless of amount.</summary>
+    Task PostExpenseAlertAsync(int journalEntryId);
     Task<object> ExecuteSlashCommandAsync(int channelId, string userId, string userName, string command, string query);
     Task<object> ClaimOrResolveMessageAsync(int messageId, string userId, string userName, string action, string? note);
 }
@@ -351,15 +358,22 @@ public class InternalChatBotService : IInternalChatBotService
     {
         try
         {
+            // ── Radar Rule 3.1: Only alert if there is a non-zero variance (deficit or surplus) ──
+            if (closure.Variance == 0) return;
+
             var channel = await _db.InternalChatChannels
                 .Include(c => c.Members)
                 .FirstOrDefaultAsync(c => c.DirectKey == ChannelKeyTreasury);
 
             if (channel == null) return;
 
-            string diffText = closure.Variance == 0 
-                ? "متطابق تماماً ✅" 
-                : (closure.Variance > 0 ? $"زيادة +{closure.Variance:N2} ج.م 🟢" : $"عجز {closure.Variance:N2} ج.م 🔴");
+            string diffText = closure.Variance > 0
+                ? $"زيادة +{closure.Variance:N2} ج.م 🟢"
+                : $"عجز {Math.Abs(closure.Variance):N2} ج.م 🔴";
+
+            string alertTitle = closure.Variance > 0
+                ? "⚠️ تنبيه خزينة: رصيد زائد في الوردية"
+                : "🚨 تنبيه خزينة: عجز نقدي في الوردية";
 
             var meta = new
             {
@@ -390,7 +404,7 @@ public class InternalChatBotService : IInternalChatBotService
             };
 
             string metaJson = JsonSerializer.Serialize(meta, JsonOpts);
-            string text = $"💰 تقرير تقفيل وردية كاشير #{closure.Id}\n" +
+            string text = $"{alertTitle}\n" +
                           $"• الكاشير: {closure.ClosedBy} | المحطة: {closure.StationId}\n" +
                           $"• صافي المبيعات: {closure.NetSales:N2} ج.م (كاش: {closure.CashSales:N2} | فيزا: {closure.CardSales:N2})\n" +
                           $"• المصروفات والمرتجع: {(closure.Expenses + closure.Returns):N2} ج.م\n" +
@@ -448,6 +462,251 @@ public class InternalChatBotService : IInternalChatBotService
         }
     }
 
+    // ══════════════════════════════════════════════════════════════════════
+    // RADAR RULE 1 — Delayed Orders Alert (OutForDelivery or Processing > 72h)
+    // ══════════════════════════════════════════════════════════════════════
+    public async Task PostDelayedOrdersAlertAsync()
+    {
+        try
+        {
+            var channel = await _db.InternalChatChannels
+                .Include(c => c.Members)
+                .FirstOrDefaultAsync(c => c.DirectKey == ChannelKeyOrders);
+
+            if (channel == null) return;
+
+            var cutoff = DateTime.UtcNow.AddHours(-72);
+
+            // Statuses: OutForDelivery (5) or Processing (3) — stuck for > 72 hours
+            var delayedOrders = await _db.Orders
+                .Include(o => o.Customer)
+                .Include(o => o.ShippingCompany)
+                .Where(o => o.Source != OrderSource.POS
+                         && (o.Status == OrderStatus.OutForDelivery || o.Status == OrderStatus.Processing)
+                         && o.UpdatedAt <= cutoff)
+                .OrderBy(o => o.UpdatedAt)
+                .Take(10)
+                .ToListAsync();
+
+            if (!delayedOrders.Any()) return;
+
+            foreach (var order in delayedOrders)
+            {
+                // De-duplicate: don't re-alert the same order within 6 hours
+                var alertRef = $"DELAYED-{order.Id}";
+                var recentAlert = await _db.InternalChatMessages
+                    .AsNoTracking()
+                    .AnyAsync(m => m.ChannelId == channel.Id
+                               && m.LinkedEntityType == "BotDelayedOrder"
+                               && m.LinkedEntityRef == alertRef
+                               && m.SentAt >= DateTime.UtcNow.AddHours(-6));
+
+                if (recentAlert) continue;
+
+                string statusAr = order.Status == OrderStatus.OutForDelivery
+                    ? "خرج للتوصيل ولم يُسلَّم"
+                    : "قيد التحضير والمعالجة";
+
+                var lastChanged = order.UpdatedAt ?? order.CreatedAt;
+                string hoursStuck = ((DateTime.UtcNow - lastChanged).TotalHours).ToString("F0");
+                string custName = order.Customer?.FullName ?? "غير محدد";
+                string custPhone = order.Customer?.Phone ?? "";
+                string courier = order.ShippingCompany?.NameAr ?? order.ShippingCarrierName ?? "";
+
+                var meta = new
+                {
+                    botType = "BotDelayedOrder",
+                    trigger = "DelayedShipping",
+                    orderId = order.Id,
+                    orderNumber = order.OrderNumber,
+                    status = order.Status.ToString(),
+                    statusAr,
+                    hoursStuck,
+                    customerName = custName,
+                    customerPhone = custPhone,
+                    courier,
+                    totalAmount = order.TotalAmount,
+                    updatedAt = order.UpdatedAt
+                };
+
+                string metaJson = JsonSerializer.Serialize(meta, JsonOpts);
+                string text = $"⏳ تنبيه: طلب متأخر لأكثر من {hoursStuck} ساعة بدون تحديث\n" +
+                              $"• رقم الطلب: #{order.OrderNumber}\n" +
+                              $"• الحالة الحالية: {statusAr}\n" +
+                              $"• العميل: {custName}" +
+                              (!string.IsNullOrEmpty(custPhone) ? $" ({custPhone})" : "") + "\n" +
+                              (!string.IsNullOrEmpty(courier) ? $"• شركة الشحن: {courier}\n" : "") +
+                              $"• القيمة: {order.TotalAmount:N0} ج.م";
+
+                await SaveAndBroadcastBotMessageAsync(channel.Id, text, metaJson, "BotDelayedOrder", order.Id, alertRef);
+                await Task.Delay(500); // Slight pause between multiple alerts
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to post delayed orders alert");
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // RADAR RULE 3.2 — Cash Over Threshold Alert (default: 15,000 EGP)
+    // ══════════════════════════════════════════════════════════════════════
+    public async Task PostCashOverThresholdAlertAsync(decimal threshold = 15_000m)
+    {
+        try
+        {
+            var channel = await _db.InternalChatChannels
+                .Include(c => c.Members)
+                .FirstOrDefaultAsync(c => c.DirectKey == ChannelKeyTreasury);
+
+            if (channel == null) return;
+
+            // Get all active cash safe accounts (code starts with 1101, not bank/wallet)
+            var cashAccounts = await _db.Accounts.AsNoTracking()
+                .Where(a => a.IsLeaf
+                         && a.Code.StartsWith("1101")
+                         && a.Code != "110104"
+                         && a.Code != "110106"
+                         && !a.NameAr.Contains("جرد")
+                         && !a.NameAr.Contains("مخزون")
+                         && !a.NameAr.Contains("عجز")
+                         && !a.NameAr.Contains("زيادة")
+                         && !a.NameAr.Contains("تقفيل"))
+                .ToListAsync();
+
+            var overLimitAccounts = new List<(string Name, string Code, decimal Balance)>();
+
+            foreach (var acc in cashAccounts)
+            {
+                decimal sum = await _db.JournalLines.AsNoTracking()
+                    .Where(l => l.AccountId == acc.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
+                    .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0m;
+                decimal balance = acc.OpeningBalance + sum;
+
+                if (balance > threshold)
+                    overLimitAccounts.Add((acc.NameAr, acc.Code, balance));
+            }
+
+            if (!overLimitAccounts.Any()) return;
+
+            // De-duplicate: alert at most once every 4 hours per account
+            foreach (var (name, code, balance) in overLimitAccounts)
+            {
+                var alertRef = $"CASHOVER-{code}";
+                var recentAlert = await _db.InternalChatMessages
+                    .AsNoTracking()
+                    .AnyAsync(m => m.ChannelId == channel.Id
+                               && m.LinkedEntityType == "BotCashOverThreshold"
+                               && m.LinkedEntityRef == alertRef
+                               && m.SentAt >= DateTime.UtcNow.AddHours(-4));
+
+                if (recentAlert) continue;
+
+                var meta = new
+                {
+                    botType = "BotCashOverThreshold",
+                    accountName = name,
+                    accountCode = code,
+                    balance,
+                    threshold
+                };
+
+                string metaJson = JsonSerializer.Serialize(meta, JsonOpts);
+                string text = $"💸 تنبيه: رصيد خزينة تجاوز الحد المسموح ({threshold:N0} ج.م)\n" +
+                              $"• الخزينة: {name} (كود: {code})\n" +
+                              $"• الرصيد الحالي: {balance:N0} ج.م\n" +
+                              $"• الحد المقرر: {threshold:N0} ج.م\n" +
+                              "📌 يُنصح بتحويل الفائض للبنك أو إجراء ترحيل فوري";
+
+                await SaveAndBroadcastBotMessageAsync(channel.Id, text, metaJson, "BotCashOverThreshold", null, alertRef);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to post cash over threshold alert");
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // RADAR RULE 3.3 — Expense Alert (any expense entry regardless of amount)
+    // ══════════════════════════════════════════════════════════════════════
+    public async Task PostExpenseAlertAsync(int journalEntryId)
+    {
+        try
+        {
+            var channel = await _db.InternalChatChannels
+                .Include(c => c.Members)
+                .FirstOrDefaultAsync(c => c.DirectKey == ChannelKeyTreasury);
+
+            if (channel == null) return;
+
+            var entry = await _db.JournalEntries
+                .Include(j => j.Lines).ThenInclude(l => l.Account)
+                .FirstOrDefaultAsync(j => j.Id == journalEntryId);
+
+            if (entry == null) return;
+
+            // Extract expense lines (debit side on expense accounts code starts with 5 or type = Expense)
+            var expenseLines = entry.Lines
+                .Where(l => l.Debit > 0 &&
+                           (l.Account?.Type == AccountType.Expense || l.Account?.Code?.StartsWith("5") == true))
+                .ToList();
+
+            if (!expenseLines.Any()) return;
+
+            decimal totalExpense = expenseLines.Sum(l => l.Debit - l.Credit);
+            if (totalExpense <= 0) return;
+
+            // De-duplicate: don't alert twice for the same journal entry
+            var alertRef = $"EXPENSE-JE-{journalEntryId}";
+            var alreadyAlerted = await _db.InternalChatMessages
+                .AsNoTracking()
+                .AnyAsync(m => m.ChannelId == channel.Id
+                            && m.LinkedEntityType == "BotExpenseAlert"
+                            && m.LinkedEntityRef == alertRef);
+
+            if (alreadyAlerted) return;
+
+            string expenseDetails = string.Join("\n", expenseLines.Select(l =>
+                $"  • {l.Account?.NameAr ?? "مصروف"}: {l.Debit:N2} ج.م"));
+
+            string entryTypeAr = entry.Type switch
+            {
+                JournalEntryType.PaymentVoucher => "سند دفع",
+                JournalEntryType.Manual         => "قيد يدوي",
+                JournalEntryType.Payroll        => "مسير رواتب",
+                JournalEntryType.AdvancePayment => "سلفة موظف",
+                _ => entry.Type.ToString()
+            };
+
+            var meta = new
+            {
+                botType = "BotExpenseAlert",
+                journalEntryId,
+                entryNumber = entry.EntryNumber,
+                entryType = entry.Type.ToString(),
+                entryTypeAr,
+                description = entry.Description,
+                totalExpense,
+                lines = expenseLines.Select(l => new { name = l.Account?.NameAr, amount = l.Debit }).ToList()
+            };
+
+            string metaJson = JsonSerializer.Serialize(meta, JsonOpts);
+            string text = $"📋 تنبيه مصروف جديد تم ترحيله\n" +
+                          $"• النوع: {entryTypeAr} (رقم: {entry.EntryNumber})\n" +
+                          (!string.IsNullOrEmpty(entry.Description) ? $"• البيان: {entry.Description}\n" : "") +
+                          $"• إجمالي المصروف: {totalExpense:N2} ج.م\n" +
+                          (expenseLines.Count > 0 ? $"• التفاصيل:\n{expenseDetails}" : "");
+
+            await SaveAndBroadcastBotMessageAsync(channel.Id, text, metaJson, "BotExpenseAlert", journalEntryId, alertRef);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to post expense alert for journal entry #{JournalEntryId}", journalEntryId);
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
     public async Task PostDailyPartnersAndStoreReportAsync(DateTime? forDate = null)
     {
         try
