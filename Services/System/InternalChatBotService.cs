@@ -170,7 +170,10 @@ public class InternalChatBotService : IInternalChatBotService
         {
             var order = await _db.Orders
                 .Include(o => o.Customer)
-                .Include(o => o.Items)
+                .Include(o => o.DeliveryAddress)
+                .Include(o => o.ShippingCompany)
+                .Include(o => o.Items).ThenInclude(i => i.Product).ThenInclude(p => p!.Images)
+                .Include(o => o.Items).ThenInclude(i => i.ProductVariant)
                 .FirstOrDefaultAsync(o => o.Id == orderId);
 
             if (order == null) return;
@@ -199,7 +202,58 @@ public class InternalChatBotService : IInternalChatBotService
 
             string custName = order.Customer?.FullName ?? "عميل متجر";
             string custPhone = order.Customer?.Phone ?? "";
-            string itemsSummary = string.Join(" • ", order.Items.Take(3).Select(i => $"{i.ProductNameAr} ({i.Quantity}x)"));
+            
+            int prevOrdersCount = 0;
+            if (order.CustomerId > 0)
+            {
+                prevOrdersCount = await _db.Orders.CountAsync(o => o.CustomerId == order.CustomerId && o.Id != order.Id);
+            }
+
+            var itemsDetail = order.Items.Select(i => new
+            {
+                id = i.Id,
+                productId = i.ProductId,
+                name = i.ProductNameAr,
+                sku = i.SKU ?? i.Product?.SKU ?? "",
+                size = i.Size ?? i.ProductVariant?.Size ?? "",
+                color = i.Color ?? i.ProductVariant?.ColorAr ?? i.ProductVariant?.Color ?? "",
+                quantity = i.Quantity,
+                unitPrice = i.UnitPrice,
+                totalPrice = i.TotalPrice,
+                imageUrl = i.ProductVariant?.ImageUrl ?? i.Product?.Images.FirstOrDefault()?.ImageUrl
+            }).ToList();
+
+            string itemsSummary = string.Join(" • ", order.Items.Take(3).Select(i => 
+                $"{i.ProductNameAr}" + 
+                (!string.IsNullOrEmpty(i.Size) ? $" [{i.Size}]" : "") + 
+                $" ({i.Quantity}x)"));
+
+            string paymentMethodAr = order.PaymentMethod switch
+            {
+                PaymentMethod.Cash => "الدفع عند الاستلام (كاش)",
+                PaymentMethod.CreditCard => "بطاقة بنكية / فيزا",
+                PaymentMethod.InstaPay => "انستاباي (InstaPay)",
+                PaymentMethod.Vodafone => "محفظة إلكترونية",
+                PaymentMethod.Bank => "تحويل بنكي",
+                PaymentMethod.CustomerBalance => "رصيد العميل",
+                _ => order.PaymentMethod.ToString()
+            };
+
+            string addressText = "";
+            string city = "";
+            if (order.DeliveryAddress != null)
+            {
+                city = order.DeliveryAddress.City ?? "";
+                var parts = new List<string>();
+                if (!string.IsNullOrEmpty(order.DeliveryAddress.City)) parts.Add(order.DeliveryAddress.City);
+                if (!string.IsNullOrEmpty(order.DeliveryAddress.District)) parts.Add(order.DeliveryAddress.District);
+                if (!string.IsNullOrEmpty(order.DeliveryAddress.Street)) parts.Add(order.DeliveryAddress.Street);
+                if (!string.IsNullOrEmpty(order.DeliveryAddress.BuildingNo)) parts.Add($"عمارة {order.DeliveryAddress.BuildingNo}");
+                if (!string.IsNullOrEmpty(order.DeliveryAddress.ApartmentNo)) parts.Add($"شقة {order.DeliveryAddress.ApartmentNo}");
+                addressText = string.Join("، ", parts);
+            }
+
+            string courierName = order.ShippingCompany?.NameAr ?? order.ShippingCarrierName ?? (order.ShippingType == "Pickup" ? "استلام فرع" : "");
 
             var meta = new
             {
@@ -209,16 +263,28 @@ public class InternalChatBotService : IInternalChatBotService
                 orderNumber = order.OrderNumber,
                 customerName = custName,
                 customerPhone = custPhone,
+                prevOrdersCount,
+                city,
+                address = addressText,
+                deliveryNotes = order.DeliveryNotes ?? order.CustomerNotes,
+                courier = courierName,
+                paymentMethod = order.PaymentMethod.ToString(),
+                paymentMethodAr,
+                subTotal = order.SubTotal,
+                discountAmount = order.DiscountAmount + order.TemporalDiscount,
+                deliveryFee = order.DeliveryFee,
                 totalAmount = order.TotalAmount,
                 status = order.Status.ToString(),
-                paymentMethod = order.PaymentMethod.ToString(),
-                itemsCount = order.Items.Count,
+                itemsCount = order.Items.Sum(i => i.Quantity),
                 itemsSummary,
+                items = itemsDetail,
                 note
             };
 
             string metaJson = JsonSerializer.Serialize(meta, JsonOpts);
-            string text = $"{triggerTitle}\nرقم الطلب: #{order.OrderNumber}\nالعميل: {custName} ({custPhone})\nالقيمة: {order.TotalAmount:N0} ج.م | الأصناف: {itemsSummary}";
+            string text = $"{triggerTitle}\nرقم الطلب: #{order.OrderNumber}\nالعميل: {custName} ({custPhone})" +
+                          (!string.IsNullOrEmpty(city) ? $"\nالمدينة: {city}" : "") +
+                          $"\nالقيمة: {order.TotalAmount:N0} ج.م ({paymentMethodAr})\nالأصناف ({meta.itemsCount} قطعة): {itemsSummary}";
 
             await SaveAndBroadcastBotMessageAsync(channel.Id, text, metaJson, "BotOrderAlert", order.Id, order.OrderNumber);
         }
