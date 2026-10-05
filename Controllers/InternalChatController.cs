@@ -24,6 +24,7 @@ public class InternalChatController : ControllerBase
     private readonly IHubContext<NotificationHub> _hub;
     private readonly INotificationService _notifications;
     private readonly IInternalChatBotService _chatBot;
+    private readonly IWebHostEnvironment _env;
     private readonly ILogger<InternalChatController> _logger;
 
     public InternalChatController(
@@ -31,12 +32,14 @@ public class InternalChatController : ControllerBase
         IHubContext<NotificationHub> hub,
         INotificationService notifications,
         IInternalChatBotService chatBot,
+        IWebHostEnvironment env,
         ILogger<InternalChatController> logger)
     {
         _db = db;
         _hub = hub;
         _notifications = notifications;
         _chatBot = chatBot;
+        _env = env;
         _logger = logger;
     }
 
@@ -251,6 +254,39 @@ public class InternalChatController : ControllerBase
             if (!replyExists) replyToId = null;
         }
 
+        var mediaUrl = req.MediaUrl;
+        if (!string.IsNullOrEmpty(mediaUrl) && mediaUrl.StartsWith("data:audio", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var commaIdx = mediaUrl.IndexOf(',');
+                if (commaIdx > 0)
+                {
+                    var header = mediaUrl.Substring(0, commaIdx).ToLowerInvariant();
+                    var base64Data = mediaUrl.Substring(commaIdx + 1);
+                    var audioBytes = Convert.FromBase64String(base64Data);
+
+                    var ext = header.Contains("webm") ? ".webm" :
+                              (header.Contains("mp4") || header.Contains("m4a")) ? ".m4a" :
+                              header.Contains("ogg") ? ".ogg" :
+                              header.Contains("wav") ? ".wav" : ".mp3";
+
+                    var uploadsDir = Path.Combine(_env.ContentRootPath, "uploads", "chat-media");
+                    if (!Directory.Exists(uploadsDir)) Directory.CreateDirectory(uploadsDir);
+
+                    var safeFileName = $"chat_voice_{Guid.NewGuid():N}{ext}";
+                    var filePath = Path.Combine(uploadsDir, safeFileName);
+                    await System.IO.File.WriteAllBytesAsync(filePath, audioBytes);
+
+                    mediaUrl = $"/uploads/chat-media/{safeFileName}";
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to decode base64 audio in InternalChat");
+            }
+        }
+
         var msg = new InternalChatMessage
         {
             ChannelId = channelId,
@@ -262,7 +298,7 @@ public class InternalChatController : ControllerBase
             LinkedEntityType = req.LinkedEntityType,
             LinkedEntityId = req.LinkedEntityId,
             LinkedEntityRef = req.LinkedEntityRef,
-            MediaUrl = req.MediaUrl,
+            MediaUrl = mediaUrl,
             MediaType = req.MediaType,
             FileName = req.FileName,
             SentAt = DateTime.UtcNow
@@ -1211,5 +1247,43 @@ public class InternalChatController : ControllerBase
     {
         var res = await _chatBot.ClaimOrResolveMessageAsync(req.MessageId, UserId, UserName, req.Action, req.Note);
         return Ok(res);
+    }
+
+    // ── POST /api/internal-chat/upload-media ──────────────────────────────────
+    /// <summary>Upload voice notes and chat attachments</summary>
+    [HttpPost("upload-media")]
+    [RequestSizeLimit(35 * 1024 * 1024)] // 35MB
+    public async Task<IActionResult> UploadMedia([FromForm] IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(new { message = "لم يتم اختيار ملف" });
+
+        var ext = Path.GetExtension(file.FileName)?.ToLowerInvariant() ?? "";
+        if (string.IsNullOrEmpty(ext))
+        {
+            var ct = (file.ContentType ?? "").ToLowerInvariant();
+            if (ct.Contains("webm")) ext = ".webm";
+            else if (ct.Contains("mp4") || ct.Contains("m4a")) ext = ".m4a";
+            else if (ct.Contains("ogg")) ext = ".ogg";
+            else if (ct.Contains("wav")) ext = ".wav";
+            else if (ct.Contains("image/jpeg") || ct.Contains("image/jpg")) ext = ".jpg";
+            else if (ct.Contains("image/png")) ext = ".png";
+            else if (ct.Contains("image/webp")) ext = ".webp";
+            else ext = ".bin";
+        }
+
+        var uploadsDir = Path.Combine(_env.ContentRootPath, "uploads", "chat-media");
+        if (!Directory.Exists(uploadsDir)) Directory.CreateDirectory(uploadsDir);
+
+        var safeFileName = $"chat_{Guid.NewGuid():N}{ext}";
+        var filePath = Path.Combine(uploadsDir, safeFileName);
+
+        await using (var stream = new FileStream(filePath, FileMode.Create))
+        {
+            await file.CopyToAsync(stream);
+        }
+
+        var relativeUrl = $"/uploads/chat-media/{safeFileName}";
+        return Ok(new { url = relativeUrl, fileName = file.FileName, size = file.Length });
     }
 }

@@ -327,11 +327,19 @@ var uploadsPath = Path.Combine(builder.Environment.ContentRootPath, "uploads");
 if (!Directory.Exists(uploadsPath)) Directory.CreateDirectory(uploadsPath);
 Log.Information("Photo uploads path: {Path}", uploadsPath);
 
+var contentTypeProvider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
+contentTypeProvider.Mappings[".webm"] = "audio/webm";
+contentTypeProvider.Mappings[".ogg"] = "audio/ogg";
+contentTypeProvider.Mappings[".mp3"] = "audio/mpeg";
+contentTypeProvider.Mappings[".wav"] = "audio/wav";
+contentTypeProvider.Mappings[".m4a"] = "audio/mp4";
+
 app.UseStaticFiles(new StaticFileOptions
 {
     FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(uploadsPath),
     RequestPath = "/uploads",
-    ServeUnknownFileTypes = false
+    ContentTypeProvider = contentTypeProvider,
+    ServeUnknownFileTypes = true
 });
 
 app.UseRateLimiter();
