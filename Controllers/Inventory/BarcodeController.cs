@@ -39,7 +39,9 @@ public class BarcodeController : ControllerBase
                     (isInt && p.Id == id) ||
                     (p.EgyptianProductCode != null && p.EgyptianProductCode.ToLower() == queryVal) ||
                     (p.SaudiProductCode != null && p.SaudiProductCode.ToLower() == queryVal) ||
-                    p.Variants.Any(v => (p.SKU + "-" + v.Size + "-" + v.Color).ToLower() == queryVal || (isInt && v.Id == id))
+                    p.Variants.Any(v => (p.SKU + "-" + v.Size + "-" + v.Color).ToLower() == queryVal || (isInt && v.Id == id)) ||
+                    p.NameAr.ToLower().Contains(queryVal) ||
+                    (p.NameEn != null && p.NameEn.ToLower().Contains(queryVal))
                 )
             );
 
