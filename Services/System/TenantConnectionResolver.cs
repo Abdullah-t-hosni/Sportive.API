@@ -24,6 +24,13 @@ public class TenantConnectionResolver : ITenantConnectionResolver
         var tenant = _tenantContext.CurrentTenant;
         if (tenant == null || string.IsNullOrWhiteSpace(tenant.DatabaseName))
         {
+            // If no tenant is set (e.g. background services, recurring Hangfire jobs, CLI tools, or startup tasks),
+            // safely fallback to the baseline DefaultConnection string in all environments.
+            if (tenant == null)
+            {
+                return _baseConnectionString;
+            }
+
             // Fallback for EF Core design-time tools which don't have a tenant context
             var entryAssemblyName = System.Reflection.Assembly.GetEntryAssembly()?.GetName().Name;
             if (entryAssemblyName != null && (entryAssemblyName.Equals("ef", StringComparison.OrdinalIgnoreCase) || entryAssemblyName.Equals("dotnet-ef", StringComparison.OrdinalIgnoreCase)))
@@ -31,19 +38,7 @@ public class TenantConnectionResolver : ITenantConnectionResolver
                 return _baseConnectionString;
             }
 
-            if (Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development")
-            {
-                return _baseConnectionString;
-            }
-
-            if (tenant == null)
-            {
-                throw new InvalidOperationException("Cannot resolve tenant connection string: No tenant context set (tenant is null).");
-            }
-            else
-            {
-                throw new InvalidOperationException($"Cannot resolve tenant connection string: DatabaseName is empty for tenant '{tenant.Slug}'.");
-            }
+            throw new InvalidOperationException($"Cannot resolve tenant connection string: DatabaseName is empty for tenant '{tenant.Slug}'.");
         }
 
         var builder = new MySqlConnectionStringBuilder(_baseConnectionString)

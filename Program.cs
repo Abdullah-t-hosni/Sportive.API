@@ -457,6 +457,20 @@ if (args.Contains("--recalculate-stock"))
     return;
 }
 
+if (args.Contains("--test-report"))
+{
+    using (var scope = app.Services.CreateScope())
+    {
+        var chatBot = scope.ServiceProvider.GetRequiredService<IInternalChatBotService>();
+        var dateArg = args.SkipWhile(a => a != "--test-report").Skip(1).FirstOrDefault();
+        DateTime targetDate = DateTime.TryParse(dateArg, out var d) ? d : TimeHelper.GetEgyptTime().Date.AddDays(-1);
+        Log.Information("Executing PostDailyPartnersAndStoreReportAsync via CLI for date {Date}...", targetDate.ToString("yyyy-MM-dd"));
+        await chatBot.PostDailyPartnersAndStoreReportAsync(targetDate);
+        Log.Information("Done executing PostDailyPartnersAndStoreReportAsync via CLI.");
+    }
+    return;
+}
+
 
 // 🔄 Auto-Fix Returned Order Statuses & Legacy Settlements on startup (non-blocking)
 _ = Task.Run(async () =>
