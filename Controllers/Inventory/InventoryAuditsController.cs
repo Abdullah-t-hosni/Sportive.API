@@ -58,7 +58,7 @@ public class InventoryAuditsController : ControllerBase
     public IActionResult Ping() => Ok("Audit Controller is Alive");
 
     [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+    public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] bool? isDamaged = null)
     {
         try 
         {
@@ -74,6 +74,10 @@ public class InventoryAuditsController : ControllerBase
             if (pageSize < 1) pageSize = 50; // Cap at 50
 
             var itemsQuery = _db.InventoryAudits.AsNoTracking();
+            if (isDamaged.HasValue)
+            {
+                itemsQuery = itemsQuery.Where(x => x.IsDamagedAudit == isDamaged.Value);
+            }
 
             bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
             if (!canViewAll)
@@ -111,27 +115,49 @@ public class InventoryAuditsController : ControllerBase
                     a.BranchId,
                     BranchName = a.Branch != null ? a.Branch.Name : null,
                     a.WarehouseId,
-                    WarehouseName = a.Warehouse != null ? a.Warehouse.Name : null
+                    WarehouseName = a.Warehouse != null ? a.Warehouse.Name : null,
+                    a.IsDamagedAudit
                 })
                 .ToListAsync();
 
             _logger.LogInformation("Fetched {Count} items for InventoryAudits", items.Count);
 
-            var result = items.Select(a => new InventoryAuditSummaryDto(
-                a.Id, 
-                a.Title, 
-                a.AuditDate, 
-                a.StatusInt,
-                a.TotalExpectedValue, 
-                a.TotalActualValue, 
-                a.TotalActualValue - a.TotalExpectedValue,
-                a.ItemCount,
-                a.CostCenter,
-                a.BranchId,
-                a.BranchName,
-                a.WarehouseId,
-                a.WarehouseName
-            )).ToList();
+            var result = items.Select(a => {
+                decimal expVal = a.TotalExpectedValue;
+                decimal actVal = a.TotalActualValue;
+                decimal diff = actVal - expVal;
+
+                if (a.IsDamagedAudit)
+                {
+                    if (actVal > 0 && expVal > actVal && (expVal - actVal) > actVal)
+                    {
+                        decimal damagedCost = actVal;
+                        actVal = expVal - damagedCost;
+                        diff = -damagedCost;
+                    }
+                    else if (expVal > actVal)
+                    {
+                        diff = actVal - expVal;
+                    }
+                }
+
+                return new InventoryAuditSummaryDto(
+                    a.Id, 
+                    a.Title, 
+                    a.AuditDate, 
+                    a.StatusInt,
+                    expVal, 
+                    actVal, 
+                    diff,
+                    a.ItemCount,
+                    a.CostCenter,
+                    a.BranchId,
+                    a.BranchName,
+                    a.WarehouseId,
+                    a.WarehouseName,
+                    a.IsDamagedAudit
+                );
+            }).ToList();
 
             var totalPages = total == 0 ? 0 : (int)Math.Ceiling(total / (double)pageSize);
             return Ok(new PaginatedResult<InventoryAuditSummaryDto>(result, total, page, pageSize, totalPages));
@@ -167,9 +193,23 @@ public class InventoryAuditsController : ControllerBase
 
             if (a == null) return NotFound();
 
+            decimal expVal = a.TotalExpectedValue;
+            decimal actVal = a.TotalActualValue;
+            decimal diff = a.ValueDifference;
+
+            if (a.IsDamagedAudit)
+            {
+                if (actVal > 0 && expVal > actVal && (expVal - actVal) > actVal)
+                {
+                    decimal damagedCost = actVal;
+                    actVal = expVal - damagedCost;
+                    diff = -damagedCost;
+                }
+            }
+
             return Ok(new InventoryAuditDetailDto(
                 a.Id, a.Title, a.AuditDate, a.Description, (int)a.Status,
-                a.TotalExpectedValue, a.TotalActualValue, a.ValueDifference,
+                expVal, actVal, diff,
                 a.Items.Select(i => {
                     var variantName = i.ProductVariant != null ? $"{i.ProductVariant.Size} {i.ProductVariant.ColorAr}".Trim() : null;
                     var imageUrl = i.ProductVariant?.ImageUrl ?? i.Product?.Images?.FirstOrDefault(img => img.IsMain)?.ImageUrl ?? i.Product?.Images?.FirstOrDefault()?.ImageUrl;
@@ -185,7 +225,8 @@ public class InventoryAuditsController : ControllerBase
                 a.JournalEntryId,
                 a.CostCenter,
                 a.BranchId, a.Branch?.Name,
-                a.WarehouseId, a.Warehouse?.Name
+                a.WarehouseId, a.Warehouse?.Name,
+                a.IsDamagedAudit
             ));
         }
         catch (Exception ex)
@@ -208,7 +249,8 @@ public class InventoryAuditsController : ControllerBase
             AuditDate = TimeHelper.GetEgyptTime(),
             CostCenter = dto.CostCenter,
             BranchId = dto.BranchId,
-            WarehouseId = dto.WarehouseId
+            WarehouseId = dto.WarehouseId,
+            IsDamagedAudit = dto.IsDamagedAudit
         };
 
         if (dto.Items != null && dto.Items.Any())
@@ -336,6 +378,7 @@ public class InventoryAuditsController : ControllerBase
                 audit.CostCenter = dto.CostCenter;
                 audit.BranchId = dto.BranchId;
                 audit.WarehouseId = dto.WarehouseId;
+                audit.IsDamagedAudit = dto.IsDamagedAudit;
                 
                 // Remove old items and re-add (Simple approach for audit)
                 _db.InventoryAuditItems.RemoveRange(audit.Items);
@@ -405,13 +448,21 @@ public class InventoryAuditsController : ControllerBase
             });
 
             totalExpected += currentStock * unitCost;
-            totalActual += item.ActualQuantity * unitCost;
+            if (audit.IsDamagedAudit)
+            {
+                totalActual += Math.Max(0, currentStock - item.ActualQuantity) * unitCost;
+            }
+            else
+            {
+                totalActual += item.ActualQuantity * unitCost;
+            }
         }
 
         audit.TotalExpectedValue = totalExpected;
         audit.TotalActualValue = totalActual;
     }
 
+    [HttpPost("{id}/post")]
     [HttpPatch("{id}/post")]
     public async Task<IActionResult> PostAudit(int id)
     {

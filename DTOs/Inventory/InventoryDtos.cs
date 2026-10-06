@@ -9,7 +9,8 @@ public record CreateInventoryAuditDto(
     List<CreateInventoryAuditItemDto> Items,
     OrderSource? CostCenter = null,
     int? BranchId = null,
-    int? WarehouseId = null
+    int? WarehouseId = null,
+    bool IsDamagedAudit = false
 );
 
 public record CreateInventoryAuditItemDto(
@@ -26,7 +27,8 @@ public record UpdateInventoryAuditDto(
     List<CreateInventoryAuditItemDto> Items,
     OrderSource? CostCenter = null,
     int? BranchId = null,
-    int? WarehouseId = null
+    int? WarehouseId = null,
+    bool IsDamagedAudit = false
 );
 
 public record InventoryAuditSummaryDto(
@@ -42,7 +44,8 @@ public record InventoryAuditSummaryDto(
     int? BranchId = null,
     string? BranchName = null,
     int? WarehouseId = null,
-    string? WarehouseName = null
+    string? WarehouseName = null,
+    bool IsDamagedAudit = false
 );
 
 public record InventoryAuditDetailDto(
@@ -60,7 +63,8 @@ public record InventoryAuditDetailDto(
     int? BranchId = null,
     string? BranchName = null,
     int? WarehouseId = null,
-    string? WarehouseName = null
+    string? WarehouseName = null,
+    bool IsDamagedAudit = false
 );
 
 public record InventoryAuditItemDto(

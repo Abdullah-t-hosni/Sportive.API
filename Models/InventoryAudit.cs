@@ -29,6 +29,7 @@ public class InventoryAudit : BaseEntity
 
 
     public OrderSource? CostCenter { get; set; } // مركز التكلفة (موقع أو POS)
+    public bool IsDamagedAudit { get; set; } = false;
 
     // المجموع المالي لفوارق الجرد (سواء عجز أو زيادة)
     public decimal TotalExpectedValue { get; set; } = 0;

@@ -323,6 +323,111 @@ public class AccountingCoreService
         return entry.Id;
     }
 
+    public async Task<int?> PostDamagedInventoryAdjustmentAsync(int auditId, decimal totalDamagedValue, string reference, string? userId, OrderSource? costCenter = null)
+    {
+        if (totalDamagedValue <= 0) return null;
+
+        var mappings = await GetSafeSystemMappingsAsync();
+        
+        // Inventory mapping
+        if (!mappings.TryGetValue(MappingKeys.Inventory.ToLower(), out var iId) || iId == null)
+            throw new InvalidOperationException(_t.Get("Accounting.MappingMissing", MappingKeys.Inventory));
+
+        int damagedExpenseId = 0;
+        if (mappings.TryGetValue(MappingKeys.DamagedGoodsExpense.ToLower(), out var dId) && dId.HasValue && dId.Value > 0)
+        {
+            damagedExpenseId = dId.Value;
+        }
+        else
+        {
+            var acc = await _db.Accounts.FirstOrDefaultAsync(a => 
+                a.Code == "52209" || 
+                a.NameAr.Contains("المعدومة والهالك") || 
+                a.NameAr.Contains("بضاعة معدومة") || 
+                a.NameAr.Contains("بضاعة تالفة") || 
+                a.NameAr.Contains("تالف وهالك") ||
+                a.NameAr.Contains("الهالك"));
+            if (acc != null)
+            {
+                damagedExpenseId = acc.Id;
+            }
+        }
+
+        if (damagedExpenseId == 0)
+        {
+            var parentAcc = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "522") 
+                         ?? await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "52")
+                         ?? await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "5");
+            var newAcc = new Account
+            {
+                Code = "52209",
+                NameAr = "مصاريف بضاعة معدومة",
+                NameEn = "Damaged & Waste Goods",
+                Type = AccountType.Expense,
+                Nature = AccountNature.Debit,
+                Level = parentAcc != null ? parentAcc.Level + 1 : 4,
+                ParentId = parentAcc?.Id,
+                IsLeaf = true,
+                AllowPosting = true,
+                IsSystem = true,
+                CreatedAt = TimeHelper.GetEgyptTime()
+            };
+            _db.Accounts.Add(newAcc);
+            await _db.SaveChangesAsync();
+            damagedExpenseId = newAcc.Id;
+        }
+
+        var inventoryId = iId.Value;
+        var absVal = Math.Abs(totalDamagedValue);
+
+        var jePrefix = "JE-DAMAGED";
+        var entryNo = await _seq.NextAsync(jePrefix);
+
+        int? auditBranchId = await _db.InventoryAudits.Where(a => a.Id == auditId).Select(a => a.BranchId).FirstOrDefaultAsync();
+
+        var entry = new JournalEntry
+        {
+            EntryNumber = entryNo,
+            EntryDate   = TimeHelper.GetEgyptTime(),
+            Type        = JournalEntryType.Manual,
+            Status      = JournalEntryStatus.Posted,
+            Reference   = reference,
+            Description = $"إهلاك وتسوية بضاعة معدومة وتالفة - جرد رقم #{auditId}",
+            CreatedByUserId = userId,
+            CostCenter = costCenter,
+            CreatedAt   = TimeHelper.GetEgyptTime()
+        };
+
+        // 1. حساب البضاعة المعدومة والهالك (52209) -> مدين (Debit)
+        entry.Lines.Add(new JournalLine 
+        { 
+            AccountId = damagedExpenseId, 
+            Debit = absVal, 
+            Credit = 0, 
+            Description = $"إثبات بضاعة معدومة وتالفة - جرد #{auditId}", 
+            CreatedAt = TimeHelper.GetEgyptTime(), 
+            CostCenter = costCenter, 
+            BranchId = auditBranchId 
+        });
+
+        // 2. حساب المخزون (1106) -> دائن (Credit)
+        entry.Lines.Add(new JournalLine 
+        { 
+            AccountId = inventoryId, 
+            Debit = 0, 
+            Credit = absVal, 
+            Description = $"تسوية تخفيض المخزون للبضاعة الهالكة - جرد #{auditId}", 
+            CreatedAt = TimeHelper.GetEgyptTime(), 
+            CostCenter = costCenter, 
+            BranchId = auditBranchId 
+        });
+
+        _db.JournalEntries.Add(entry);
+        await _db.SaveChangesAsync();
+        return entry.Id;
+    }
+
+
     public async Task<(int Id, bool IsActive, string? ErrorNote)> GetAccountIdAsync(string input)
     {
         var cleanInput = input.Trim().ToLower();

@@ -48,6 +48,7 @@ public static class MappingKeys
 
     // ── تسويات المخزون ──────────────────────────────────
     public const string InventoryVariance = "inventoryVarianceAccountID";
+    public const string DamagedGoodsExpense = "damagedGoodsExpenseAccountID";
 
     public const string DepreciationExpense      = "depreciationExpenseAccountID";
     public const string AccumulatedDepreciation = "accumulatedDepreciationAccountID";
