@@ -120,10 +120,13 @@ public class BarcodeController : ControllerBase
         if (product == null) return NotFound(new { message = "المنتج غير موجود" });
 
         var stickers = new List<object>();
-        var basePrice = (product.DiscountPrice > 0) ? product.DiscountPrice.Value : product.Price;
+        var originalBasePrice = product.Price;
+        var basePrice = (product.DiscountPrice.HasValue && product.DiscountPrice.Value > 0) ? product.DiscountPrice.Value : product.Price;
+
+        var originalOnlineBasePrice = (product.OnlinePrice.HasValue && product.OnlinePrice.Value > 0) ? product.OnlinePrice.Value : product.Price;
         var onlineBasePrice = (product.OnlineDiscountPrice.HasValue && product.OnlineDiscountPrice.Value > 0)
             ? product.OnlineDiscountPrice.Value
-            : ((product.OnlinePrice.HasValue && product.OnlinePrice.Value > 0) ? product.OnlinePrice.Value : basePrice);
+            : originalOnlineBasePrice;
 
         var activeVariants = product.Variants.ToList();
         
@@ -134,7 +137,9 @@ public class BarcodeController : ControllerBase
                 code = product.SKU,
                 productName = product.NameAr,
                 price = basePrice,
+                originalPrice = originalBasePrice,
                 onlinePrice = onlineBasePrice,
+                originalOnlinePrice = originalOnlineBasePrice,
                 sku = product.SKU
             });
         }
@@ -142,16 +147,16 @@ public class BarcodeController : ControllerBase
         {
             foreach (var v in activeVariants)
             {
-                var variantSku = $"{product.SKU}-{v.Size ?? ""}-{v.Color ?? ""}".Trim('-').Replace("--", "-");
-                // Fallback to product SKU if variant doesn't have a distinct one in the system layout, but since we generate Code128, a unique string is preferred, or just the product SKU if that's what's printed
                 stickers.Add(new
                 {
-                    code = product.SKU, // Usually barcodes scan the base SKU or a specific Variant SKU.
+                    code = product.SKU,
                     productName = $"{product.NameAr} - {v.Size ?? ""} {v.ColorAr ?? v.Color ?? ""}".Trim(),
                     size = v.Size,
                     color = v.ColorAr ?? v.Color,
                     price = basePrice + (v.PriceAdjustment ?? 0),
-                    onlinePrice = onlineBasePrice + (v.PriceAdjustment ?? 0),
+                    originalPrice = originalBasePrice + (v.PriceAdjustment ?? 0),
+                    onlinePrice = onlineBasePrice + (v.OnlinePriceAdjustment ?? v.PriceAdjustment ?? 0),
+                    originalOnlinePrice = originalOnlineBasePrice + (v.OnlinePriceAdjustment ?? v.PriceAdjustment ?? 0),
                     sku = product.SKU
                 });
             }
@@ -173,10 +178,16 @@ public class BarcodeController : ControllerBase
         if (invoice == null) return NotFound(new { message = "الفاتورة غير موجودة" });
 
         var stickers = invoice.Items.Where(i => i.Product != null).OrderBy(i => i.Id).Select(item => {
-            var itemBase = (item.Product!.DiscountPrice > 0) ? item.Product.DiscountPrice.Value : item.Product.Price;
+            var origBase = item.Product!.Price;
+            var itemBase = (item.Product.DiscountPrice.HasValue && item.Product.DiscountPrice.Value > 0) ? item.Product.DiscountPrice.Value : item.Product.Price;
+
+            var origOnline = (item.Product.OnlinePrice.HasValue && item.Product.OnlinePrice.Value > 0) ? item.Product.OnlinePrice.Value : item.Product.Price;
             var itemOnline = (item.Product.OnlineDiscountPrice.HasValue && item.Product.OnlineDiscountPrice.Value > 0)
                 ? item.Product.OnlineDiscountPrice.Value
-                : ((item.Product.OnlinePrice.HasValue && item.Product.OnlinePrice.Value > 0) ? item.Product.OnlinePrice.Value : itemBase);
+                : origOnline;
+
+            var adj = item.ProductVariant?.PriceAdjustment ?? 0;
+            var onlineAdj = item.ProductVariant?.OnlinePriceAdjustment ?? adj;
 
             return new
             {
@@ -186,8 +197,10 @@ public class BarcodeController : ControllerBase
                     : item.Product.NameAr,
                 size = item.ProductVariant != null ? item.ProductVariant.Size : null,
                 color = item.ProductVariant != null ? (item.ProductVariant.ColorAr ?? item.ProductVariant.Color) : null,
-                price = itemBase + (item.ProductVariant?.PriceAdjustment ?? 0),
-                onlinePrice = itemOnline + (item.ProductVariant?.PriceAdjustment ?? 0),
+                price = itemBase + adj,
+                originalPrice = origBase + adj,
+                onlinePrice = itemOnline + onlineAdj,
+                originalOnlinePrice = origOnline + onlineAdj,
                 sku = item.Product.SKU,
                 qty = item.Quantity
             };
