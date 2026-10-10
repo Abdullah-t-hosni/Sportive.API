@@ -537,6 +537,12 @@ public class StoreInfo
     [JsonPropertyName("barcodeShowPrice")]
     public bool BarcodeShowPrice { get; set; } = true;
 
+    [JsonPropertyName("barcodeShowBothPrices")]
+    public bool BarcodeShowBothPrices { get; set; } = false;
+
+    [JsonPropertyName("barcodeShowBarcode")]
+    public bool BarcodeShowBarcode { get; set; } = true;
+
     [JsonPropertyName("barcodeShowName")]
     public bool BarcodeShowName { get; set; } = true;
 

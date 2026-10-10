@@ -68,8 +68,9 @@ public class SettingsController : ControllerBase
             "ALTER TABLE `StoreSettings` ADD `SnapchatPixelId` longtext NULL;",
             "ALTER TABLE `StoreSettings` ADD `HeaderCustomScript` longtext NULL;",
             "ALTER TABLE `StoreSettings` ADD `Ga4PropertyId` longtext NULL;",
-            "ALTER TABLE `StoreSettings` ADD `Ga4CredentialsJson` longtext NULL;",
-            "ALTER TABLE `StoreSettings` ADD `MinOrderPaymentMethods` varchar(500) NULL DEFAULT 'Cash,Vodafone,InstaPay';"
+            "ALTER TABLE `StoreSettings` ADD `MinOrderPaymentMethods` varchar(500) NULL DEFAULT 'Cash,Vodafone,InstaPay';",
+            "ALTER TABLE `StoreSettings` ADD `BarcodeShowBothPrices` tinyint(1) NOT NULL DEFAULT 0;",
+            "ALTER TABLE `StoreSettings` ADD `BarcodeShowBarcode` tinyint(1) NOT NULL DEFAULT 1;"
         };
 
 
@@ -340,6 +341,8 @@ public class SettingsController : ControllerBase
             info.SiteMetaDescriptionEn    = dto.SiteMetaDescriptionEn;
             info.SiteKeywords             = dto.SiteKeywords;
             info.BarcodeShowPrice         = dto.BarcodeShowPrice;
+            info.BarcodeShowBothPrices    = dto.BarcodeShowBothPrices;
+            info.BarcodeShowBarcode       = dto.BarcodeShowBarcode;
             info.BarcodeShowName          = dto.BarcodeShowName;
             info.BarcodeShowSize          = dto.BarcodeShowSize;
             info.BarcodeShowColor         = dto.BarcodeShowColor;
