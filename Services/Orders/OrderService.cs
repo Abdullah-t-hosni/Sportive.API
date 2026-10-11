@@ -243,8 +243,25 @@ public class OrderService : IOrderService
 
             string? itemSku = !string.IsNullOrWhiteSpace(i.SKU) ? i.SKU : (i.Product?.SKU ?? "");
 
+            // 🎯 Match color image specifically for this variant/color if available
+            string? matchedImageUrl = i.ProductVariant?.ImageUrl;
+            if (string.IsNullOrWhiteSpace(matchedImageUrl) && !string.IsNullOrWhiteSpace(itemColor) && i.Product?.Images != null)
+            {
+                matchedImageUrl = i.Product.Images
+                    .FirstOrDefault(img => !string.IsNullOrEmpty(img.ColorAr) && 
+                        (img.ColorAr.Trim().Equals(itemColor.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                         itemColor.Trim().Contains(img.ColorAr.Trim()) ||
+                         img.ColorAr.Trim().Contains(itemColor.Trim())))?.ImageUrl;
+            }
+            if (string.IsNullOrWhiteSpace(matchedImageUrl))
+            {
+                matchedImageUrl = i.Product?.Images?.FirstOrDefault(img => img.IsMain)?.ImageUrl 
+                    ?? i.Product?.Images?.FirstOrDefault()?.ImageUrl ?? "";
+            }
+
             return new OrderItemDto(
-                i.Id, i.ProductId, i.ProductVariantId, i.ProductNameAr, i.ProductNameEn, itemSku, i.Product?.Images?.FirstOrDefault(img => img.IsMain)?.ImageUrl ?? "",
+                i.Id, i.ProductId, i.ProductVariantId, i.ProductNameAr, i.ProductNameEn, itemSku,
+                matchedImageUrl,
                 i.Product?.Slug,
                 itemSize, itemColor, i.Quantity, i.UnitPrice, i.TotalPrice,
                 i.OriginalUnitPrice, i.DiscountAmount,
