@@ -76,7 +76,7 @@ public class ShippingSettlementsController : ControllerBase
                 CreatedAt = o.CreatedAt,
                 o.ShippingTrackingNumber,
                 o.BostaTrackingNumber,
-                ActualDeliveryCost = o.ActualDeliveryCost == 0 ? o.DeliveryFee : o.ActualDeliveryCost,
+                ActualDeliveryCost = Math.Round(o.ActualDeliveryCost == 0 ? o.DeliveryFee : o.ActualDeliveryCost, 2),
                 DeliveryFee = o.DeliveryFee,
                 o.IsSettledWithCourier,
                 o.CourierSettlementDate,
@@ -179,14 +179,14 @@ public class ShippingSettlementsController : ControllerBase
 
             if (reqOrder != null)
             {
-                order.ActualDeliveryCost = reqOrder.ActualDeliveryCost;
+                order.ActualDeliveryCost = Math.Round(reqOrder.ActualDeliveryCost, 2);
                 isExplicitlySet = true;
             }
             
             // 🔥 Fallback: Only if the frontend didn't send this order at all (which shouldn't happen, but just in case)
             if (!isExplicitlySet && order.ActualDeliveryCost == 0 && order.DeliveryFee > 0)
             {
-                order.ActualDeliveryCost = order.DeliveryFee;
+                order.ActualDeliveryCost = Math.Round(order.DeliveryFee, 2);
             }
 
             order.IsSettledWithCourier = true;
@@ -804,7 +804,7 @@ public class ShippingSettlementsController : ControllerBase
                                         pricingAfter.TryGetProperty("priceAfterVat", out var priceAfterVatProp) && 
                                         priceAfterVatProp.TryGetDecimal(out var logPrice))
                                     {
-                                        foundCost = logPrice; // No rounding
+                                        foundCost = Math.Round(logPrice, 2);
                                         break;
                                     }
                                 }
@@ -812,7 +812,7 @@ public class ShippingSettlementsController : ControllerBase
 
                             if (foundCost == 0 && targetElement.TryGetProperty("price", out var priceProp) && priceProp.TryGetDecimal(out var priceObjVal))
                             {
-                                foundCost = priceObjVal;
+                                foundCost = Math.Round(priceObjVal, 2);
                             }
                         }
 
@@ -823,7 +823,7 @@ public class ShippingSettlementsController : ControllerBase
 
                         if (foundCost > 0)
                         {
-                            order.ActualDeliveryCost = foundCost;
+                            order.ActualDeliveryCost = Math.Round(foundCost, 2);
                             successCount++;
                         }
                     }
@@ -1121,8 +1121,8 @@ public class ShippingSettlementsController : ControllerBase
                     matchedOrder.ShippingTrackingNumber = waybill;
                 }
 
-                // Take exact AS shipping fee directly from Excel row
-                matchedOrder.ActualDeliveryCost = fees;
+                // Take exact AS shipping fee directly from Excel row (rounded to 2 decimal places)
+                matchedOrder.ActualDeliveryCost = Math.Round(fees, 2);
                 // DO NOT MARK AS SETTLED YET! Allow frontend to select them for proper accounting settlement.
                 // matchedOrder.IsSettledWithCourier = true;
                 // matchedOrder.CourierSettlementDate = now;
