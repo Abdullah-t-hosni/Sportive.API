@@ -45,13 +45,17 @@ public class CartService : ICartService
             throw new ArgumentException($"يجب تحديد المقاس واللون للمنتج '{product.NameAr}' لإضافته للسلة.");
         }
 
-        var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
         var variant = dto.ProductVariantId.HasValue ? product.Variants.FirstOrDefault(v => v.Id == dto.ProductVariantId.Value) : null;
+        if (variant != null && !variant.IsActive)
+        {
+            throw new ArgumentException($"المقاس واللون المحدد للمنتج '{product.NameAr}' غير متاح حالياً بالمتجر.");
+        }
         var rawStock = variant?.StockQuantity ?? product.TotalStock;
         var availableStock = (variant?.MaxOnlineStock != null && variant.MaxOnlineStock.Value > 0)
             ? Math.Min(rawStock, variant.MaxOnlineStock.Value)
             : rawStock;
 
+        var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
         var existing = await _db.CartItems.FirstOrDefaultAsync(c =>
             c.CustomerId == customerId &&
             c.ProductId == dto.ProductId &&
@@ -108,6 +112,10 @@ public class CartService : ICartService
             }
 
             var variant = item.ProductVariantId.HasValue ? product.Variants.FirstOrDefault(v => v.Id == item.ProductVariantId.Value) : null;
+            if (variant != null && !variant.IsActive)
+            {
+                throw new ArgumentException($"المقاس واللون المحدد للمنتج '{product.NameAr}' غير متاح حالياً بالمتجر.");
+            }
             var rawStock = variant?.StockQuantity ?? product.TotalStock;
             var availableStock = (variant?.MaxOnlineStock != null && variant.MaxOnlineStock.Value > 0)
                 ? Math.Min(rawStock, variant.MaxOnlineStock.Value)

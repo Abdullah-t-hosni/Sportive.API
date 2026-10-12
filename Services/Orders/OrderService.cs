@@ -746,6 +746,11 @@ public class OrderService : IOrderService
                             throw new ArgumentException($"يجب تحديد المقاس واللون للمنتج '{product.NameAr}' لإتمام الطلب.");
                         }
 
+                        if (actualSource == OrderSource.Website && variant != null && !variant.IsActive)
+                        {
+                            throw new ArgumentException($"المقاس واللون المحدد للمنتج '{product.NameAr}' غير متاح حالياً بالمتجر.");
+                        }
+
                         bool isWebsite = actualSource == OrderSource.Website;
                         decimal basePrice = (isWebsite && product.OnlinePrice.HasValue && product.OnlinePrice > 0)
                             ? product.OnlinePrice.Value
@@ -953,6 +958,10 @@ public class OrderService : IOrderService
                     foreach (var ci in cartItems)
                     {
                     if (ci.Product == null) continue;
+                    if (ci.ProductVariant != null && !ci.ProductVariant.IsActive)
+                    {
+                        throw new ArgumentException($"المقاس واللون المحدد للمنتج '{ci.Product.NameAr}' غير متاح حالياً بالمتجر.");
+                    }
                     var totalRequested = cartItems
                         .Where(x => x.ProductId == ci.ProductId && x.ProductVariantId == ci.ProductVariantId)
                         .Sum(x => x.Quantity);
@@ -2813,6 +2822,17 @@ public class OrderService : IOrderService
         {
             var orderWithItems = await _db.Orders.Include(o => o.Items).FirstAsync(o => o.Id == orderId);
             
+            // Check if there is an associated return request or note indicating damage
+            bool isDamaged = false;
+            if (dto.Status == OrderStatus.Returned)
+            {
+                var returnReq = await _db.ReturnExchangeRequests.FirstOrDefaultAsync(r => r.OrderId == orderId);
+                isDamaged = returnReq?.Reason?.Contains("تالف") == true || 
+                            returnReq?.Reason?.Contains("Damaged") == true || 
+                            dto.Note?.Contains("تالف") == true || 
+                            dto.Note?.Contains("Damaged") == true;
+            }
+
             // 🛡️ DUPLICATE RETURN PROTECTION: Fetch existing return movements for this order to prevent double-restocking
             var existingReturnMovements = await _db.InventoryMovements
                 .Where(m => m.Reference == order.OrderNumber && m.Type == InventoryMovementType.ReturnIn)
@@ -2835,7 +2855,8 @@ public class OrderService : IOrderService
                         0, // unitCost fallback
                         order.Source,
                         autoSave: false,
-                        warehouseId: order.WarehouseId
+                        warehouseId: order.WarehouseId,
+                        isDamaged: isDamaged
                     );
                 }
             }
