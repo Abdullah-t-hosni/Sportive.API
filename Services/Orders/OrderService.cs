@@ -2544,24 +2544,64 @@ public class OrderService : IOrderService
 
         if (dto.Status == OrderStatus.Returned)
         {
-            // Mark all items as returned ONLY if there are no partial return requests
             var orderWithItems = await _db.Orders.Include(o => o.Items).FirstAsync(o => o.Id == orderId);
-            bool hasPartialReturnRequests = await _db.ReturnExchangeRequests.AnyAsync(r => r.OrderId == orderId && r.Type == ReturnExchangeType.Return && r.Status == ReturnExchangeStatus.ReceivedAtWarehouse);
-            if (!hasPartialReturnRequests)
-            {
-                foreach (var it in orderWithItems.Items) it.ReturnedQuantity = it.Quantity;
-            }
-
-            // Automatically sync and close any active/pending/approved return requests for this order
-            var pendingReturnRequests = await _db.ReturnExchangeRequests
-                .Where(r => r.OrderId == orderId && (r.Status == ReturnExchangeStatus.Pending || r.Status == ReturnExchangeStatus.Approved))
+            
+            // Check ANY return requests for this order
+            var returnRequests = await _db.ReturnExchangeRequests
+                .Include(r => r.Items)
+                .Where(r => r.OrderId == orderId && r.Type == ReturnExchangeType.Return && r.Status != ReturnExchangeStatus.Rejected && r.Status != ReturnExchangeStatus.Cancelled)
                 .ToListAsync();
 
-            foreach (var req in pendingReturnRequests)
+            bool isPartialReturn = false;
+            if (returnRequests.Any())
             {
-                req.Status = ReturnExchangeStatus.ReceivedAtWarehouse;
-                req.ReceivedAtWarehouseAt = TimeHelper.GetEgyptTime();
-                req.AdminNotes = (string.IsNullOrEmpty(req.AdminNotes) ? "" : req.AdminNotes + " | ") + "تم تأكيد إغلاق واستلام طلب الاسترجاع بالمخزن تلقائياً لتحويل الفاتورة إلى مرتجع كامل";
+                var requestedItemQtys = returnRequests
+                    .SelectMany(r => r.Items)
+                    .GroupBy(i => i.OrderItemId)
+                    .ToDictionary(g => g.Key, g => g.Sum(i => i.Quantity));
+
+                // If any order item is not requested or requested less than full quantity, it's a PARTIAL return
+                isPartialReturn = orderWithItems.Items.Any(i => !requestedItemQtys.ContainsKey(i.Id) || requestedItemQtys[i.Id] < i.Quantity);
+
+                if (isPartialReturn)
+                {
+                    // Update ONLY the items that were actually returned
+                    foreach (var it in orderWithItems.Items)
+                    {
+                        if (requestedItemQtys.TryGetValue(it.Id, out int retQty))
+                        {
+                            it.ReturnedQuantity = Math.Min(it.Quantity, Math.Max(it.ReturnedQuantity, retQty));
+                        }
+                    }
+
+                    // DO NOT allow changing status to Returned (full return) if it's a partial return!
+                    order.Status = OrderStatus.PartiallyReturned;
+                    dto = dto with { Status = OrderStatus.PartiallyReturned };
+
+                    // Close active return requests as partial
+                    foreach (var req in returnRequests.Where(r => r.Status == ReturnExchangeStatus.Pending || r.Status == ReturnExchangeStatus.Approved))
+                    {
+                        req.Status = ReturnExchangeStatus.ReceivedAtWarehouse;
+                        req.ReceivedAtWarehouseAt = TimeHelper.GetEgyptTime();
+                        req.AdminNotes = (string.IsNullOrEmpty(req.AdminNotes) ? "" : req.AdminNotes + " | ") + "تم تأكيد إغلاق واستلام طلب الاسترجاع الجزئي بالمخزن";
+                    }
+                }
+            }
+
+            if (!isPartialReturn)
+            {
+                foreach (var it in orderWithItems.Items) it.ReturnedQuantity = it.Quantity;
+
+                var pendingReturnRequests = returnRequests
+                    .Where(r => r.Status == ReturnExchangeStatus.Pending || r.Status == ReturnExchangeStatus.Approved)
+                    .ToList();
+
+                foreach (var req in pendingReturnRequests)
+                {
+                    req.Status = ReturnExchangeStatus.ReceivedAtWarehouse;
+                    req.ReceivedAtWarehouseAt = TimeHelper.GetEgyptTime();
+                    req.AdminNotes = (string.IsNullOrEmpty(req.AdminNotes) ? "" : req.AdminNotes + " | ") + "تم تأكيد إغلاق واستلام طلب الاسترجاع بالمخزن لتحويل الفاتورة إلى مرتجع كامل";
+                }
             }
         }
         else if (dto.Status == OrderStatus.Cancelled)
@@ -2584,6 +2624,40 @@ public class OrderService : IOrderService
             {
                 order.PaidAmount = Math.Max(0, order.TotalAmount - returnedVal);
                 order.PaymentStatus = PaymentStatus.Paid;
+            }
+
+            // Check if there is an associated return request or note indicating damage
+            var returnReq = await _db.ReturnExchangeRequests.FirstOrDefaultAsync(r => r.OrderId == orderId);
+            bool isDamaged = returnReq?.Reason?.Contains("تالف") == true || 
+                            returnReq?.Reason?.Contains("Damaged") == true || 
+                            dto.Note?.Contains("تالف") == true || 
+                            dto.Note?.Contains("Damaged") == true;
+
+            var existingReturnMovements = await _db.InventoryMovements
+                .Where(m => m.Reference == order.OrderNumber && m.Type == InventoryMovementType.ReturnIn)
+                .ToListAsync();
+
+            foreach (var item in orderWithItems.Items.Where(i => i.ReturnedQuantity > 0))
+            {
+                int alreadyRestockedQty = existingReturnMovements
+                    .Where(m => m.ProductId == item.ProductId && m.ProductVariantId == item.ProductVariantId)
+                    .Sum(m => m.Quantity);
+
+                int qtyToRestock = item.ReturnedQuantity - alreadyRestockedQty;
+                if (qtyToRestock > 0)
+                {
+                    await _inventory.LogMovementAsync(
+                        InventoryMovementType.ReturnIn,
+                        qtyToRestock, item.ProductId, item.ProductVariantId, 
+                        order.OrderNumber, 
+                        $"مرتجع جزئي بالمخزن", updatedByUserId,
+                        0, // unitCost fallback
+                        order.Source,
+                        autoSave: false,
+                        warehouseId: order.WarehouseId,
+                        isDamaged: isDamaged
+                    );
+                }
             }
         }
 
@@ -3825,6 +3899,8 @@ public class OrderService : IOrderService
                         var returnedOrderItems = new List<OrderItem>();
                         decimal refundAmount = 0;
                         var itemsTotal = order.Items.Sum(i => i.TotalPrice) > 0 ? order.Items.Sum(i => i.TotalPrice) : 1;
+                        decimal netPaidForItems = Math.Max(0, order.TotalAmount - order.DeliveryFee);
+                        decimal returnRatio = itemsTotal > 0 ? Math.Min(1m, netPaidForItems / itemsTotal) : 1m;
 
                         foreach (var req in newReturnItems)
                         {
@@ -3846,7 +3922,7 @@ public class OrderService : IOrderService
                             if (req.Quantity > maxCanReturn) 
                                throw new InvalidOperationException($"Cannot return {req.Quantity} for item {line.ProductNameAr}. Already returned: {line.ReturnedQuantity}. Max remaining: {maxCanReturn}.");
 
-                            var itemTotalReturn = Math.Round((line.TotalPrice * ((decimal)req.Quantity / line.Quantity)) * (order.TotalAmount / itemsTotal), 2);
+                            var itemTotalReturn = Math.Round((line.TotalPrice * ((decimal)req.Quantity / line.Quantity)) * returnRatio, 2);
                             var itemVatReturn = Math.Round(line.ItemVatAmount * ((decimal)req.Quantity / line.Quantity), 2);
                             
                             refundAmount += itemTotalReturn;
