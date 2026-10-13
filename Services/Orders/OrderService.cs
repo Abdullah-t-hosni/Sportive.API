@@ -2215,12 +2215,12 @@ public class OrderService : IOrderService
                 await _db.SaveChangesAsync();
 
                 // POST NEW ACCOUNTING:
-                // Always preserve the original order creation date/time (overrideDate = null)
+                // Always preserve the original order creation date/time (overrideDate: order.CreatedAt)
                 // so that editing the order never shifts the sales journal entry to today.
-                await _accounting.PostSalesOrderAsync(order, overrideDate: null);
+                await _accounting.PostSalesOrderAsync(order, overrideDate: order.CreatedAt);
                 if (order.PaidAmount > 0)
                 {
-                    await _accounting.PostOrderPaymentAsync(order, overrideDate: null);
+                    await _accounting.PostOrderPaymentAsync(order, overrideDate: order.CreatedAt);
                 }
 
                 // 🔄 SYNC SALES RETURNS: If order was partially or fully returned, re-post the sales return entry!
@@ -2235,7 +2235,7 @@ public class OrderService : IOrderService
 
                     if (isFullReturn)
                     {
-                        await _accounting.PostSalesReturnAsync(order);
+                        await _accounting.PostSalesReturnAsync(order, overrideDate: returnDate);
                     }
                     else
                     {

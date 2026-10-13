@@ -364,7 +364,7 @@ public class SalesAccountingService
         );
     }
 
-    public async Task PostSalesReturnAsync(Order order, int? refundAccountId = null, bool refundShipping = false, bool chargeReturnShipping = false, decimal returnShippingFee = 0, bool isReturnedFromCourier = false)
+    public async Task PostSalesReturnAsync(Order order, int? refundAccountId = null, bool refundShipping = false, bool chargeReturnShipping = false, decimal returnShippingFee = 0, bool isReturnedFromCourier = false, DateTime? overrideDate = null)
     {
         // ── 1. تأكد من تحميل العناصر والمنتجات ──
         if (order.Items == null || !order.Items.Any())
@@ -500,11 +500,12 @@ public class SalesAccountingService
             type:        JournalEntryType.SalesReturn,
             reference:   order.OrderNumber + "-RTN",
             description: _t.Get("Accounting.SalesReturnMainDesc", order.OrderNumber, order.Customer?.FullName ?? ""),
-            date:        TimeHelper.GetEgyptTime(),
+            date:        overrideDate ?? TimeHelper.GetEgyptTime(),
             lines:       lines,
             orderId:     order.Id,
             customerId:  order.CustomerId,
-            source:      order.Source
+            source:      order.Source,
+            createdAt:   overrideDate ?? TimeHelper.GetEgyptTime()
         );
     }
 

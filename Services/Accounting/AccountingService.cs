@@ -14,7 +14,7 @@ public interface IAccountingService
 {
     Task PostSalesOrderAsync(Order order, DateTime? overrideDate = null);
     Task PostSalesOrderByIdAsync(int orderId);
-    Task PostSalesReturnAsync(Order order, int? refundAccountId = null, bool refundShipping = false, bool chargeReturnShipping = false, decimal returnShippingFee = 0, bool isReturnedFromCourier = false);
+    Task PostSalesReturnAsync(Order order, int? refundAccountId = null, bool refundShipping = false, bool chargeReturnShipping = false, decimal returnShippingFee = 0, bool isReturnedFromCourier = false, DateTime? overrideDate = null);
     Task PostWarehouseReceiptFromCourierAsync(Order order, int returnRequestId);
     Task PostCourierReturnShippingFeeAsync(Order order, int? returnRequestId = null);
     Task PostSuccessfulDeliveryAccountingAsync(Order order);
@@ -76,8 +76,8 @@ public class AccountingService : IAccountingService
     }
 
     public Task PostSalesOrderAsync(Order order, DateTime? overrideDate = null) => _sales.PostSalesOrderAsync(order, overrideDate);
-    public async Task PostSalesReturnAsync(Order order, int? refundAccountId = null, bool refundShipping = false, bool chargeReturnShipping = false, decimal returnShippingFee = 0, bool isReturnedFromCourier = false)
-        => await _sales.PostSalesReturnAsync(order, refundAccountId, refundShipping, chargeReturnShipping, returnShippingFee, isReturnedFromCourier);
+    public async Task PostSalesReturnAsync(Order order, int? refundAccountId = null, bool refundShipping = false, bool chargeReturnShipping = false, decimal returnShippingFee = 0, bool isReturnedFromCourier = false, DateTime? overrideDate = null)
+        => await _sales.PostSalesReturnAsync(order, refundAccountId, refundShipping, chargeReturnShipping, returnShippingFee, isReturnedFromCourier, overrideDate);
         
     public async Task PostWarehouseReceiptFromCourierAsync(Order order, int returnRequestId)
         => await _sales.PostWarehouseReceiptFromCourierAsync(order, returnRequestId);
