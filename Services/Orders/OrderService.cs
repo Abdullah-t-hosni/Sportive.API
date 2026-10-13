@@ -2121,8 +2121,18 @@ public class OrderService : IOrderService
                     .Where(e => e.OrderId == order.Id || e.Reference == order.OrderNumber || (e.Reference != null && e.Reference.StartsWith(order.OrderNumber + "-")))
                     .ToListAsync();
 
+                DateTime? originalReturnDate = null;
+                string? originalReturnRef = null;
+
                 if (oldEntries.Any())
                 {
+                    var oldReturn = oldEntries.FirstOrDefault(e => e.Type == JournalEntryType.SalesReturn);
+                    if (oldReturn != null)
+                    {
+                        originalReturnDate = oldReturn.EntryDate;
+                        originalReturnRef = oldReturn.Reference;
+                    }
+
                     var entryIds = oldEntries.Select(e => e.Id).ToList();
                     var entryNumbers = oldEntries.Select(e => e.EntryNumber).ToList();
 
@@ -2211,6 +2221,69 @@ public class OrderService : IOrderService
                 if (order.PaidAmount > 0)
                 {
                     await _accounting.PostOrderPaymentAsync(order, overrideDate: null);
+                }
+
+                // 🔄 SYNC SALES RETURNS: If order was partially or fully returned, re-post the sales return entry!
+                if (order.Status == OrderStatus.Returned || order.Status == OrderStatus.PartiallyReturned || order.Items.Any(i => i.ReturnedQuantity > 0))
+                {
+                    bool isFullReturn = order.Status == OrderStatus.Returned || (order.Items.Any() && order.Items.All(i => i.Quantity == i.ReturnedQuantity));
+                    var returnDate = originalReturnDate ?? order.StatusHistory
+                        .Where(h => h.Status == OrderStatus.PartiallyReturned || h.Status == OrderStatus.Returned)
+                        .OrderByDescending(h => h.CreatedAt)
+                        .Select(h => (DateTime?)h.CreatedAt)
+                        .FirstOrDefault() ?? now;
+
+                    if (isFullReturn)
+                    {
+                        await _accounting.PostSalesReturnAsync(order);
+                    }
+                    else
+                    {
+                        var returnedItems = order.Items.Where(i => i.ReturnedQuantity > 0).ToList();
+                        if (returnedItems.Any())
+                        {
+                            var returnedOrderItems = new List<OrderItem>();
+                            decimal refundAmount = 0;
+                            var itemsTotal = order.Items.Sum(i => i.TotalPrice) > 0 ? order.Items.Sum(i => i.TotalPrice) : 1;
+                            decimal netPaidForItems = Math.Max(0, order.TotalAmount - order.DeliveryFee);
+                            decimal returnRatio = itemsTotal > 0 ? Math.Min(1m, netPaidForItems / itemsTotal) : 1m;
+
+                            foreach (var line in returnedItems)
+                            {
+                                var itemTotalReturn = Math.Round((line.TotalPrice * ((decimal)line.ReturnedQuantity / line.Quantity)) * returnRatio, 2);
+                                var itemVatReturn = Math.Round(line.ItemVatAmount * ((decimal)line.ReturnedQuantity / line.Quantity), 2);
+                                refundAmount += itemTotalReturn;
+
+                                returnedOrderItems.Add(new OrderItem
+                                {
+                                    ProductId = line.ProductId,
+                                    ProductVariantId = line.ProductVariantId,
+                                    ProductNameAr = line.ProductNameAr,
+                                    Quantity = line.ReturnedQuantity,
+                                    UnitPrice = line.UnitPrice,
+                                    OriginalUnitPrice = line.OriginalUnitPrice > 0 ? line.OriginalUnitPrice : (line.UnitPrice > 0 ? line.UnitPrice : (line.Quantity > 0 ? line.TotalPrice / line.Quantity : 0)),
+                                    HasTax = line.HasTax,
+                                    VatRateApplied = line.VatRateApplied,
+                                    TotalPrice = itemTotalReturn,
+                                    ItemVatAmount = itemVatReturn,
+                                    Product = line.Product
+                                });
+                            }
+
+                            if (returnedOrderItems.Any())
+                            {
+                                await _accounting.PostPartialSalesReturnAsync(
+                                    order,
+                                    returnedOrderItems,
+                                    refundAmount,
+                                    refundAccountId: null,
+                                    refundToStoreCredit: false,
+                                    overrideReference: originalReturnRef ?? $"{order.OrderNumber}-RTN",
+                                    overrideDate: returnDate
+                                );
+                            }
+                        }
+                    }
                 }
 
                 await tx.CommitAsync();

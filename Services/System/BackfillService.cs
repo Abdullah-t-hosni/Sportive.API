@@ -150,4 +150,103 @@ public class BackfillService : IBackfillService
 
         return (successCount, successCount, errors.Count, errors);
     }
+
+    public async Task<(int Total, int Success, int Failed, List<string> Errors)> PostMissingSalesReturnsAsync()
+    {
+        var candidates = await _db.Orders
+            .Include(o => o.Items).ThenInclude(i => i.Product)
+            .Include(o => o.Customer)
+            .Include(o => o.Payments)
+            .Include(o => o.StatusHistory)
+            .Where(o => o.Status == OrderStatus.PartiallyReturned || o.Status == OrderStatus.Returned || o.Items.Any(i => i.ReturnedQuantity > 0))
+            .Where(o => !_db.JournalEntries.Any(e => e.OrderId == o.Id && e.Type == JournalEntryType.SalesReturn && e.Status != JournalEntryStatus.Reversed))
+            .ToListAsync();
+
+        if (!candidates.Any())
+            return (0, 0, 0, new List<string>());
+
+        int successCount = 0;
+        var errors = new List<string>();
+
+        foreach (var order in candidates)
+        {
+            try
+            {
+                var returnedItems = order.Items.Where(i => i.ReturnedQuantity > 0).ToList();
+                bool isFullReturn = order.Status == OrderStatus.Returned || (order.Items.Any() && order.Items.All(i => i.Quantity == i.ReturnedQuantity));
+
+                var returnDate = order.StatusHistory
+                    .Where(h => h.Status == OrderStatus.PartiallyReturned || h.Status == OrderStatus.Returned)
+                    .OrderByDescending(h => h.CreatedAt)
+                    .Select(h => (DateTime?)h.CreatedAt)
+                    .FirstOrDefault() ?? order.UpdatedAt ?? order.CreatedAt;
+
+                if (isFullReturn)
+                {
+                    await _accounting.PostSalesReturnAsync(order);
+                    successCount++;
+                }
+                else if (returnedItems.Any())
+                {
+                    var returnedOrderItems = new List<OrderItem>();
+                    decimal refundAmount = 0;
+                    var itemsTotal = order.Items.Sum(i => i.TotalPrice) > 0 ? order.Items.Sum(i => i.TotalPrice) : 1;
+                    decimal netPaidForItems = Math.Max(0, order.TotalAmount - order.DeliveryFee);
+                    decimal returnRatio = itemsTotal > 0 ? Math.Min(1m, netPaidForItems / itemsTotal) : 1m;
+
+                    foreach (var line in returnedItems)
+                    {
+                        var itemTotalReturn = Math.Round((line.TotalPrice * ((decimal)line.ReturnedQuantity / line.Quantity)) * returnRatio, 2);
+                        var itemVatReturn = Math.Round(line.ItemVatAmount * ((decimal)line.ReturnedQuantity / line.Quantity), 2);
+                        refundAmount += itemTotalReturn;
+
+                        returnedOrderItems.Add(new OrderItem
+                        {
+                            ProductId = line.ProductId,
+                            ProductVariantId = line.ProductVariantId,
+                            ProductNameAr = line.ProductNameAr,
+                            Quantity = line.ReturnedQuantity,
+                            UnitPrice = line.UnitPrice,
+                            OriginalUnitPrice = line.OriginalUnitPrice > 0 ? line.OriginalUnitPrice : (line.UnitPrice > 0 ? line.UnitPrice : (line.Quantity > 0 ? line.TotalPrice / line.Quantity : 0)),
+                            HasTax = line.HasTax,
+                            VatRateApplied = line.VatRateApplied,
+                            TotalPrice = itemTotalReturn,
+                            ItemVatAmount = itemVatReturn,
+                            Product = line.Product
+                        });
+                    }
+
+                    if (returnedOrderItems.Any())
+                    {
+                        await _accounting.PostPartialSalesReturnAsync(
+                            order,
+                            returnedOrderItems,
+                            refundAmount,
+                            refundAccountId: null,
+                            refundToStoreCredit: false,
+                            overrideReference: $"{order.OrderNumber}-RTN",
+                            overrideDate: returnDate
+                        );
+                        successCount++;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[Backfill] Failed posting sales return for order {OrderId} - {OrderNumber}", order.Id, order.OrderNumber);
+                errors.Add($"Order {order.OrderNumber}: {ex.Message}");
+            }
+        }
+
+        if (successCount > 0)
+        {
+            try
+            {
+                await _accounting.SyncEntityBalancesAsync();
+            }
+            catch { }
+        }
+
+        return (candidates.Count, successCount, errors.Count, errors);
+    }
 }

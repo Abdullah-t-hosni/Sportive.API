@@ -62,5 +62,20 @@ public class BackfillController : ControllerBase
             errors = result.Errors
         });
     }
+
+    /// <summary>
+    /// يقوم بترحيل قيود المرتجعات المفقودة للطلبات التي تم إرجاعها
+    /// </summary>
+    [HttpPost("post-missing-returns")]
+    public async Task<IActionResult> PostMissingSalesReturns()
+    {
+        var result = await _backfillService.PostMissingSalesReturnsAsync();
+        return Ok(new { 
+            total = result.Total,
+            success = result.Success,
+            failed = result.Failed,
+            errors = result.Errors
+        });
+    }
 }
 
