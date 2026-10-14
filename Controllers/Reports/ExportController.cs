@@ -1011,7 +1011,10 @@ public class ExportController : ControllerBase
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate = null,
         [FromQuery] OrderSource? source = null,
-        [FromQuery] JournalEntryStatus? status = null)
+        [FromQuery] JournalEntryStatus? status = null,
+        [FromQuery] string? mode = null,
+        [FromQuery] string? types = null,
+        [FromQuery] string? excludeTypes = null)
     {
         var query = _db.JournalEntries
             .Include(j => j.Lines)
@@ -1045,6 +1048,73 @@ public class ExportController : ControllerBase
         if (status.HasValue)   query = query.Where(j => j.Status == status.Value);
         if (fromDate.HasValue) query = query.Where(j => j.EntryDate >= fromDate.Value.Date);
         if (toDate.HasValue)   query = query.Where(j => j.EntryDate <= toDate.Value.Date.AddDays(1).AddTicks(-1));
+
+        if (!string.IsNullOrEmpty(types))
+        {
+            var typeList = types.Split(',').Where(x => int.TryParse(x, out _)).Select(int.Parse).Cast<JournalEntryType>().ToList();
+            if (typeList.Any()) query = query.Where(e => typeList.Contains(e.Type));
+        }
+        if (!string.IsNullOrEmpty(excludeTypes))
+        {
+            var excludeList = excludeTypes.Split(',').Where(x => int.TryParse(x, out _)).Select(int.Parse).Cast<JournalEntryType>().ToList();
+            if (excludeList.Any()) query = query.Where(e => !excludeList.Contains(e.Type));
+        }
+
+        if (!string.IsNullOrEmpty(mode))
+        {
+            var normalizedMode = mode.Trim().ToLowerInvariant();
+            if (normalizedMode == "manual")
+            {
+                query = query.Where(e => e.Type == JournalEntryType.Manual
+                              && !e.OrderId.HasValue
+                              && !e.PurchaseInvoiceId.HasValue
+                              && (e.Reference == null || (
+                                  !e.Reference.StartsWith("SHIFT-CLOSE-") &&
+                                  !e.Reference.StartsWith("DELV-CUST-") &&
+                                  !e.Reference.Contains("-WH-RTN-") &&
+                                  !e.Reference.StartsWith("SETTLE-") &&
+                                  !e.Reference.StartsWith("SETT-") &&
+                                  !e.Reference.StartsWith("ADJ-") &&
+                                  !e.Reference.StartsWith("AUDIT-") &&
+                                  !e.Reference.StartsWith("POS-") &&
+                                  !e.Reference.StartsWith("SPT-") &&
+                                  !e.Reference.StartsWith("REV-")
+                              )));
+            }
+            else if (normalizedMode == "auto")
+            {
+                query = query.Where(e => (e.Type != JournalEntryType.Manual 
+                                  && e.Type != JournalEntryType.SalesInvoice 
+                                  && e.Type != JournalEntryType.SalesReturn 
+                                  && e.Type != JournalEntryType.PurchaseInvoice 
+                                  && e.Type != JournalEntryType.PurchaseReturn)
+                              || (e.Type == JournalEntryType.Manual && !e.PurchaseInvoiceId.HasValue && (
+                                  e.OrderId.HasValue ||
+                                  (e.Reference != null && (
+                                      e.Reference.StartsWith("SHIFT-CLOSE-") ||
+                                      e.Reference.StartsWith("DELV-CUST-") ||
+                                      e.Reference.Contains("-WH-RTN-") ||
+                                      e.Reference.StartsWith("SETTLE-") ||
+                                      e.Reference.StartsWith("SETT-") ||
+                                      e.Reference.StartsWith("ADJ-") ||
+                                      e.Reference.StartsWith("AUDIT-") ||
+                                      e.Reference.StartsWith("POS-") ||
+                                      e.Reference.StartsWith("SPT-") ||
+                                      e.Reference.StartsWith("REV-")
+                                  ))
+                              )));
+            }
+            else if (normalizedMode == "purchases" || normalizedMode == "purchase")
+            {
+                query = query.Where(e => e.Type == JournalEntryType.PurchaseInvoice 
+                              || e.Type == JournalEntryType.PurchaseReturn 
+                              || (e.PurchaseInvoiceId.HasValue && e.Type == JournalEntryType.Manual));
+            }
+            else if (normalizedMode == "sales" || normalizedMode == "sale")
+            {
+                query = query.Where(e => e.Type == JournalEntryType.SalesInvoice || e.Type == JournalEntryType.SalesReturn);
+            }
+        }
 
         var entries = await query.OrderByDescending(j => j.EntryDate).ToListAsync();
 

@@ -67,7 +67,8 @@ public class JournalEntriesController : ControllerBase
         [FromQuery] string? excludeTypes = null,
         [FromQuery] string? sortBy = null,
         [FromQuery] string sortDir = "desc",
-        [FromQuery] int? branchId = null)
+        [FromQuery] int? branchId = null,
+        [FromQuery] string? mode = null)
     {
         var q = _db.JournalEntries.AsNoTracking();
         if (includeLines) q = q.Include(e => e.Lines).ThenInclude(l => l.Account);
@@ -131,6 +132,62 @@ public class JournalEntriesController : ControllerBase
         {
             var excludeList = excludeTypes.Split(',').Where(x => int.TryParse(x, out _)).Select(int.Parse).Cast<JournalEntryType>().ToList();
             if (excludeList.Any()) q = q.Where(e => !excludeList.Contains(e.Type));
+        }
+
+        if (!string.IsNullOrEmpty(mode))
+        {
+            var normalizedMode = mode.Trim().ToLowerInvariant();
+            if (normalizedMode == "manual")
+            {
+                q = q.Where(e => e.Type == JournalEntryType.Manual
+                              && !e.OrderId.HasValue
+                              && !e.PurchaseInvoiceId.HasValue
+                              && (e.Reference == null || (
+                                  !e.Reference.StartsWith("SHIFT-CLOSE-") &&
+                                  !e.Reference.StartsWith("DELV-CUST-") &&
+                                  !e.Reference.Contains("-WH-RTN-") &&
+                                  !e.Reference.StartsWith("SETTLE-") &&
+                                  !e.Reference.StartsWith("SETT-") &&
+                                  !e.Reference.StartsWith("ADJ-") &&
+                                  !e.Reference.StartsWith("AUDIT-") &&
+                                  !e.Reference.StartsWith("POS-") &&
+                                  !e.Reference.StartsWith("SPT-") &&
+                                  !e.Reference.StartsWith("REV-")
+                              )));
+            }
+            else if (normalizedMode == "auto")
+            {
+                q = q.Where(e => (e.Type != JournalEntryType.Manual 
+                                  && e.Type != JournalEntryType.SalesInvoice 
+                                  && e.Type != JournalEntryType.SalesReturn 
+                                  && e.Type != JournalEntryType.PurchaseInvoice 
+                                  && e.Type != JournalEntryType.PurchaseReturn)
+                              || (e.Type == JournalEntryType.Manual && !e.PurchaseInvoiceId.HasValue && (
+                                  e.OrderId.HasValue ||
+                                  (e.Reference != null && (
+                                      e.Reference.StartsWith("SHIFT-CLOSE-") ||
+                                      e.Reference.StartsWith("DELV-CUST-") ||
+                                      e.Reference.Contains("-WH-RTN-") ||
+                                      e.Reference.StartsWith("SETTLE-") ||
+                                      e.Reference.StartsWith("SETT-") ||
+                                      e.Reference.StartsWith("ADJ-") ||
+                                      e.Reference.StartsWith("AUDIT-") ||
+                                      e.Reference.StartsWith("POS-") ||
+                                      e.Reference.StartsWith("SPT-") ||
+                                      e.Reference.StartsWith("REV-")
+                                  ))
+                              )));
+            }
+            else if (normalizedMode == "purchases" || normalizedMode == "purchase")
+            {
+                q = q.Where(e => e.Type == JournalEntryType.PurchaseInvoice 
+                              || e.Type == JournalEntryType.PurchaseReturn 
+                              || (e.PurchaseInvoiceId.HasValue && e.Type == JournalEntryType.Manual));
+            }
+            else if (normalizedMode == "sales" || normalizedMode == "sale")
+            {
+                q = q.Where(e => e.Type == JournalEntryType.SalesInvoice || e.Type == JournalEntryType.SalesReturn);
+            }
         }
         if (!string.IsNullOrEmpty(entryNumber)) q = q.Where(e => e.EntryNumber.Contains(entryNumber));
         if (!string.IsNullOrEmpty(description)) q = q.Where(e => (e.Description != null && e.Description.Contains(description)) || (e.Reference != null && e.Reference.Contains(description)));
