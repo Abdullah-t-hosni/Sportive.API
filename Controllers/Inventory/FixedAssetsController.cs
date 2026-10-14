@@ -458,7 +458,66 @@ public class FixedAssetsController : ControllerBase
         return Ok(new { id = dep.Id, depreciationNumber = dep.DepreciationNumber, amount, journalEntryId = je?.Id });
     }
 
-    // POST /api/fixed-assets/depreciations/run-batch — ترحيل إهلاك شهري لجميع الأصول النشطة
+    // GET /api/fixed-assets/depreciations/batch-preview — معاينة الأصول المستحقة للإهلاك للشهر المحدد
+    [HttpGet("depreciations/batch-preview")]
+    public async Task<IActionResult> GetBatchDepreciationPreview(
+        [FromQuery] int periodYear,
+        [FromQuery] int periodMonth,
+        [FromQuery] DateTime asOfDate)
+    {
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        int? isolatedBranchId = canViewAll ? null : User.GetBranchId();
+
+        var q = _db.FixedAssets
+            .Include(a => a.Category)
+            .Where(a => a.Status == AssetStatus.Active)
+            .Where(a => a.DepreciationStartDate == null || a.DepreciationStartDate.Value <= asOfDate);
+
+        if (isolatedBranchId.HasValue)
+        {
+            q = q.Where(a => a.BranchId == isolatedBranchId.Value);
+        }
+
+        var assets = await q.OrderBy(a => a.AssetNumber).ToListAsync();
+
+        var assetIds = assets.Select(a => a.Id).ToList();
+        var alreadyDepreciatedAssetIds = await _db.AssetDepreciations
+            .Where(d => assetIds.Contains(d.FixedAssetId) && d.PeriodYear == periodYear && d.PeriodMonth == periodMonth)
+            .Select(d => d.FixedAssetId)
+            .Distinct()
+            .ToListAsync();
+
+        var items = assets.Select(asset =>
+        {
+            var isAlreadyDepreciated = alreadyDepreciatedAssetIds.Contains(asset.Id);
+            var monthly = CalcStraightLineMonthly(asset);
+            var remaining = Math.Max(0, asset.PurchaseCost - asset.AccumulatedDepreciation - asset.SalvageValue);
+            var amount = Math.Min(monthly, remaining);
+            var currentBookValue = asset.PurchaseCost - asset.AccumulatedDepreciation;
+
+            return new
+            {
+                id = asset.Id,
+                assetNumber = asset.AssetNumber,
+                name = asset.Name,
+                categoryName = asset.Category?.Name ?? "",
+                purchaseCost = asset.PurchaseCost,
+                accumulatedDepreciation = asset.AccumulatedDepreciation,
+                salvageValue = asset.SalvageValue,
+                currentBookValue = currentBookValue,
+                monthlyDepreciation = amount,
+                remainingDepreciable = remaining,
+                usefulLifeYears = asset.UsefulLifeYears,
+                depreciationStartDate = asset.DepreciationStartDate,
+                isAlreadyDepreciated = isAlreadyDepreciated,
+                isEligible = !isAlreadyDepreciated && remaining > 0 && amount > 0
+            };
+        }).ToList();
+
+        return Ok(items);
+    }
+
+    // POST /api/fixed-assets/depreciations/run-batch — ترحيل إهلاك شهري للأصول المختارة أو للكل
     [HttpPost("depreciations/run-batch")]
     public async Task<IActionResult> RunBatchDepreciation([FromBody] RunBatchDepreciationDto dto)
     {
@@ -473,6 +532,11 @@ public class FixedAssetsController : ControllerBase
         if (isolatedBranchId.HasValue)
         {
             q = q.Where(a => a.BranchId == isolatedBranchId.Value);
+        }
+
+        if (dto.AssetIds != null && dto.AssetIds.Any())
+        {
+            q = q.Where(a => dto.AssetIds.Contains(a.Id));
         }
 
         var assets = await q.ToListAsync();
@@ -763,8 +827,9 @@ public class FixedAssetsController : ControllerBase
 
 // DTO
 public record RunBatchDepreciationDto(
-    int      PeriodYear,
-    int      PeriodMonth,
-    DateTime AsOfDate
+    int           PeriodYear,
+    int           PeriodMonth,
+    DateTime      AsOfDate,
+    List<int>?    AssetIds = null
 );
 
