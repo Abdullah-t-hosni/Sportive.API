@@ -1080,6 +1080,7 @@ public class ShippingSettlementsController : ControllerBase
 
         var unmatchedList = new List<object>();
         var matchedOrderIds = new List<int>();
+        var newRtnOrdersAs = new List<Order>();
 
         foreach (var row in dto.Rows)
         {
@@ -1110,50 +1111,108 @@ public class ShippingSettlementsController : ControllerBase
 
             if (matchedOrder != null)
             {
-                if (asCompany != null)
-                {
-                    matchedOrder.ShippingCompanyId = asCompany.Id;
-                    matchedOrder.ShippingCarrierName = asCompany.NameAr;
-                }
-                
-                if (!string.IsNullOrEmpty(waybill))
-                {
-                    matchedOrder.ShippingTrackingNumber = waybill;
-                }
-
-                // Take exact AS shipping fee directly from Excel row (rounded to 2 decimal places)
-                matchedOrder.ActualDeliveryCost = Math.Round(fees, 2);
-                // DO NOT MARK AS SETTLED YET! Allow frontend to select them for proper accounting settlement.
-                // matchedOrder.IsSettledWithCourier = true;
-                // matchedOrder.CourierSettlementDate = now;
-                // matchedOrder.CourierSettlementReference = $"تسوية شيت AS الرسمية (بوليصة: {waybill})";
-                matchedOrderIds.Add(matchedOrder.Id);
-
-                // Update order status & collected amount directly from Excel row
                 if (isReturnSign)
                 {
-                    if (matchedOrder.Status != OrderStatus.Returned && matchedOrder.Status != OrderStatus.PartiallyReturned)
+                    // إذا كان الطلب تم تسليمه أو تسويته مسبقاً كتوصيل، لا نلغي التسوية الأولى بل ننشئ تسوية مرتجع منفصلة
+                    if (matchedOrder.Status == OrderStatus.Delivered || matchedOrder.IsSettledWithCourier)
                     {
-                        matchedOrder.Status = OrderStatus.Returned;
+                        string rtnOrderNumber = $"{matchedOrder.OrderNumber}-RTN";
+                        var rtnOrder = allOrders.FirstOrDefault(o => o.OrderNumber.Equals(rtnOrderNumber, StringComparison.OrdinalIgnoreCase));
+                        if (rtnOrder == null)
+                        {
+                            rtnOrder = new Order
+                            {
+                                OrderNumber = rtnOrderNumber,
+                                CustomerId = matchedOrder.CustomerId,
+                                Source = matchedOrder.Source,
+                                ShippingCompanyId = asCompany?.Id ?? matchedOrder.ShippingCompanyId,
+                                ShippingCarrierName = asCompany?.NameAr ?? matchedOrder.ShippingCarrierName,
+                                ShippingType = "AS",
+                                ShippingTrackingNumber = !string.IsNullOrEmpty(waybill) ? waybill : matchedOrder.ShippingTrackingNumber,
+                                Status = OrderStatus.Returned,
+                                PaymentMethod = matchedOrder.PaymentMethod,
+                                PaymentStatus = matchedOrder.PaymentStatus,
+                                TotalAmount = cod, // COD for return/exchange
+                                DeliveryFee = matchedOrder.DeliveryFee,
+                                ActualDeliveryCost = Math.Round(fees, 2),
+                                BranchId = matchedOrder.BranchId,
+                                WarehouseId = matchedOrder.WarehouseId,
+                                CreatedAt = now,
+                                UpdatedAt = now,
+                                IsSettledWithCourier = false,
+                                AdminNotes = $"فاتورة تسوية مرتجع لشحنة #{matchedOrder.OrderNumber}"
+                            };
+                            _db.Orders.Add(rtnOrder);
+                            allOrders.Add(rtnOrder);
+                            newRtnOrdersAs.Add(rtnOrder);
+                        }
+                        else
+                        {
+                            rtnOrder.Status = OrderStatus.Returned;
+                            if (cod > 0) rtnOrder.TotalAmount = cod;
+                            if (fees > 0) rtnOrder.ActualDeliveryCost = Math.Round(fees, 2);
+                            if (!string.IsNullOrEmpty(waybill)) rtnOrder.ShippingTrackingNumber = waybill;
+                            matchedOrderIds.Add(rtnOrder.Id);
+                        }
                         updatedStatusCount++;
+                        settledCount++;
+                        totalFeesRecorded += fees;
+                    }
+                    else
+                    {
+                        if (asCompany != null)
+                        {
+                            matchedOrder.ShippingCompanyId = asCompany.Id;
+                            matchedOrder.ShippingCarrierName = asCompany.NameAr;
+                        }
+                        if (!string.IsNullOrEmpty(waybill))
+                        {
+                            matchedOrder.ShippingTrackingNumber = waybill;
+                        }
+                        matchedOrder.ActualDeliveryCost = Math.Round(fees, 2);
+                        if (matchedOrder.Status != OrderStatus.Returned && matchedOrder.Status != OrderStatus.PartiallyReturned)
+                        {
+                            matchedOrder.Status = OrderStatus.Returned;
+                            updatedStatusCount++;
+                        }
+                        matchedOrderIds.Add(matchedOrder.Id);
+                        settledCount++;
+                        totalFeesRecorded += fees;
                     }
                 }
-                else if (row.SigningStatus?.Equals("Normal Sign", StringComparison.OrdinalIgnoreCase) == true)
+                else
                 {
-                    if (matchedOrder.Status != OrderStatus.Delivered)
+                    if (asCompany != null)
                     {
-                        matchedOrder.Status = OrderStatus.Delivered;
-                        updatedStatusCount++;
+                        matchedOrder.ShippingCompanyId = asCompany.Id;
+                        matchedOrder.ShippingCarrierName = asCompany.NameAr;
                     }
-                    if (cod > 0 && Math.Abs(matchedOrder.TotalAmount - cod) > 0.01m)
+                    if (!string.IsNullOrEmpty(waybill))
                     {
-                        matchedOrder.TotalAmount = cod;
+                        matchedOrder.ShippingTrackingNumber = waybill;
                     }
-                }
 
-                settledCount++;
-                totalCodSettled += matchedOrder.Status == OrderStatus.Delivered ? matchedOrder.TotalAmount : 0;
-                totalFeesRecorded += fees;
+                    // Take exact AS shipping fee directly from Excel row (rounded to 2 decimal places)
+                    matchedOrder.ActualDeliveryCost = Math.Round(fees, 2);
+                    matchedOrderIds.Add(matchedOrder.Id);
+
+                    if (row.SigningStatus?.Equals("Normal Sign", StringComparison.OrdinalIgnoreCase) == true)
+                    {
+                        if (matchedOrder.Status != OrderStatus.Delivered)
+                        {
+                            matchedOrder.Status = OrderStatus.Delivered;
+                            updatedStatusCount++;
+                        }
+                        if (cod > 0 && Math.Abs(matchedOrder.TotalAmount - cod) > 0.01m)
+                        {
+                            matchedOrder.TotalAmount = cod;
+                        }
+                    }
+
+                    settledCount++;
+                    totalCodSettled += matchedOrder.Status == OrderStatus.Delivered ? matchedOrder.TotalAmount : 0;
+                    totalFeesRecorded += fees;
+                }
             }
             else
             {
@@ -1161,9 +1220,14 @@ public class ShippingSettlementsController : ControllerBase
             }
         }
 
-        if (settledCount > 0)
+        if (settledCount > 0 || newRtnOrdersAs.Count > 0)
         {
             await _db.SaveChangesAsync();
+            foreach (var o in newRtnOrdersAs)
+            {
+                if (o.Id > 0 && !matchedOrderIds.Contains(o.Id))
+                    matchedOrderIds.Add(o.Id);
+            }
         }
 
         return Ok(new {
@@ -1207,6 +1271,7 @@ public class ShippingSettlementsController : ControllerBase
 
         var unmatchedList = new List<object>();
         var matchedOrderIds = new List<int>();
+        var newRtnOrdersBosta = new List<Order>();
 
         foreach (var row in dto.Rows)
         {
@@ -1235,60 +1300,106 @@ public class ShippingSettlementsController : ControllerBase
 
             if (matchedOrder != null)
             {
-                if (bostaCompany != null)
-                {
-                    matchedOrder.ShippingCompanyId = bostaCompany.Id;
-                    matchedOrder.ShippingCarrierName = bostaCompany.NameAr;
-                }
-                matchedOrder.ShippingType = "Bosta";
-                
-                if (!string.IsNullOrEmpty(tracking))
-                {
-                    matchedOrder.ShippingTrackingNumber = tracking;
-                    matchedOrder.BostaTrackingNumber = tracking;
-                }
-
-                // Update Status from Bosta Delivery State
                 string stateLower = deliveryState.ToLower();
-                if (stateLower.Contains("delivered"))
+                bool isReturnOrExchange = stateLower.Contains("return") || stateLower.Contains("exchange");
+
+                if (isReturnOrExchange && (matchedOrder.Status == OrderStatus.Delivered || matchedOrder.IsSettledWithCourier))
                 {
-                    if (matchedOrder.Status != OrderStatus.Delivered)
+                    // إذا كان الطلب تم تسليمه أو تسويته مسبقاً كتوصيل، لا نلغي التسوية الأولى
+                    // بل ننشئ/نحدّث فاتورة تسوية مرتجع منفصلة برقم (SPT-xxxx-RTN) لتبقى التسوية الأولى كما هي
+                    string rtnOrderNumber = $"{matchedOrder.OrderNumber}-RTN";
+                    var rtnOrder = allOrders.FirstOrDefault(o => o.OrderNumber.Equals(rtnOrderNumber, StringComparison.OrdinalIgnoreCase));
+                    if (rtnOrder == null)
                     {
-                        matchedOrder.Status = OrderStatus.Delivered;
-                        updatedStatusCount++;
+                        rtnOrder = new Order
+                        {
+                            OrderNumber = rtnOrderNumber,
+                            CustomerId = matchedOrder.CustomerId,
+                            Source = matchedOrder.Source,
+                            ShippingCompanyId = bostaCompany?.Id ?? matchedOrder.ShippingCompanyId,
+                            ShippingCarrierName = bostaCompany?.NameAr ?? matchedOrder.ShippingCarrierName,
+                            ShippingType = "Bosta",
+                            ShippingTrackingNumber = !string.IsNullOrEmpty(tracking) ? tracking : matchedOrder.ShippingTrackingNumber,
+                            BostaTrackingNumber = !string.IsNullOrEmpty(tracking) ? tracking : matchedOrder.BostaTrackingNumber,
+                            Status = OrderStatus.Returned,
+                            PaymentMethod = matchedOrder.PaymentMethod,
+                            PaymentStatus = matchedOrder.PaymentStatus,
+                            TotalAmount = cod, // التحصيل في شحنة المرتجع/الاستبدال (مثلاً 170 أو 0)
+                            DeliveryFee = matchedOrder.DeliveryFee,
+                            ActualDeliveryCost = matchedOrder.ActualDeliveryCost,
+                            BranchId = matchedOrder.BranchId,
+                            WarehouseId = matchedOrder.WarehouseId,
+                            CreatedAt = now,
+                            UpdatedAt = now,
+                            IsSettledWithCourier = false,
+                            AdminNotes = $"فاتورة تسوية مرتجع لشحنة #{matchedOrder.OrderNumber}"
+                        };
+                        _db.Orders.Add(rtnOrder);
+                        allOrders.Add(rtnOrder);
+                        newRtnOrdersBosta.Add(rtnOrder);
                     }
-                    // DO NOT MARK AS SETTLED YET!
-                    // matchedOrder.IsSettledWithCourier = true;
-                    // matchedOrder.CourierSettlementDate = now;
-                    // matchedOrder.CourierSettlementReference = $"تسوية شيت بوسطة (بوليصة: {tracking})";
-                    matchedOrderIds.Add(matchedOrder.Id);
+                    else
+                    {
+                        rtnOrder.Status = OrderStatus.Returned;
+                        if (cod > 0) rtnOrder.TotalAmount = cod;
+                        if (!string.IsNullOrEmpty(tracking))
+                        {
+                            rtnOrder.ShippingTrackingNumber = tracking;
+                            rtnOrder.BostaTrackingNumber = tracking;
+                        }
+                        matchedOrderIds.Add(rtnOrder.Id);
+                    }
+                    updatedStatusCount++;
+                }
+                else
+                {
+                    if (bostaCompany != null)
+                    {
+                        matchedOrder.ShippingCompanyId = bostaCompany.Id;
+                        matchedOrder.ShippingCarrierName = bostaCompany.NameAr;
+                    }
+                    matchedOrder.ShippingType = "Bosta";
                     
-                    if (cod > 0 && Math.Abs(matchedOrder.TotalAmount - cod) > 0.01m)
+                    if (!string.IsNullOrEmpty(tracking))
                     {
-                        matchedOrder.TotalAmount = cod;
+                        matchedOrder.ShippingTrackingNumber = tracking;
+                        matchedOrder.BostaTrackingNumber = tracking;
                     }
-                    settledCount++;
-                    totalCodSettled += matchedOrder.TotalAmount;
-                }
-                else if (stateLower.Contains("return"))
-                {
-                    if (matchedOrder.Status != OrderStatus.Returned && matchedOrder.Status != OrderStatus.PartiallyReturned)
+
+                    // Update Status from Bosta Delivery State
+                    if (stateLower.Contains("delivered"))
                     {
-                        matchedOrder.Status = OrderStatus.Returned;
-                        updatedStatusCount++;
+                        if (matchedOrder.Status != OrderStatus.Delivered)
+                        {
+                            matchedOrder.Status = OrderStatus.Delivered;
+                            updatedStatusCount++;
+                        }
+                        // DO NOT MARK AS SETTLED YET!
+                        matchedOrderIds.Add(matchedOrder.Id);
+                        
+                        if (cod > 0 && Math.Abs(matchedOrder.TotalAmount - cod) > 0.01m)
+                        {
+                            matchedOrder.TotalAmount = cod;
+                        }
+                        settledCount++;
+                        totalCodSettled += matchedOrder.TotalAmount;
                     }
-                    // DO NOT MARK AS SETTLED YET!
-                    // matchedOrder.IsSettledWithCourier = true;
-                    // matchedOrder.CourierSettlementDate = now;
-                    // matchedOrder.CourierSettlementReference = $"مرتجع شيت بوسطة (بوليصة: {tracking})";
-                    matchedOrderIds.Add(matchedOrder.Id);
-                }
-                else if (stateLower.Contains("out for delivery") || stateLower.Contains("pickup"))
-                {
-                    if (matchedOrder.Status != OrderStatus.OutForDelivery)
+                    else if (isReturnOrExchange)
                     {
-                        matchedOrder.Status = OrderStatus.OutForDelivery;
-                        updatedStatusCount++;
+                        if (matchedOrder.Status != OrderStatus.Returned && matchedOrder.Status != OrderStatus.PartiallyReturned)
+                        {
+                            matchedOrder.Status = OrderStatus.Returned;
+                            updatedStatusCount++;
+                        }
+                        matchedOrderIds.Add(matchedOrder.Id);
+                    }
+                    else if (stateLower.Contains("out for delivery") || stateLower.Contains("pickup"))
+                    {
+                        if (matchedOrder.Status != OrderStatus.OutForDelivery)
+                        {
+                            matchedOrder.Status = OrderStatus.OutForDelivery;
+                            updatedStatusCount++;
+                        }
                     }
                 }
             }
@@ -1298,9 +1409,14 @@ public class ShippingSettlementsController : ControllerBase
             }
         }
 
-        if (settledCount > 0 || updatedStatusCount > 0)
+        if (settledCount > 0 || updatedStatusCount > 0 || newRtnOrdersBosta.Count > 0)
         {
             await _db.SaveChangesAsync();
+            foreach (var o in newRtnOrdersBosta)
+            {
+                if (o.Id > 0 && !matchedOrderIds.Contains(o.Id))
+                    matchedOrderIds.Add(o.Id);
+            }
         }
 
         return Ok(new {

@@ -1224,7 +1224,50 @@ public class ReturnExchangeRequestsController : ControllerBase
         // 2. Check Order Return Status (Full vs Partial) & Log Status History Timeline
         bool isFullReturn = req.Order.Items.All(i => i.ReturnedQuantity >= i.Quantity);
         var targetStatus = isFullReturn ? OrderStatus.Returned : OrderStatus.PartiallyReturned;
-        req.Order.Status = targetStatus;
+
+        bool parentWasDeliveredOrSettled = req.Order.Status == OrderStatus.Delivered || req.Order.IsSettledWithCourier;
+        if (parentWasDeliveredOrSettled)
+        {
+            // إنشاء / تحديث فاتورة تسوية مرتجع منفصلة برقم (OrderNumber-RTN) لتبقى تسوية التوصيل الأولى كما هي دون إلغاء
+            string rtnOrderNumber = $"{req.Order.OrderNumber}-RTN";
+            var existingRtn = await _db.Orders.FirstOrDefaultAsync(o => o.OrderNumber == rtnOrderNumber);
+            if (existingRtn == null)
+            {
+                var now = TimeHelper.GetEgyptTime();
+                var rtnOrder = new Order
+                {
+                    OrderNumber = rtnOrderNumber,
+                    CustomerId = req.Order.CustomerId,
+                    Source = req.Order.Source,
+                    ShippingCompanyId = req.Order.ShippingCompanyId,
+                    ShippingCarrierName = req.Order.ShippingCarrierName,
+                    ShippingType = req.Order.ShippingType,
+                    ShippingTrackingNumber = req.Order.ShippingTrackingNumber,
+                    BostaTrackingNumber = req.Order.BostaTrackingNumber,
+                    Status = targetStatus,
+                    PaymentMethod = req.Order.PaymentMethod,
+                    PaymentStatus = req.Order.PaymentStatus,
+                    TotalAmount = 0,
+                    DeliveryFee = returnShippingFee > 0 ? returnShippingFee : req.Order.DeliveryFee,
+                    ActualDeliveryCost = req.Order.ActualDeliveryCost > 0 ? req.Order.ActualDeliveryCost : req.Order.DeliveryFee,
+                    BranchId = req.Order.BranchId,
+                    WarehouseId = req.Order.WarehouseId,
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                    IsSettledWithCourier = false,
+                    AdminNotes = $"فاتورة تسوية مرتجع لشحنة #{req.Order.OrderNumber} (طلب استرجاع #{req.Id})"
+                };
+                _db.Orders.Add(rtnOrder);
+            }
+            else
+            {
+                existingRtn.Status = targetStatus;
+            }
+        }
+        else
+        {
+            req.Order.Status = targetStatus;
+        }
 
         req.Order.StatusHistory.Add(new OrderStatusHistory
         {
