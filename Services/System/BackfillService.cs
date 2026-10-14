@@ -183,7 +183,7 @@ public class BackfillService : IBackfillService
 
                 if (isFullReturn)
                 {
-                    await _accounting.PostSalesReturnAsync(order);
+                    await _accounting.PostSalesReturnAsync(order, overrideDate: returnDate);
                     successCount++;
                 }
                 else if (returnedItems.Any())
