@@ -137,56 +137,75 @@ public class JournalEntriesController : ControllerBase
         if (!string.IsNullOrEmpty(mode))
         {
             var normalizedMode = mode.Trim().ToLowerInvariant();
-            if (normalizedMode == "manual")
+            if (normalizedMode == "sales" || normalizedMode == "sale")
             {
-                q = q.Where(e => e.Type == JournalEntryType.Manual
-                              && !e.OrderId.HasValue
-                              && !e.PurchaseInvoiceId.HasValue
-                              && (e.Reference == null || (
-                                  !e.Reference.StartsWith("SHIFT-CLOSE-") &&
-                                  !e.Reference.StartsWith("DELV-CUST-") &&
-                                  !e.Reference.Contains("-WH-RTN-") &&
-                                  !e.Reference.StartsWith("SETTLE-") &&
-                                  !e.Reference.StartsWith("SETT-") &&
-                                  !e.Reference.StartsWith("ADJ-") &&
-                                  !e.Reference.StartsWith("AUDIT-") &&
-                                  !e.Reference.StartsWith("POS-") &&
-                                  !e.Reference.StartsWith("SPT-") &&
-                                  !e.Reference.StartsWith("REV-")
-                              )));
-            }
-            else if (normalizedMode == "auto")
-            {
-                q = q.Where(e => (e.Type != JournalEntryType.Manual 
-                                  && e.Type != JournalEntryType.SalesInvoice 
-                                  && e.Type != JournalEntryType.SalesReturn 
-                                  && e.Type != JournalEntryType.PurchaseInvoice 
-                                  && e.Type != JournalEntryType.PurchaseReturn)
-                              || (e.Type == JournalEntryType.Manual && !e.PurchaseInvoiceId.HasValue && (
-                                  e.OrderId.HasValue ||
-                                  (e.Reference != null && (
-                                      e.Reference.StartsWith("SHIFT-CLOSE-") ||
-                                      e.Reference.StartsWith("DELV-CUST-") ||
-                                      e.Reference.Contains("-WH-RTN-") ||
-                                      e.Reference.StartsWith("SETTLE-") ||
-                                      e.Reference.StartsWith("SETT-") ||
-                                      e.Reference.StartsWith("ADJ-") ||
-                                      e.Reference.StartsWith("AUDIT-") ||
-                                      e.Reference.StartsWith("POS-") ||
-                                      e.Reference.StartsWith("SPT-") ||
-                                      e.Reference.StartsWith("REV-")
-                                  ))
-                              )));
+                q = q.Where(e => e.Type == JournalEntryType.SalesInvoice || e.Type == JournalEntryType.SalesReturn);
             }
             else if (normalizedMode == "purchases" || normalizedMode == "purchase")
             {
                 q = q.Where(e => e.Type == JournalEntryType.PurchaseInvoice 
                               || e.Type == JournalEntryType.PurchaseReturn 
-                              || (e.PurchaseInvoiceId.HasValue && e.Type == JournalEntryType.Manual));
+                              || e.PurchaseInvoiceId.HasValue
+                              || e.Lines.Any(l => l.SupplierId != null 
+                                               || (l.Account != null && (l.Account.Code.StartsWith("2101") || l.Account.Code == "5102" || l.Account.Code == "5103" || l.Account.Code == "5105"))));
             }
-            else if (normalizedMode == "sales" || normalizedMode == "sale")
+            else if (normalizedMode == "manual")
             {
-                q = q.Where(e => e.Type == JournalEntryType.SalesInvoice || e.Type == JournalEntryType.SalesReturn);
+                q = q.Where(e => 
+                    e.Type != JournalEntryType.SalesInvoice &&
+                    e.Type != JournalEntryType.SalesReturn &&
+                    e.Type != JournalEntryType.PurchaseInvoice &&
+                    e.Type != JournalEntryType.PurchaseReturn &&
+                    !e.PurchaseInvoiceId.HasValue &&
+                    !e.Lines.Any(l => l.SupplierId != null || (l.Account != null && (l.Account.Code.StartsWith("2101") || l.Account.Code == "5102" || l.Account.Code == "5103" || l.Account.Code == "5105"))) &&
+                    (
+                        (e.Type == JournalEntryType.Manual
+                         && !e.OrderId.HasValue
+                         && (e.Reference == null || (
+                             !e.Reference.StartsWith("SHIFT-CLOSE-") &&
+                             !e.Reference.StartsWith("DELV-CUST-") &&
+                             !e.Reference.Contains("-WH-RTN-") &&
+                             !e.Reference.StartsWith("SETTLE-") &&
+                             !e.Reference.StartsWith("SETT-") &&
+                             !e.Reference.StartsWith("ADJ-") &&
+                             !e.Reference.StartsWith("AUDIT-") &&
+                             !e.Reference.StartsWith("POS-") &&
+                             !e.Reference.StartsWith("SPT-") &&
+                             !e.Reference.StartsWith("REV-")
+                         )))
+                        ||
+                        (e.Type == JournalEntryType.PaymentVoucher && e.CostCenter == OrderSource.POS)
+                    )
+                );
+            }
+            else if (normalizedMode == "auto")
+            {
+                q = q.Where(e => 
+                    e.Type != JournalEntryType.SalesInvoice &&
+                    e.Type != JournalEntryType.SalesReturn &&
+                    e.Type != JournalEntryType.PurchaseInvoice &&
+                    e.Type != JournalEntryType.PurchaseReturn &&
+                    !e.PurchaseInvoiceId.HasValue &&
+                    !e.Lines.Any(l => l.SupplierId != null || (l.Account != null && (l.Account.Code.StartsWith("2101") || l.Account.Code == "5102" || l.Account.Code == "5103" || l.Account.Code == "5105"))) &&
+                    !(
+                        (e.Type == JournalEntryType.Manual
+                         && !e.OrderId.HasValue
+                         && (e.Reference == null || (
+                             !e.Reference.StartsWith("SHIFT-CLOSE-") &&
+                             !e.Reference.StartsWith("DELV-CUST-") &&
+                             !e.Reference.Contains("-WH-RTN-") &&
+                             !e.Reference.StartsWith("SETTLE-") &&
+                             !e.Reference.StartsWith("SETT-") &&
+                             !e.Reference.StartsWith("ADJ-") &&
+                             !e.Reference.StartsWith("AUDIT-") &&
+                             !e.Reference.StartsWith("POS-") &&
+                             !e.Reference.StartsWith("SPT-") &&
+                             !e.Reference.StartsWith("REV-")
+                         )))
+                        ||
+                        (e.Type == JournalEntryType.PaymentVoucher && e.CostCenter == OrderSource.POS)
+                    )
+                );
             }
         }
         if (!string.IsNullOrEmpty(entryNumber)) q = q.Where(e => e.EntryNumber.Contains(entryNumber));
