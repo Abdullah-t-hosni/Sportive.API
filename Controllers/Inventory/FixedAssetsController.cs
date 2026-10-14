@@ -543,6 +543,11 @@ public class FixedAssetsController : ControllerBase
 
         int posted = 0, skipped = 0;
         var details = new List<object>();
+        var batchDepreciations = new List<AssetDepreciation>();
+        var batchJournalLines = new List<JournalLine>();
+        var mapDict = await _core.GetSafeSystemMappingsAsync();
+        var defaultAccumAcc = await _core.GetRequiredMappedAccountAsync(MappingKeys.AccumulatedDepreciation, mapDict);
+        var defaultExpenseAcc = await _core.GetRequiredMappedAccountAsync(MappingKeys.DepreciationExpense, mapDict);
 
         foreach (var asset in assets)
         {
@@ -589,47 +594,74 @@ public class FixedAssetsController : ControllerBase
             asset.UpdatedAt = TimeHelper.GetEgyptTime();
 
             _db.AssetDepreciations.Add(dep);
+            batchDepreciations.Add(dep);
 
-            // قيد محاسبي
+            // تجميع أسطر القيد المحاسبي الموحد
             var (_, accumAccId, expenseAccId) = ResolveAccounts(asset, asset.Category);
             var batchSource = ResolveCostCenter(asset, asset.Category);
-            
-            // جلب الربط العام في حال عدم وجود ربط مخصص للأصل/الفئة
-            var mapDict = await _core.GetSafeSystemMappingsAsync();
-            var finalAccumAcc   = accumAccId   ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.AccumulatedDepreciation, mapDict);
-            var finalExpenseAcc = expenseAccId ?? await _core.GetRequiredMappedAccountAsync(MappingKeys.DepreciationExpense, mapDict);
+
+            var finalAccumAcc   = accumAccId   ?? defaultAccumAcc;
+            var finalExpenseAcc = expenseAccId ?? defaultExpenseAcc;
 
             if (finalAccumAcc > 0 && finalExpenseAcc > 0)
             {
-                var jeNo = await _seq.NextAsync("JE");
-
-                var je = new JournalEntry
+                batchJournalLines.Add(new JournalLine
                 {
-                    EntryNumber     = jeNo,
-                    EntryDate       = dto.AsOfDate,
-                    Type            = JournalEntryType.AssetDepreciation,
-                    Status          = JournalEntryStatus.Posted,
-                    Description     = $"{_t.Get("Assets.DepreciationLabel")} [{asset.AssetNumber}] {asset.Name} — {dto.PeriodMonth}/{dto.PeriodYear}",
-                    Reference       = $"{asset.AssetNumber}/{dto.PeriodMonth:D2}-{dto.PeriodYear}",
-                    CostCenter      = batchSource,
-                    CreatedByUserId = UserId,
-                    CreatedAt       = TimeHelper.GetEgyptTime(),
-                    Lines = new List<JournalLine>
-                    {
-                        new() { AccountId = finalExpenseAcc, Debit  = amount, Credit = 0,      Description = $"{_t.Get("Assets.DepreciationExpenseLabel")} [{asset.AssetNumber}] — {asset.Name}", CostCenter = batchSource, BranchId = asset.BranchId, CreatedAt = TimeHelper.GetEgyptTime() },
-                        new() { AccountId = finalAccumAcc,   Debit  = 0,      Credit = amount, Description = $"{_t.Get("Assets.AccumulatedDepreciationLabel")} [{asset.AssetNumber}] — {asset.Name}",   CostCenter = batchSource, BranchId = asset.BranchId, CreatedAt = TimeHelper.GetEgyptTime() }
-                    }
-                };
-                _db.JournalEntries.Add(je);
-                await _db.SaveChangesAsync();
-                dep.JournalEntryId = je.Id;
+                    AccountId   = finalExpenseAcc,
+                    Debit       = amount,
+                    Credit      = 0,
+                    Description = $"{_t.Get("Assets.DepreciationExpenseLabel")} [{asset.AssetNumber}] — {asset.Name}",
+                    CostCenter  = batchSource,
+                    BranchId    = asset.BranchId,
+                    CreatedAt   = TimeHelper.GetEgyptTime()
+                });
+
+                batchJournalLines.Add(new JournalLine
+                {
+                    AccountId   = finalAccumAcc,
+                    Debit       = 0,
+                    Credit      = amount,
+                    Description = $"{_t.Get("Assets.AccumulatedDepreciationLabel")} [{asset.AssetNumber}] — {asset.Name}",
+                    CostCenter  = batchSource,
+                    BranchId    = asset.BranchId,
+                    CreatedAt   = TimeHelper.GetEgyptTime()
+                });
             }
 
-            await _db.SaveChangesAsync();
             posted++;
             details.Add(new { assetId = asset.Id, assetNumber = asset.AssetNumber, name = asset.Name, amount, depNo });
         }
 
+        // إنشاء قيد محاسبي موحد مجمع لكل الدفعة
+        if (batchJournalLines.Any())
+        {
+            var jeNo = await _seq.NextAsync("JE");
+
+            var je = new JournalEntry
+            {
+                EntryNumber     = jeNo,
+                EntryDate       = dto.AsOfDate,
+                Type            = JournalEntryType.AssetDepreciation,
+                Status          = JournalEntryStatus.Posted,
+                Description     = $"قيد إهلاك مجمع للأصول الثابتة — شهر {dto.PeriodMonth}/{dto.PeriodYear} (عدد {posted} أصل)",
+                Reference       = $"BATCH-DEP-{dto.PeriodYear}-{dto.PeriodMonth:D2}",
+                CostCenter      = null,
+                CreatedByUserId = UserId,
+                CreatedAt       = TimeHelper.GetEgyptTime(),
+                Lines           = batchJournalLines
+            };
+
+            _db.JournalEntries.Add(je);
+            await _db.SaveChangesAsync();
+
+            // ربط جميع سجلات الإهلاك بالقيد المحاسبي الموحد
+            foreach (var dep in batchDepreciations)
+            {
+                dep.JournalEntryId = je.Id;
+            }
+        }
+
+        await _db.SaveChangesAsync();
         return Ok(new { posted, skipped, details });
     }
 
