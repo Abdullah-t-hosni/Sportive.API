@@ -56,12 +56,12 @@ try
     connBuilder.Pooling = true;
     connBuilder.AllowUserVariables = true;
     connBuilder.ConvertZeroDateTime = true;
-    connBuilder.ConnectionIdleTimeout = 30; // release idle connections after 30s
-    connBuilder.Keepalive = 60;
-    connBuilder.ConnectionTimeout = 60; // increased from 30 to allow DB to recover under heavy load
-    connBuilder.DefaultCommandTimeout = 120; // allow up to 120s command timeout to prevent transient DB timeouts
+    connBuilder.ConnectionIdleTimeout = 300; // keep connections alive in pool for 5 min to reuse them
+    connBuilder.Keepalive = 45;
+    connBuilder.ConnectionTimeout = 60;
+    connBuilder.DefaultCommandTimeout = 120;
 
-    // Dynamically resolve Maximum Pool Size to avoid hardcoding limits (helpful for multi-user/multi-tenant production VPS)
+    // Dynamically resolve Maximum Pool Size
     if (!connStr.Contains("Max Pool Size", StringComparison.OrdinalIgnoreCase) && 
         !connStr.Contains("MaximumPoolSize", StringComparison.OrdinalIgnoreCase))
     {
@@ -73,19 +73,12 @@ try
         else
         {
             var configMax = builder.Configuration.GetValue<uint?>("Database:MaximumPoolSize");
-            if (configMax.HasValue)
-            {
-                connBuilder.MaximumPoolSize = configMax.Value;
-            }
-            else
-            {
-                // Increased default for Hangfire background processing and concurrency
-                connBuilder.MaximumPoolSize = 250;
-            }
+            connBuilder.MaximumPoolSize = configMax ?? 50;
         }
     }
 
-    // Dynamically resolve Minimum Pool Size
+    // Keep minimum connections warm in the pool to reuse existing TCP connections
+    // without triggering MySQL's max_connections_per_hour
     if (!connStr.Contains("Min Pool Size", StringComparison.OrdinalIgnoreCase) && 
         !connStr.Contains("MinimumPoolSize", StringComparison.OrdinalIgnoreCase))
     {
@@ -96,7 +89,7 @@ try
         }
         else
         {
-            connBuilder.MinimumPoolSize = 1; // Only open connections when actually needed to save resources
+            connBuilder.MinimumPoolSize = 3;
         }
     }
 
@@ -113,8 +106,8 @@ try
     masterBuilder.Pooling = true;
     masterBuilder.AllowUserVariables = true;
     masterBuilder.ConvertZeroDateTime = true;
-    masterBuilder.ConnectionIdleTimeout = 30;
-    masterBuilder.Keepalive = 60;
+    masterBuilder.ConnectionIdleTimeout = 300;
+    masterBuilder.Keepalive = 45;
     masterBuilder.ConnectionTimeout = 30;
     masterBuilder.DefaultCommandTimeout = 60;
     masterBuilder.MaximumPoolSize = 50; // master database doesn't need as large of a pool
