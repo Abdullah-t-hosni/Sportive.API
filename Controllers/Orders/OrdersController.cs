@@ -1885,7 +1885,16 @@ public class OrdersController : ControllerBase
         }
 
         var storeOrders = await storeOrdersQuery
-            .Select(o => new { o.Id, o.Status, o.TotalAmount })
+            .Select(o => new { 
+                o.Id, 
+                o.Status, 
+                o.TotalAmount,
+                o.BostaDeliveryId,
+                o.BostaTrackingNumber,
+                o.BostaShipmentStatus,
+                o.ShippingType,
+                o.ShippingCarrierName
+            })
             .ToListAsync();
 
         int storeTotal = storeOrders.Count;
@@ -1913,89 +1922,76 @@ public class OrdersController : ControllerBase
             else storeBadge = "risky";
         }
 
-        // 2. Bosta Deliverability Stats (via Bosta API)
-        object bostaStats = new
-        {
-            available = false,
-            connected = false,
-            totalShipments = 0,
-            delivered = 0,
-            returned = 0,
-            inTransit = 0,
-            rate = (decimal?)null,
-            badge = "no_data",
-            riskLevel = "unknown"
-        };
+        // 2. Bosta Deliverability Stats (via Bosta API & Internal Bosta Shipments)
+        var storeSettings = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(x => x.StoreConfigId == 1)
+                         ?? await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync();
 
-        var storeSettings = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(x => x.StoreConfigId == 1);
-        if (storeSettings != null && !string.IsNullOrEmpty(storeSettings.BostaApiKey) && !string.IsNullOrEmpty(phoneSuffix))
+        bool isBostaConfigured = storeSettings != null && !string.IsNullOrEmpty(storeSettings.BostaApiKey);
+
+        // Calculate store orders shipped with Bosta
+        var bostaStoreOrders = storeOrders.Where(o => 
+            !string.IsNullOrEmpty(o.BostaDeliveryId) || 
+            !string.IsNullOrEmpty(o.BostaTrackingNumber) || 
+            (o.ShippingCarrierName != null && o.ShippingCarrierName.Contains("بوسطة")) ||
+            (o.ShippingType != null && o.ShippingType.Equals("Bosta", StringComparison.OrdinalIgnoreCase))
+        ).ToList();
+
+        int bTotal = bostaStoreOrders.Count;
+        int bDelivered = bostaStoreOrders.Count(o => o.Status == OrderStatus.Delivered);
+        int bReturned = bostaStoreOrders.Count(o => o.Status == OrderStatus.Returned || o.Status == OrderStatus.PartiallyReturned || o.Status == OrderStatus.ReturnInShipping);
+        int bTransit = bostaStoreOrders.Count(o => o.Status == OrderStatus.OutForDelivery);
+
+        if (isBostaConfigured && !string.IsNullOrEmpty(phoneSuffix))
         {
             try
             {
-                string baseUrl = storeSettings.BostaUseSandbox ? "https://stg-api.bosta.co" : "https://api.bosta.co";
+                string baseUrl = storeSettings!.BostaUseSandbox ? "https://stg-api.bosta.co" : "https://api.bosta.co";
                 using var client = new System.Net.Http.HttpClient();
-                client.Timeout = TimeSpan.FromSeconds(5);
+                client.Timeout = TimeSpan.FromSeconds(4);
                 client.DefaultRequestHeaders.Add("Authorization", storeSettings.BostaApiKey);
 
-                var bostaRes = await client.GetAsync($"{baseUrl}/api/v2/deliveries?pageNo=1&pageSize=50&search={phoneSuffix}");
+                // Query Bosta search endpoint
+                var searchPayload = System.Text.Json.JsonSerializer.Serialize(new { phone = cleanPhone });
+                using var content = new System.Net.Http.StringContent(searchPayload, System.Text.Encoding.UTF8, "application/json");
+                var bostaRes = await client.PostAsync($"{baseUrl}/api/v2/deliveries/search", content);
+
                 if (bostaRes.IsSuccessStatusCode)
                 {
                     var json = await bostaRes.Content.ReadAsStringAsync();
                     using var doc = System.Text.Json.JsonDocument.Parse(json);
                     if (doc.RootElement.TryGetProperty("data", out var dataEl) && dataEl.TryGetProperty("deliveries", out var delArray))
                     {
-                        int bTotal = delArray.GetArrayLength();
-                        int bDelivered = 0;
-                        int bReturned = 0;
-                        int bTransit = 0;
-
-                        foreach (var d in delArray.EnumerateArray())
+                        int apiTotal = delArray.GetArrayLength();
+                        if (apiTotal > 0)
                         {
-                            string stateVal = "";
-                            if (d.TryGetProperty("state", out var stateEl))
+                            int apiDelivered = 0;
+                            int apiReturned = 0;
+                            int apiTransit = 0;
+
+                            foreach (var d in delArray.EnumerateArray())
                             {
-                                if (stateEl.TryGetProperty("value", out var valEl))
-                                    stateVal = valEl.GetString() ?? "";
+                                string stateVal = "";
+                                if (d.TryGetProperty("state", out var stateEl))
+                                {
+                                    if (stateEl.TryGetProperty("value", out var valEl))
+                                        stateVal = valEl.GetString() ?? "";
+                                }
+                                else if (d.TryGetProperty("status", out var statEl))
+                                {
+                                    stateVal = statEl.GetString() ?? "";
+                                }
+
+                                var sLower = stateVal.ToLower();
+                                if (sLower.Contains("deliver")) apiDelivered++;
+                                else if (sLower.Contains("return") || sLower.Contains("cancel") || sLower.Contains("exception") || sLower.Contains("terminat")) apiReturned++;
+                                else if (sLower.Contains("transit") || sLower.Contains("out") || sLower.Contains("pending") || sLower.Contains("route")) apiTransit++;
                             }
-                            else if (d.TryGetProperty("status", out var statEl))
-                            {
-                                stateVal = statEl.GetString() ?? "";
-                            }
 
-                            var sLower = stateVal.ToLower();
-                            if (sLower.Contains("deliver")) bDelivered++;
-                            else if (sLower.Contains("return") || sLower.Contains("cancel") || sLower.Contains("exception") || sLower.Contains("terminat")) bReturned++;
-                            else if (sLower.Contains("transit") || sLower.Contains("out") || sLower.Contains("pending") || sLower.Contains("route")) bTransit++;
+                            bTotal = Math.Max(bTotal, apiTotal);
+                            bDelivered = Math.Max(bDelivered, apiDelivered);
+                            bReturned = Math.Max(bReturned, apiReturned);
+                            bTransit = Math.Max(bTransit, apiTransit);
                         }
-
-                        decimal? bRate = null;
-                        int bCompleted = bDelivered + bReturned;
-                        if (bCompleted > 0)
-                        {
-                            bRate = Math.Round((decimal)bDelivered / bCompleted * 100m, 1);
-                        }
-
-                        string bBadge = "no_data";
-                        string bRisk = "low";
-                        if (bCompleted > 0)
-                        {
-                            if (bRate >= 85m) { bBadge = "trusted"; bRisk = "low"; }
-                            else if (bRate >= 60m) { bBadge = "normal"; bRisk = "medium"; }
-                            else { bBadge = "risky"; bRisk = "high"; }
-                        }
-
-                        bostaStats = new
-                        {
-                            available = true,
-                            connected = true,
-                            totalShipments = bTotal,
-                            delivered = bDelivered,
-                            returned = bReturned,
-                            inTransit = bTransit,
-                            rate = bRate,
-                            badge = bBadge,
-                            riskLevel = bRisk
-                        };
                     }
                 }
             }
@@ -2004,6 +2000,35 @@ public class OrdersController : ControllerBase
                 _logger.LogWarning(ex, "Failed to query Bosta API for phone {Phone}", phoneSuffix);
             }
         }
+
+        decimal? bRate = null;
+        int bCompleted = bDelivered + bReturned;
+        if (bCompleted > 0)
+        {
+            bRate = Math.Round((decimal)bDelivered / bCompleted * 100m, 1);
+        }
+
+        string bBadge = "no_data";
+        string bRisk = "low";
+        if (bCompleted > 0)
+        {
+            if (bRate >= 85m) { bBadge = "trusted"; bRisk = "low"; }
+            else if (bRate >= 60m) { bBadge = "normal"; bRisk = "medium"; }
+            else { bBadge = "risky"; bRisk = "high"; }
+        }
+
+        var bostaStats = new
+        {
+            available = isBostaConfigured,
+            connected = isBostaConfigured,
+            totalShipments = bTotal,
+            delivered = bDelivered,
+            returned = bReturned,
+            inTransit = bTransit,
+            rate = bRate,
+            badge = bBadge,
+            riskLevel = bRisk
+        };
 
         var result = new
         {
