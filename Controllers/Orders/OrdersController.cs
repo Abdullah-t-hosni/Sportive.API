@@ -1614,6 +1614,21 @@ public class OrdersController : ControllerBase
         return Ok(new { success = true });
     }
 
+    
+    public class GuestDraftCartDto
+    {
+        public string Name { get; set; } = string.Empty;
+        public string Phone { get; set; } = string.Empty;
+        public List<GuestDraftCartItemDto> Items { get; set; } = new();
+    }
+
+    public class GuestDraftCartItemDto
+    {
+        public int ProductId { get; set; }
+        public int? ProductVariantId { get; set; }
+        public int Quantity { get; set; }
+    }
+
     public class GenerateCartCouponDto
     {
         public string DiscountType { get; set; } = "Percentage"; // "Percentage" or "FixedAmount"
@@ -1833,6 +1848,183 @@ public class OrdersController : ControllerBase
             message = $"تمت المزامنة بنجاح: تم إنشاء {createdCount} قيد نقل مديونية، و {skippedCount} طلب كان محدثاً مسبقاً."
         });
     }
+
+    
+
+
+    /// <summary>
+    /// مؤشر نسبة الاستلام المزدوج للعميل (سجل المتجر الداخلي + سجل شبكة بوسطة)
+    /// GET /api/orders/customer-delivery-stats?phone=...&customerId=...
+    /// </summary>
+    [HttpGet("customer-delivery-stats")]
+    public async Task<IActionResult> GetCustomerDeliveryStats([FromQuery] string? phone, [FromQuery] int? customerId)
+    {
+        if (string.IsNullOrWhiteSpace(phone) && !customerId.HasValue)
+            return BadRequest("Phone or CustomerId is required.");
+
+        var cleanPhone = (phone ?? "").Trim();
+        if (cleanPhone.StartsWith("+2")) cleanPhone = cleanPhone.Substring(2);
+        if (cleanPhone.StartsWith("20") && cleanPhone.Length > 10) cleanPhone = cleanPhone.Substring(2);
+        var phoneSuffix = cleanPhone.Length >= 9 ? cleanPhone.Substring(cleanPhone.Length - 9) : cleanPhone;
+
+        string cacheKey = $"cust_delivery_stats_{phoneSuffix}_{customerId}";
+        if (_cache.TryGetValue(cacheKey, out object? cached) && cached != null)
+        {
+            return Ok(cached);
+        }
+
+        // 1. Internal Store Stats
+        var storeOrdersQuery = _db.Orders.AsNoTracking();
+        if (customerId.HasValue && customerId.Value > 0)
+        {
+            storeOrdersQuery = storeOrdersQuery.Where(o => o.CustomerId == customerId.Value);
+        }
+        else if (!string.IsNullOrEmpty(phoneSuffix))
+        {
+            storeOrdersQuery = storeOrdersQuery.Where(o => o.Customer != null && o.Customer.Phone != null && o.Customer.Phone.Contains(phoneSuffix));
+        }
+
+        var storeOrders = await storeOrdersQuery
+            .Select(o => new { o.Id, o.Status, o.TotalAmount })
+            .ToListAsync();
+
+        int storeTotal = storeOrders.Count;
+        int storeDelivered = storeOrders.Count(o => o.Status == OrderStatus.Delivered);
+        int storeReturned = storeOrders.Count(o => o.Status == OrderStatus.Returned || o.Status == OrderStatus.PartiallyReturned || o.Status == OrderStatus.ReturnInShipping);
+        int storeInTransit = storeOrders.Count(o => o.Status == OrderStatus.OutForDelivery);
+        int storeCancelled = storeOrders.Count(o => o.Status == OrderStatus.Cancelled);
+
+        decimal? storeRate = null;
+        int completedShipments = storeDelivered + storeReturned;
+        if (completedShipments > 0)
+        {
+            storeRate = Math.Round((decimal)storeDelivered / completedShipments * 100m, 1);
+        }
+
+        string storeBadge = "new";
+        if (completedShipments == 0 && storeInTransit > 0)
+        {
+            storeBadge = "in_transit";
+        }
+        else if (completedShipments > 0)
+        {
+            if (storeRate >= 85m) storeBadge = "trusted";
+            else if (storeRate >= 60m) storeBadge = "normal";
+            else storeBadge = "risky";
+        }
+
+        // 2. Bosta Deliverability Stats (via Bosta API)
+        object bostaStats = new
+        {
+            available = false,
+            connected = false,
+            totalShipments = 0,
+            delivered = 0,
+            returned = 0,
+            inTransit = 0,
+            rate = (decimal?)null,
+            badge = "no_data",
+            riskLevel = "unknown"
+        };
+
+        var storeSettings = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(x => x.StoreConfigId == 1);
+        if (storeSettings != null && !string.IsNullOrEmpty(storeSettings.BostaApiKey) && !string.IsNullOrEmpty(phoneSuffix))
+        {
+            try
+            {
+                string baseUrl = storeSettings.BostaUseSandbox ? "https://stg-api.bosta.co" : "https://api.bosta.co";
+                using var client = new System.Net.Http.HttpClient();
+                client.Timeout = TimeSpan.FromSeconds(5);
+                client.DefaultRequestHeaders.Add("Authorization", storeSettings.BostaApiKey);
+
+                var bostaRes = await client.GetAsync($"{baseUrl}/api/v2/deliveries?pageNo=1&pageSize=50&search={phoneSuffix}");
+                if (bostaRes.IsSuccessStatusCode)
+                {
+                    var json = await bostaRes.Content.ReadAsStringAsync();
+                    using var doc = System.Text.Json.JsonDocument.Parse(json);
+                    if (doc.RootElement.TryGetProperty("data", out var dataEl) && dataEl.TryGetProperty("deliveries", out var delArray))
+                    {
+                        int bTotal = delArray.GetArrayLength();
+                        int bDelivered = 0;
+                        int bReturned = 0;
+                        int bTransit = 0;
+
+                        foreach (var d in delArray.EnumerateArray())
+                        {
+                            string stateVal = "";
+                            if (d.TryGetProperty("state", out var stateEl))
+                            {
+                                if (stateEl.TryGetProperty("value", out var valEl))
+                                    stateVal = valEl.GetString() ?? "";
+                            }
+                            else if (d.TryGetProperty("status", out var statEl))
+                            {
+                                stateVal = statEl.GetString() ?? "";
+                            }
+
+                            var sLower = stateVal.ToLower();
+                            if (sLower.Contains("deliver")) bDelivered++;
+                            else if (sLower.Contains("return") || sLower.Contains("cancel") || sLower.Contains("exception") || sLower.Contains("terminat")) bReturned++;
+                            else if (sLower.Contains("transit") || sLower.Contains("out") || sLower.Contains("pending") || sLower.Contains("route")) bTransit++;
+                        }
+
+                        decimal? bRate = null;
+                        int bCompleted = bDelivered + bReturned;
+                        if (bCompleted > 0)
+                        {
+                            bRate = Math.Round((decimal)bDelivered / bCompleted * 100m, 1);
+                        }
+
+                        string bBadge = "no_data";
+                        string bRisk = "low";
+                        if (bCompleted > 0)
+                        {
+                            if (bRate >= 85m) { bBadge = "trusted"; bRisk = "low"; }
+                            else if (bRate >= 60m) { bBadge = "normal"; bRisk = "medium"; }
+                            else { bBadge = "risky"; bRisk = "high"; }
+                        }
+
+                        bostaStats = new
+                        {
+                            available = true,
+                            connected = true,
+                            totalShipments = bTotal,
+                            delivered = bDelivered,
+                            returned = bReturned,
+                            inTransit = bTransit,
+                            rate = bRate,
+                            badge = bBadge,
+                            riskLevel = bRisk
+                        };
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to query Bosta API for phone {Phone}", phoneSuffix);
+            }
+        }
+
+        var result = new
+        {
+            phone = phoneSuffix,
+            store = new
+            {
+                total = storeTotal,
+                delivered = storeDelivered,
+                returned = storeReturned,
+                inTransit = storeInTransit,
+                cancelled = storeCancelled,
+                rate = storeRate,
+                badge = storeBadge
+            },
+            bosta = bostaStats
+        };
+
+        _cache.Set(cacheKey, result, TimeSpan.FromMinutes(10));
+        return Ok(result);
+    }
+
 }
 
 public record ArchiveBatchDto(int[] Ids, bool? Archive = true);
@@ -1853,8 +2045,7 @@ public class PaymentItemDto
 public class ConvertToCostDto
 {
     public string RefundMethod { get; set; } = "credit"; // "cash" | "credit"
+
+    
+
 }
-
-public record GuestDraftCartDto(string Name, string Phone, List<GuestCartItemDto> Items);
-public record GuestCartItemDto(int ProductId, int? ProductVariantId, int Quantity);
-
