@@ -1867,7 +1867,7 @@ public class OrdersController : ControllerBase
         if (cleanPhone.StartsWith("20") && cleanPhone.Length > 10) cleanPhone = cleanPhone.Substring(2);
         var phoneSuffix = cleanPhone.Length >= 9 ? cleanPhone.Substring(cleanPhone.Length - 9) : cleanPhone;
 
-        string cacheKey = $"cust_delivery_stats_{phoneSuffix}_{customerId}";
+        string cacheKey = $"cust_delivery_stats_v3_{phoneSuffix}_{customerId}";
         if (_cache.TryGetValue(cacheKey, out object? cached) && cached != null)
         {
             return Ok(cached);
@@ -1961,33 +1961,49 @@ public class OrdersController : ControllerBase
                     using var doc = System.Text.Json.JsonDocument.Parse(json);
                     if (doc.RootElement.TryGetProperty("data", out var dataEl) && dataEl.TryGetProperty("deliveries", out var delArray))
                     {
-                        int apiTotal = delArray.GetArrayLength();
-                        if (apiTotal > 0)
+                        int apiMatchedCount = 0;
+                        int apiDelivered = 0;
+                        int apiReturned = 0;
+                        int apiTransit = 0;
+
+                        foreach (var d in delArray.EnumerateArray())
                         {
-                            int apiDelivered = 0;
-                            int apiReturned = 0;
-                            int apiTransit = 0;
-
-                            foreach (var d in delArray.EnumerateArray())
+                            // CRITICAL: Filter each delivery by receiver phone!
+                            string rPhone = "";
+                            if (d.TryGetProperty("receiver", out var recEl))
                             {
-                                string stateVal = "";
-                                if (d.TryGetProperty("state", out var stateEl))
-                                {
-                                    if (stateEl.TryGetProperty("value", out var valEl))
-                                        stateVal = valEl.GetString() ?? "";
-                                }
-                                else if (d.TryGetProperty("status", out var statEl))
-                                {
-                                    stateVal = statEl.GetString() ?? "";
-                                }
-
-                                var sLower = stateVal.ToLower();
-                                if (sLower.Contains("deliver")) apiDelivered++;
-                                else if (sLower.Contains("return") || sLower.Contains("cancel") || sLower.Contains("exception") || sLower.Contains("terminat")) apiReturned++;
-                                else if (sLower.Contains("transit") || sLower.Contains("out") || sLower.Contains("pending") || sLower.Contains("route")) apiTransit++;
+                                if (recEl.TryGetProperty("phone", out var pEl)) rPhone = pEl.GetString() ?? "";
+                                if (string.IsNullOrEmpty(rPhone) && recEl.TryGetProperty("secPhone", out var spEl)) rPhone = spEl.GetString() ?? "";
                             }
 
-                            bTotal = Math.Max(bTotal, apiTotal);
+                            var cleanRPhone = rPhone.Replace("+2", "").Replace(" ", "").Trim();
+                            if (string.IsNullOrEmpty(cleanRPhone) || (!cleanRPhone.EndsWith(phoneSuffix) && !cleanRPhone.Contains(phoneSuffix)))
+                            {
+                                // Does NOT belong to this customer - skip!
+                                continue;
+                            }
+
+                            apiMatchedCount++;
+                            string stateVal = "";
+                            if (d.TryGetProperty("state", out var stateEl))
+                            {
+                                if (stateEl.TryGetProperty("value", out var valEl))
+                                    stateVal = valEl.GetString() ?? "";
+                            }
+                            else if (d.TryGetProperty("status", out var statEl))
+                            {
+                                stateVal = statEl.GetString() ?? "";
+                            }
+
+                            var sLower = stateVal.ToLower();
+                            if (sLower.Contains("deliver")) apiDelivered++;
+                            else if (sLower.Contains("return") || sLower.Contains("cancel") || sLower.Contains("exception") || sLower.Contains("terminat")) apiReturned++;
+                            else if (sLower.Contains("transit") || sLower.Contains("out") || sLower.Contains("pending") || sLower.Contains("route")) apiTransit++;
+                        }
+
+                        if (apiMatchedCount > 0)
+                        {
+                            bTotal = Math.Max(bTotal, apiMatchedCount);
                             bDelivered = Math.Max(bDelivered, apiDelivered);
                             bReturned = Math.Max(bReturned, apiReturned);
                             bTransit = Math.Max(bTransit, apiTransit);
