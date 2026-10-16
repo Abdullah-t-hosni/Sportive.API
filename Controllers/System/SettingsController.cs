@@ -70,7 +70,13 @@ public class SettingsController : ControllerBase
             "ALTER TABLE `StoreSettings` ADD `Ga4PropertyId` longtext NULL;",
             "ALTER TABLE `StoreSettings` ADD `MinOrderPaymentMethods` varchar(500) NULL DEFAULT 'Cash,Vodafone,InstaPay';",
             "ALTER TABLE `StoreSettings` ADD `BarcodeShowBothPrices` tinyint(1) NOT NULL DEFAULT 0;",
-            "ALTER TABLE `StoreSettings` ADD `BarcodeShowBarcode` tinyint(1) NOT NULL DEFAULT 1;"
+            "ALTER TABLE `StoreSettings` ADD `BarcodeShowBarcode` tinyint(1) NOT NULL DEFAULT 1;",
+            "ALTER TABLE `StoreSettings` ADD `TermsAndConditionsAr` longtext NULL;",
+            "ALTER TABLE `StoreSettings` ADD `TermsAndConditionsEn` longtext NULL;",
+            "ALTER TABLE `StoreSettings` ADD `PrivacyPolicyAr` longtext NULL;",
+            "ALTER TABLE `StoreSettings` ADD `PrivacyPolicyEn` longtext NULL;",
+            "ALTER TABLE `StoreSettings` ADD `ReturnPolicyAr` longtext NULL;",
+            "ALTER TABLE `StoreSettings` ADD `ReturnPolicyEn` longtext NULL;"
         };
 
 
@@ -340,6 +346,12 @@ public class SettingsController : ControllerBase
             info.SiteMetaDescriptionAr    = dto.SiteMetaDescriptionAr;
             info.SiteMetaDescriptionEn    = dto.SiteMetaDescriptionEn;
             info.SiteKeywords             = dto.SiteKeywords;
+            info.TermsAndConditionsAr     = dto.TermsAndConditionsAr;
+            info.TermsAndConditionsEn     = dto.TermsAndConditionsEn;
+            info.PrivacyPolicyAr          = dto.PrivacyPolicyAr;
+            info.PrivacyPolicyEn          = dto.PrivacyPolicyEn;
+            info.ReturnPolicyAr           = dto.ReturnPolicyAr;
+            info.ReturnPolicyEn           = dto.ReturnPolicyEn;
             info.BarcodeShowPrice         = dto.BarcodeShowPrice;
             info.BarcodeShowBothPrices    = dto.BarcodeShowBothPrices;
             info.BarcodeShowBarcode       = dto.BarcodeShowBarcode;

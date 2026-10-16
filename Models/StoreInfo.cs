@@ -533,6 +533,25 @@ public class StoreInfo
     [JsonPropertyName("siteKeywords")]
     public string? SiteKeywords { get; set; }
 
+    // --- 11b. Legal Policies & Compliance (Meta & Consumer Law) ---
+    [JsonPropertyName("termsAndConditionsAr")]
+    public string? TermsAndConditionsAr { get; set; }
+
+    [JsonPropertyName("termsAndConditionsEn")]
+    public string? TermsAndConditionsEn { get; set; }
+
+    [JsonPropertyName("privacyPolicyAr")]
+    public string? PrivacyPolicyAr { get; set; }
+
+    [JsonPropertyName("privacyPolicyEn")]
+    public string? PrivacyPolicyEn { get; set; }
+
+    [JsonPropertyName("returnPolicyAr")]
+    public string? ReturnPolicyAr { get; set; }
+
+    [JsonPropertyName("returnPolicyEn")]
+    public string? ReturnPolicyEn { get; set; }
+
     // --- 12. Barcode Customization ---
     [JsonPropertyName("barcodeShowPrice")]
     public bool BarcodeShowPrice { get; set; } = true;
