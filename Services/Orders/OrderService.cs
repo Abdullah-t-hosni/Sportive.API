@@ -2701,10 +2701,10 @@ public class OrderService : IOrderService
 
             // Check if there is an associated return request or note indicating damage
             var returnReq = await _db.ReturnExchangeRequests.FirstOrDefaultAsync(r => r.OrderId == orderId);
-            bool isDamaged = returnReq?.Reason?.Contains("تالف") == true || 
-                            returnReq?.Reason?.Contains("Damaged") == true || 
-                            dto.Note?.Contains("تالف") == true || 
-                            dto.Note?.Contains("Damaged") == true;
+            bool isDamaged = returnReq?.Reason?.Contains("تالف", StringComparison.OrdinalIgnoreCase) == true || 
+                            returnReq?.Reason?.Contains("damaged", StringComparison.OrdinalIgnoreCase) == true || 
+                            dto.Note?.Contains("تالف", StringComparison.OrdinalIgnoreCase) == true || 
+                            dto.Note?.Contains("damaged", StringComparison.OrdinalIgnoreCase) == true;
 
             var existingReturnMovements = await _db.InventoryMovements
                 .Where(m => m.Reference == order.OrderNumber && m.Type == InventoryMovementType.ReturnIn)
@@ -2974,10 +2974,10 @@ public class OrderService : IOrderService
             if (dto.Status == OrderStatus.Returned)
             {
                 var returnReq = await _db.ReturnExchangeRequests.FirstOrDefaultAsync(r => r.OrderId == orderId);
-                isDamaged = returnReq?.Reason?.Contains("تالف") == true || 
-                            returnReq?.Reason?.Contains("Damaged") == true || 
-                            dto.Note?.Contains("تالف") == true || 
-                            dto.Note?.Contains("Damaged") == true;
+                isDamaged = returnReq?.Reason?.Contains("تالف", StringComparison.OrdinalIgnoreCase) == true || 
+                            returnReq?.Reason?.Contains("damaged", StringComparison.OrdinalIgnoreCase) == true || 
+                            dto.Note?.Contains("تالف", StringComparison.OrdinalIgnoreCase) == true || 
+                            dto.Note?.Contains("damaged", StringComparison.OrdinalIgnoreCase) == true;
             }
 
             // 🛡️ DUPLICATE RETURN PROTECTION: Fetch existing return movements for this order to prevent double-restocking
@@ -3188,7 +3188,10 @@ public class OrderService : IOrderService
                         order.Source,
                         autoSave: false,
                         warehouseId: order.WarehouseId,
-                        isDamaged: dto.Reason?.Contains("تالف") == true || dto.Reason?.Contains("Damaged") == true
+                        isDamaged: dto.Reason?.Contains("تالف", StringComparison.OrdinalIgnoreCase) == true || 
+                                   dto.Reason?.Contains("damaged", StringComparison.OrdinalIgnoreCase) == true ||
+                                   dto.Note?.Contains("تالف", StringComparison.OrdinalIgnoreCase) == true ||
+                                   dto.Note?.Contains("damaged", StringComparison.OrdinalIgnoreCase) == true
                     );
                 }
 
@@ -3314,7 +3317,10 @@ public class OrderService : IOrderService
                         autoSave: false,
                         force: true,
                         warehouseId: dto.WarehouseId,
-                        isDamaged: dto.Reason?.Contains("تالف") == true || dto.Reason?.Contains("Damaged") == true
+                        isDamaged: dto.Reason?.Contains("تالف", StringComparison.OrdinalIgnoreCase) == true || 
+                                   dto.Reason?.Contains("damaged", StringComparison.OrdinalIgnoreCase) == true ||
+                                   dto.Note?.Contains("تالف", StringComparison.OrdinalIgnoreCase) == true ||
+                                   dto.Note?.Contains("damaged", StringComparison.OrdinalIgnoreCase) == true
                     );
                 }
 
@@ -4022,7 +4028,10 @@ public class OrderService : IOrderService
                                 order.Source,
                                 autoSave: false,
                                 ignoreIdempotency: true,
-                                isDamaged: dto.Reason?.Contains("تالف") == true || dto.Reason?.Contains("Damaged") == true
+                                isDamaged: dto.Reason?.Contains("تالف", StringComparison.OrdinalIgnoreCase) == true || 
+                                           dto.Reason?.Contains("damaged", StringComparison.OrdinalIgnoreCase) == true ||
+                                           dto.Note?.Contains("تالف", StringComparison.OrdinalIgnoreCase) == true ||
+                                           dto.Note?.Contains("damaged", StringComparison.OrdinalIgnoreCase) == true
                             );
                         }
 
@@ -4091,7 +4100,10 @@ public class OrderService : IOrderService
                                 0,
                                 OrderSource.POS,
                                 autoSave: false,
-                                isDamaged: dto.Reason?.Contains("تالف") == true || dto.Reason?.Contains("Damaged") == true
+                                isDamaged: dto.Reason?.Contains("تالف", StringComparison.OrdinalIgnoreCase) == true || 
+                                           dto.Reason?.Contains("damaged", StringComparison.OrdinalIgnoreCase) == true ||
+                                           dto.Note?.Contains("تالف", StringComparison.OrdinalIgnoreCase) == true ||
+                                           dto.Note?.Contains("damaged", StringComparison.OrdinalIgnoreCase) == true
                             );
 
                             totalCost += (product.CostPrice ?? 0) * req.Quantity;

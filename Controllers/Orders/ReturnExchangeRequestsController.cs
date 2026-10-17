@@ -1181,7 +1181,10 @@ public class ReturnExchangeRequestsController : ControllerBase
 
                 if (_inventory != null)
                 {
-                    bool isDamaged = req.Reason?.Contains("تالف") == true || req.Reason?.Contains("Damaged") == true;
+                    bool isDamaged = req.Reason?.Contains("تالف", StringComparison.OrdinalIgnoreCase) == true || 
+                                     req.Reason?.Contains("damaged", StringComparison.OrdinalIgnoreCase) == true ||
+                                     req.AdminNotes?.Contains("تالف", StringComparison.OrdinalIgnoreCase) == true ||
+                                     req.AdminNotes?.Contains("damaged", StringComparison.OrdinalIgnoreCase) == true;
                     await _inventory.LogMovementAsync(
                         InventoryMovementType.ReturnIn,
                         qtyToRestock,
