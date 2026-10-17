@@ -91,6 +91,7 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
     public DbSet<InventoryAudit>     InventoryAudits     { get; set; }
     public DbSet<InventoryAuditItem> InventoryAuditItems => Set<InventoryAuditItem>();
+    public DbSet<InventoryChecklistSession> InventoryChecklistSessions { get; set; }
     public DbSet<InventoryMovement>  InventoryMovements  => Set<InventoryMovement>();
     public DbSet<InventoryOpeningBalance> InventoryOpeningBalances { get; set; }
     public DbSet<InventoryOpeningBalanceItem> InventoryOpeningBalanceItems { get; set; }
