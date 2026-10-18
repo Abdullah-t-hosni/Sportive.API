@@ -69,6 +69,27 @@ public class UpdateInventoryChecklistSessionDto
     public bool? IsActive { get; set; }
 }
 
+public class InventoryChecklistFilterMetricsDto
+{
+    public int? SessionId { get; set; }
+    public int? CategoryId { get; set; }
+    public int? WarehouseId { get; set; }
+    public int? BranchId { get; set; }
+    public int? BrandId { get; set; }
+    public string? Search { get; set; }
+    public bool? OnlyInStock { get; set; }
+    public List<int>? VerifiedProductIds { get; set; }
+    public List<int>? IssueProductIds { get; set; }
+}
+
+public class InventoryChecklistFilterMetricsResultDto
+{
+    public int TotalCount { get; set; }
+    public int VerifiedCount { get; set; }
+    public int IssueCount { get; set; }
+    public int PendingCount { get; set; }
+}
+
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
@@ -791,6 +812,161 @@ public class InventoryChecklistController : ControllerBase
             isDirectReply = false,
             notifiedCount = notifiedUserIds.Count,
             notifiedUserIds = notifiedUserIds.ToList()
+        });
+    }
+
+    private async Task<List<int>> GetCategoryDescendants(int categoryId)
+    {
+        var allCategories = await _db.Categories
+            .AsNoTracking()
+            .Select(c => new { c.Id, c.ParentId })
+            .ToListAsync();
+
+        var categoryIds = new List<int> { categoryId };
+        var toProcess = new Queue<int>();
+        toProcess.Enqueue(categoryId);
+
+        while (toProcess.Count > 0)
+        {
+            var currentId = toProcess.Dequeue();
+            var children = allCategories.Where(c => c.ParentId == currentId).Select(c => c.Id);
+            foreach (var childId in children)
+            {
+                if (!categoryIds.Contains(childId))
+                {
+                    categoryIds.Add(childId);
+                    toProcess.Enqueue(childId);
+                }
+            }
+        }
+
+        return categoryIds;
+    }
+
+    /// <summary>
+    /// حساب الإحصائيات (الإجمالي، المطابق، العجز، المتبقي) ديناميكياً بناءً على أي فلتر مفعل
+    /// </summary>
+    [HttpPost("filter-metrics")]
+    public async Task<IActionResult> GetFilterMetrics([FromBody] InventoryChecklistFilterMetricsDto dto)
+    {
+        if (dto == null) return BadRequest(new { message = "بيانات غير صالحة" });
+
+        var verifiedIds = dto.VerifiedProductIds ?? new List<int>();
+        var issueIds = dto.IssueProductIds ?? new List<int>();
+
+        // إذا لم يتم تمرير المعرفات من الواجهة، نجلبها من الجلسة في قاعدة البيانات
+        if (dto.SessionId.HasValue && dto.SessionId.Value > 0 && verifiedIds.Count == 0 && issueIds.Count == 0)
+        {
+            var session = await _db.InventoryChecklistSessions
+                .AsNoTracking()
+                .FirstOrDefaultAsync(s => s.Id == dto.SessionId.Value);
+
+            if (session != null && !string.IsNullOrWhiteSpace(session.ChecklistJson))
+            {
+                try
+                {
+                    var dict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, System.Text.Json.JsonElement>>(session.ChecklistJson);
+                    if (dict != null)
+                    {
+                        foreach (var kvp in dict)
+                        {
+                            if (int.TryParse(kvp.Key, out int pid))
+                            {
+                                if (kvp.Value.TryGetProperty("status", out var st))
+                                {
+                                    var stVal = st.GetString();
+                                    if (stVal == "verified") verifiedIds.Add(pid);
+                                    else if (stVal == "issue") issueIds.Add(pid);
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to parse checklist json in GetFilterMetrics");
+                }
+            }
+        }
+
+        var query = _db.Products
+            .AsNoTracking()
+            .AsQueryable();
+
+        // 1. فلتر الأقسام (القسم الحالي + كافة تفرعاته الشجرية + الأقسام الفرعية المرتبطة)
+        if (dto.CategoryId.HasValue && dto.CategoryId.Value > 0)
+        {
+            var catIds = await GetCategoryDescendants(dto.CategoryId.Value);
+            query = query.Where(p => (p.CategoryId.HasValue && catIds.Contains(p.CategoryId.Value)) 
+                || _db.ProductSecondaryCategories.Any(sc => sc.ProductId == p.Id && catIds.Contains(sc.CategoryId)));
+        }
+
+        // 2. فلتر المخزن / الرصيد
+        if (dto.WarehouseId.HasValue && dto.WarehouseId.Value > 0)
+        {
+            if (dto.OnlyInStock == true)
+            {
+                query = query.Where(p => _db.ProductWarehouseStocks
+                    .Where(w => w.ProductVariant.ProductId == p.Id && w.WarehouseId == dto.WarehouseId.Value)
+                    .Sum(w => (int?)w.Quantity) > 0);
+            }
+        }
+        else if (dto.OnlyInStock == true)
+        {
+            query = query.Where(p => p.TotalStock > 0);
+        }
+
+        // 3. فلتر الماركة / البراند
+        if (dto.BrandId.HasValue && dto.BrandId.Value > 0)
+        {
+            query = query.Where(p => p.BrandId == dto.BrandId.Value);
+        }
+
+        // 4. فلتر البحث النصي (اسم، كود SKU، باركود، مقاس، لون)
+        if (!string.IsNullOrWhiteSpace(dto.Search))
+        {
+            var s = dto.Search.Trim().ToLower();
+            bool isId = int.TryParse(s, out int searchId);
+            query = query.Where(p =>
+                p.NameAr.ToLower().Contains(s) ||
+                p.NameEn.ToLower().Contains(s) ||
+                p.SKU.ToLower().Contains(s) ||
+                (p.EgyptianProductCode != null && p.EgyptianProductCode.ToLower().Contains(s)) ||
+                (p.SaudiProductCode != null && p.SaudiProductCode.ToLower().Contains(s)) ||
+                (isId && p.Id == searchId) ||
+                (p.Brand != null && (p.Brand.NameAr.ToLower().Contains(s) || p.Brand.NameEn.ToLower().Contains(s))) ||
+                p.Variants.Any(v => 
+                    (v.Size != null && v.Size.ToLower().Contains(s)) || 
+                    (v.Color != null && v.Color.ToLower().Contains(s)) || 
+                    (v.ColorAr != null && v.ColorAr.ToLower().Contains(s)) ||
+                    (p.SKU + "-" + v.Size + "-" + v.Color).ToLower().Contains(s)
+                )
+            );
+        }
+
+        // تنفيذ العد في قاعدة البيانات بدقة وسرعة
+        var totalCount = await query.CountAsync();
+
+        int verifiedCount = 0;
+        if (verifiedIds.Count > 0 && totalCount > 0)
+        {
+            verifiedCount = await query.CountAsync(p => verifiedIds.Contains(p.Id));
+        }
+
+        int issueCount = 0;
+        if (issueIds.Count > 0 && totalCount > 0)
+        {
+            issueCount = await query.CountAsync(p => issueIds.Contains(p.Id));
+        }
+
+        int pendingCount = Math.Max(0, totalCount - (verifiedCount + issueCount));
+
+        return Ok(new InventoryChecklistFilterMetricsResultDto
+        {
+            TotalCount = totalCount,
+            VerifiedCount = verifiedCount,
+            IssueCount = issueCount,
+            PendingCount = pendingCount
         });
     }
 }
