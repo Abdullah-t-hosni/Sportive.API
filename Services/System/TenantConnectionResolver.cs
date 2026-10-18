@@ -14,9 +14,24 @@ public class TenantConnectionResolver : ITenantConnectionResolver
     {
         _tenantContext = tenantContext;
         
-        _baseConnectionString = Environment.GetEnvironmentVariable("DATABASE_URL")
+        var rawConnStr = Environment.GetEnvironmentVariable("DATABASE_URL")
             ?? configuration.GetConnectionString("DefaultConnection")
             ?? throw new InvalidOperationException("Baseline DefaultConnection connection string is missing.");
+
+        var builder = new MySqlConnectionStringBuilder(rawConnStr)
+        {
+            Pooling = true,
+            MinimumPoolSize = 3,
+            MaximumPoolSize = 15,
+            ConnectionIdleTimeout = 3600,
+            ConnectionLifeTime = 0,
+            Keepalive = 30,
+            ConnectionReset = false,
+            AllowUserVariables = true,
+            ConvertZeroDateTime = true
+        };
+
+        _baseConnectionString = builder.ConnectionString;
     }
 
     public string GetConnectionString()
@@ -47,13 +62,15 @@ public class TenantConnectionResolver : ITenantConnectionResolver
             UserID = tenant.DatabaseUser,
             Password = tenant.DatabasePassword,
             Pooling = true,
-            MinimumPoolSize = 1,
-            MaximumPoolSize = 25,
-            ConnectionLifeTime = 300
+            MinimumPoolSize = 3,
+            MaximumPoolSize = 15,
+            ConnectionIdleTimeout = 3600,
+            ConnectionLifeTime = 0,
+            Keepalive = 30,
+            ConnectionReset = false,
+            AllowUserVariables = true,
+            ConvertZeroDateTime = true
         };
-
-        builder.AllowUserVariables = true;
-        builder.ConvertZeroDateTime = true;
 
         return builder.ConnectionString;
     }

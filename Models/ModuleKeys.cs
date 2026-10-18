@@ -39,6 +39,7 @@ public static class ModuleKeys
     public const string InventoryOpening = "inventory-opening";
     public const string Import = "import";
     public const string InventoryCount = "inventory-count";
+    public const string InventoryAuditCatalog = "inventory-audit-catalog";
 
     // Purchases
     public const string PurchasesGroup = "purchases-group";
@@ -121,7 +122,7 @@ public static class ModuleKeys
         OrdersMain, Orders, OrdersDelete, OrdersEdit, ReturnsFull, ReturnsPartial, Customers, CustomerReceipts, Reviews,
         ProductsGroup, Products, Categories, Brands, Units, Barcode, ColorGroups, SizeGroups, SizeGuides,
         PromotionsGroup, Promotions, Coupons, Discounts,
-        InventoryGroup, Inventory, InventoryOpening, Import, InventoryCount,
+        InventoryGroup, Inventory, InventoryOpening, Import, InventoryCount, InventoryAuditCatalog,
         PurchasesGroup, PurchasesMain, Suppliers, Purchases, PurchaseReturns, SupplierVouchers,
         AccountingGroup, AccountingMain, Chart, Mapping, Journal, Receipts, Payments, Installments,
         AssetsGroup, AssetsMain, Assets, AssetCategories, AssetDepBatch, AssetDisposals, AssetPurchases,

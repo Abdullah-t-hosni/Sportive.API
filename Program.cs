@@ -56,42 +56,14 @@ try
     connBuilder.Pooling = true;
     connBuilder.AllowUserVariables = true;
     connBuilder.ConvertZeroDateTime = true;
-    connBuilder.ConnectionIdleTimeout = 300; // keep connections alive in pool for 5 min to reuse them
-    connBuilder.Keepalive = 45;
+    connBuilder.ConnectionIdleTimeout = 3600; // keep connections alive in pool for 1 hour
+    connBuilder.ConnectionLifeTime = 0; // connections never expire based on age
+    connBuilder.Keepalive = 30; // send keepalive every 30s to prevent TCP drops
+    connBuilder.ConnectionReset = false;
     connBuilder.ConnectionTimeout = 60;
     connBuilder.DefaultCommandTimeout = 120;
-
-    // Dynamically resolve Maximum Pool Size
-    if (!connStr.Contains("Max Pool Size", StringComparison.OrdinalIgnoreCase) && 
-        !connStr.Contains("MaximumPoolSize", StringComparison.OrdinalIgnoreCase))
-    {
-        var envMax = Environment.GetEnvironmentVariable("DATABASE_MAX_POOL_SIZE");
-        if (uint.TryParse(envMax, out var maxPoolSize))
-        {
-            connBuilder.MaximumPoolSize = maxPoolSize;
-        }
-        else
-        {
-            var configMax = builder.Configuration.GetValue<uint?>("Database:MaximumPoolSize");
-            connBuilder.MaximumPoolSize = configMax ?? 50;
-        }
-    }
-
-    // Keep minimum connections warm in the pool to reuse existing TCP connections
-    // without triggering MySQL's max_connections_per_hour
-    if (!connStr.Contains("Min Pool Size", StringComparison.OrdinalIgnoreCase) && 
-        !connStr.Contains("MinimumPoolSize", StringComparison.OrdinalIgnoreCase))
-    {
-        var envMin = Environment.GetEnvironmentVariable("DATABASE_MIN_POOL_SIZE");
-        if (uint.TryParse(envMin, out var minPoolSize))
-        {
-            connBuilder.MinimumPoolSize = minPoolSize;
-        }
-        else
-        {
-            connBuilder.MinimumPoolSize = 3;
-        }
-    }
+    connBuilder.MaximumPoolSize = 15;
+    connBuilder.MinimumPoolSize = 3;
 
     connStr = connBuilder.ConnectionString;
 }
@@ -106,11 +78,13 @@ try
     masterBuilder.Pooling = true;
     masterBuilder.AllowUserVariables = true;
     masterBuilder.ConvertZeroDateTime = true;
-    masterBuilder.ConnectionIdleTimeout = 300;
-    masterBuilder.Keepalive = 45;
+    masterBuilder.ConnectionIdleTimeout = 3600;
+    masterBuilder.ConnectionLifeTime = 0;
+    masterBuilder.Keepalive = 30;
+    masterBuilder.ConnectionReset = false;
     masterBuilder.ConnectionTimeout = 30;
     masterBuilder.DefaultCommandTimeout = 60;
-    masterBuilder.MaximumPoolSize = 50; // master database doesn't need as large of a pool
+    masterBuilder.MaximumPoolSize = 10;
     masterBuilder.MinimumPoolSize = 1;
     masterConnStr = masterBuilder.ConnectionString;
 }

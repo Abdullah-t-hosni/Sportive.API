@@ -78,7 +78,9 @@ public class PermissionService : IPermissionService
                         ModuleKeys.Products,
                         ModuleKeys.ProductsGroup,
                         ModuleKeys.Categories,
-                        ModuleKeys.Units
+                        ModuleKeys.Units,
+                        ModuleKeys.InventoryAuditCatalog,
+                        ModuleKeys.InventoryAuditCatalog + ".edit"
                     });
                 }
                 // --------------------------------------------------------------------

@@ -49,10 +49,10 @@ public class BackupHostedService : BackgroundService
                 _log.LogError(ex, "[Backup] Error during scheduled backup check");
             }
 
-            // Check every 1 minute
+            // Check every 15 minutes
             try
             {
-                await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+                await Task.Delay(TimeSpan.FromMinutes(15), stoppingToken);
             }
             catch (TaskCanceledException) { break; }
         }
