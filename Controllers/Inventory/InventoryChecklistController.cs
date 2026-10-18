@@ -46,6 +46,15 @@ public class ResetInventoryChecklistDto
     public string? Reason { get; set; }
 }
 
+public class UpdateInventoryChecklistSessionDto
+{
+    public string? Title { get; set; }
+    public string? Notes { get; set; }
+    public int? WarehouseId { get; set; }
+    public int? BranchId { get; set; }
+    public bool? IsActive { get; set; }
+}
+
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
@@ -522,5 +531,93 @@ public class InventoryChecklistController : ControllerBase
             .ToListAsync();
 
         return Ok(list);
+    }
+
+    /// <summary>
+    /// تعديل بيانات جلسة الجرد (المسمى، الملاحظات، المخزن، الحالة)
+    /// </summary>
+    [HttpPut("{id}")]
+    public async Task<IActionResult> UpdateSession(int id, [FromBody] UpdateInventoryChecklistSessionDto dto)
+    {
+        var session = await _db.InventoryChecklistSessions.FirstOrDefaultAsync(s => s.Id == id);
+        if (session == null) return NotFound(new { message = "الجلسة غير موجودة" });
+
+        if (!string.IsNullOrWhiteSpace(dto.Title))
+            session.Title = dto.Title.Trim();
+
+        if (dto.Notes != null)
+            session.Notes = dto.Notes.Trim();
+
+        if (dto.WarehouseId.HasValue)
+            session.WarehouseId = dto.WarehouseId.Value > 0 ? dto.WarehouseId.Value : null;
+
+        if (dto.BranchId.HasValue)
+            session.BranchId = dto.BranchId.Value > 0 ? dto.BranchId.Value : null;
+
+        if (dto.IsActive.HasValue)
+        {
+            session.IsActive = dto.IsActive.Value;
+            if (!session.IsActive && !session.ClosedAt.HasValue)
+            {
+                session.ClosedAt = TimeHelper.GetEgyptTime();
+                session.ClosedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                session.ClosedByName = User.Identity?.Name ?? User.FindFirst("name")?.Value ?? "المدير";
+            }
+            else if (session.IsActive)
+            {
+                session.ClosedAt = null;
+                session.ClosedByUserId = null;
+                session.ClosedByName = null;
+            }
+        }
+
+        session.UpdatedAt = TimeHelper.GetEgyptTime();
+        await _db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            success = true,
+            message = "تم تعديل بيانات الجلسة بنجاح",
+            session = new
+            {
+                session.Id,
+                session.Title,
+                session.BranchId,
+                session.WarehouseId,
+                session.CreatedByName,
+                session.StartedAt,
+                session.ClosedAt,
+                session.ClosedByName,
+                session.VerifiedCount,
+                session.IssueCount,
+                session.TotalItemsCount,
+                session.IsActive,
+                session.Notes,
+                session.CreatedAt,
+                session.UpdatedAt
+            }
+        });
+    }
+
+    /// <summary>
+    /// حذف جلسة تدقيق الجرد نهائيًا
+    /// </summary>
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteSession(int id)
+    {
+        var session = await _db.InventoryChecklistSessions.FirstOrDefaultAsync(s => s.Id == id);
+        if (session == null) return NotFound(new { message = "الجلسة غير موجودة" });
+
+        _db.InventoryChecklistSessions.Remove(session);
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation("Checklist session {SessionId} ('{Title}') deleted by user {User}", 
+            id, session.Title, User.Identity?.Name);
+
+        return Ok(new
+        {
+            success = true,
+            message = $"تم حذف الجلسة '{session.Title}' بنجاح"
+        });
     }
 }

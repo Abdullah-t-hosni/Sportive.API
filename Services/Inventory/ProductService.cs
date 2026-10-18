@@ -141,6 +141,32 @@ public class ProductService : IProductService
         if (filter.BrandId.HasValue)
             query = query.Where(p => p.BrandId == filter.BrandId);
 
+        if (!string.IsNullOrWhiteSpace(filter.ProductIds))
+        {
+            var ids = filter.ProductIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                                      .Select(s => int.TryParse(s, out var id) ? id : (int?)null)
+                                      .Where(id => id.HasValue)
+                                      .Select(id => id!.Value)
+                                      .ToList();
+            if (ids.Count > 0)
+            {
+                query = query.Where(p => ids.Contains(p.Id));
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.ExcludeProductIds))
+        {
+            var excludeIds = filter.ExcludeProductIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                                                     .Select(s => int.TryParse(s, out var id) ? id : (int?)null)
+                                                     .Where(id => id.HasValue)
+                                                     .Select(id => id!.Value)
+                                                     .ToList();
+            if (excludeIds.Count > 0)
+            {
+                query = query.Where(p => !excludeIds.Contains(p.Id));
+            }
+        }
+
         if (!string.IsNullOrWhiteSpace(filter.Size))
             query = query.Where(p => p.Variants.Any(v => v.Size == filter.Size));
 
