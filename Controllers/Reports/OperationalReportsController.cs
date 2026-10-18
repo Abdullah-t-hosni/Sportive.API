@@ -3765,8 +3765,8 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] int? branchId = null)
     {
         var now = TimeHelper.GetEgyptTime();
-        var from = (fromDate ?? new DateTime(now.Year, now.Month, 1)).Date;
-        var to = (toDate ?? now).Date.AddDays(1).AddTicks(-1);
+        var from = (fromDate ?? new DateTime(now.Year, now.Month, 1)).Date.AddHours(TimeHelper.GetBusinessDayEndHour());
+        var to = (toDate ?? now).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
 
         var ordersQuery = _db.Orders.AsNoTracking()
             .Include(o => o.Customer)
@@ -3781,21 +3781,91 @@ public class OperationalReportsController : ControllerBase
 
         var orders = await ordersQuery.ToListAsync();
 
+        var orderIds = orders.Select(o => o.Id).ToList();
+        var orderNumbers = orders.Select(o => o.OrderNumber).Where(r => !string.IsNullOrEmpty(r)).Distinct().ToList();
+
+        // 1. Resolve Account Mappings with Chart of Accounts fallback
+        var maps = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key.ToLower(), m => m.AccountId);
+        var salesReturnAccId = maps.GetValueOrDefault("salesreturnaccountid");
+        if (!salesReturnAccId.HasValue)
+        {
+            salesReturnAccId = await _db.Accounts.AsNoTracking()
+                .Where(a => a.Code == "4102" || a.Code.StartsWith("4102") || a.Code.StartsWith("4103") || (a.NameAr != null && a.NameAr.Contains("مرتجع المبيعات")))
+                .Select(a => (int?)a.Id)
+                .FirstOrDefaultAsync();
+        }
+
+        var salesDiscountAccId = maps.GetValueOrDefault("salesdiscountaccountid");
+        if (!salesDiscountAccId.HasValue)
+        {
+            salesDiscountAccId = await _db.Accounts.AsNoTracking()
+                .Where(a => a.Code == "410101" || a.Code.StartsWith("410101") || (a.NameAr != null && (a.NameAr.Contains("الخصم الممنوح") || a.NameAr.Contains("الخصم المسموح"))))
+                .Select(a => (int?)a.Id)
+                .FirstOrDefaultAsync();
+        }
+
+        var cogsAccId = maps.GetValueOrDefault("costofgoodssoldaccountid");
+        if (!cogsAccId.HasValue)
+        {
+            cogsAccId = await _db.Accounts.AsNoTracking()
+                .Where(a => a.Code == "51101" || a.Code.StartsWith("51101") || a.Code.StartsWith("511") || (a.NameAr != null && a.NameAr.Contains("تكلفة البضاعة")))
+                .Select(a => (int?)a.Id)
+                .FirstOrDefaultAsync();
+        }
+
+        // 2. Fetch posted COGS from General Ledger (Account 51101) for these orders
+        var cogsMapByOrderId = new Dictionary<int, decimal>();
+        var cogsMapByRef = new Dictionary<string, decimal>();
+        if (cogsAccId.HasValue)
+        {
+            var cogsQuery = await _db.JournalLines.AsNoTracking()
+                .Where(l => l.AccountId == cogsAccId.Value 
+                         && l.JournalEntry.Status == JournalEntryStatus.Posted
+                         && l.JournalEntry.Type == JournalEntryType.SalesInvoice
+                         && l.Debit > 0
+                         && ((l.OrderId.HasValue && orderIds.Contains(l.OrderId.Value)) 
+                             || (l.JournalEntry.OrderId.HasValue && orderIds.Contains(l.JournalEntry.OrderId.Value)) 
+                             || (l.JournalEntry.Reference != null && orderNumbers.Contains(l.JournalEntry.Reference))))
+                .Select(l => new {
+                    OrderId = l.OrderId ?? l.JournalEntry.OrderId ?? 0,
+                    Ref = l.JournalEntry.Reference,
+                    l.Debit
+                })
+                .ToListAsync();
+
+            cogsMapByOrderId = cogsQuery.Where(x => x.OrderId > 0).GroupBy(x => x.OrderId).ToDictionary(g => g.Key, g => g.Sum(x => x.Debit));
+            cogsMapByRef = cogsQuery.Where(x => !string.IsNullOrEmpty(x.Ref)).GroupBy(x => x.Ref!).ToDictionary(g => g.Key, g => g.Sum(x => x.Debit));
+        }
+
         var invoiceRows = new List<Sportive.API.DTOs.Reports.InvoiceProfitabilityDto>();
 
         foreach (var order in orders)
         {
-            decimal revenue = order.TotalAmount - order.TotalVatAmount; // net revenue without tax
-            decimal cost = 0;
+            decimal orderSoldItemsTotal = order.Items
+                .Where(item => item.UnitPrice > 0 && item.TotalPrice > 0 && item.Quantity > 0)
+                .Sum(item => item.TotalPrice);
 
-            foreach (var item in order.Items)
+            decimal orderTotalDiscounts = order.DiscountAmount + order.TemporalDiscount + order.LoyaltyDiscountAmount;
+            decimal grossRevenue = Math.Max(0, orderSoldItemsTotal - orderTotalDiscounts);
+            decimal revenue = grossRevenue;
+
+            decimal cost = 0;
+            if (cogsMapByOrderId.TryGetValue(order.Id, out var postedCogs))
             {
-                decimal itemCost = item.Product?.CostPrice ?? 0;
-                cost += itemCost * item.Quantity; // Full quantity sold (returns handled as separate rows)
+                cost = postedCogs;
+            }
+            else if (!string.IsNullOrEmpty(order.OrderNumber) && cogsMapByRef.TryGetValue(order.OrderNumber, out var postedRefCogs))
+            {
+                cost = postedRefCogs;
+            }
+            else
+            {
+                cost = order.Items
+                    .Sum(item => (item.Product?.CostPrice ?? 0) * item.Quantity);
             }
 
-            decimal profit = revenue - cost;
-            decimal margin = revenue > 0 ? (profit / revenue) * 100 : 0;
+            decimal profit = grossRevenue - cost;
+            decimal margin = grossRevenue > 0 ? (profit / grossRevenue) * 100 : 0;
 
             invoiceRows.Add(new Sportive.API.DTOs.Reports.InvoiceProfitabilityDto {
                 OrderId = order.Id,
@@ -3810,10 +3880,7 @@ public class OperationalReportsController : ControllerBase
         }
 
         // Fetch SalesReturn journal entries in the period to represent all kinds of returns (including direct and partial ones)
-        var maps = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key.ToLower(), m => m.AccountId);
-        var salesReturnAccId = maps.GetValueOrDefault("salesreturnaccountid");
-        var salesDiscountAccId = maps.GetValueOrDefault("salesdiscountaccountid");
-        var cogsAccId = maps.GetValueOrDefault("costofgoodssoldaccountid");
+        var maps2 = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key.ToLower(), m => m.AccountId);
 
         if (salesReturnAccId.HasValue)
         {

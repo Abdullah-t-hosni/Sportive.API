@@ -35,14 +35,10 @@ public class ProfitabilityController : ControllerBase
         [FromQuery] bool      excel      = false,
         [FromQuery] int?      branchId   = null)
     {
-        // Ensure dates are parsed correctly and treated as inclusive of the Egypt timezone offset if needed
-        var from = fromDate?.Date ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1);
-        var to   = toDate?.Date ?? TimeHelper.GetEgyptTime().Date;
-        
-        // Broaden range to ensure we capture orders that might be stored in UTC
-        // by pushing the start back and end forward by a few hours if the DB is UTC
-        var startRange = from.Date;
-        var endRange   = to.Date.AddDays(1).AddTicks(-1);
+        // Ensure dates are parsed correctly and align with Egypt business day cutoff
+        var now = TimeHelper.GetEgyptTime();
+        var from = (fromDate ?? new DateTime(now.Year, 1, 1)).Date.AddHours(TimeHelper.GetBusinessDayEndHour());
+        var to = (toDate ?? now).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
 
         int? isolatedBranchId = await User.HasViewAllBranchesAsync(HttpContext) ? branchId : User.GetBranchId();
 
@@ -58,8 +54,8 @@ public class ProfitabilityController : ControllerBase
             .Include(i => i.Product)
                 .ThenInclude(p => p!.Variants)
             .Where(i => i.Order.Status != OrderStatus.Cancelled
-                     && i.Order.CreatedAt >= startRange
-                     && i.Order.CreatedAt <= endRange);
+                     && i.Order.CreatedAt >= from
+                     && i.Order.CreatedAt <= to);
 
         if (isolatedBranchId.HasValue)
         {
@@ -125,13 +121,14 @@ public class ProfitabilityController : ControllerBase
                     // السعر قبل خصم الفاتورة (لكن بعد خصم السطر إن وجد)
                     var lineSubtotal = i.TotalPrice;
                     
-                    // توزيع خصم رأس الفاتورة نسبياً فقط (بدون إدخال رسوم الشحن في ربحية المنتج)
+                    // توزيع خصم رأس الفاتورة نسبياً فقط (يشمل الخصم اليدوي + خصم العروض + نقاط الولاء)
                     decimal lineOrderDiscountShare = 0;
+                    decimal orderTotalDiscount = i.Order.DiscountAmount + i.Order.TemporalDiscount + i.Order.LoyaltyDiscountAmount;
 
-                    if (i.Order.SubTotal > 0)
+                    if (i.Order.SubTotal > 0 && orderTotalDiscount > 0)
                     {
                         var ratio = lineSubtotal / i.Order.SubTotal;
-                        lineOrderDiscountShare = ratio * i.Order.DiscountAmount;
+                        lineOrderDiscountShare = ratio * orderTotalDiscount;
                     }
 
                     // صافي الإيراد من هذا السطر لهذه الكمية
@@ -143,29 +140,17 @@ public class ProfitabilityController : ControllerBase
                     totalItemDiscount += i.DiscountAmount + (lineOrderDiscountShare * qtyFactor);
                 }
 
-                // التكلفة الصافية (تكلفة المنتج فقط)
-                // FIFO COST: Fetch the actual cost recorded in the inventory movement for this order
-                var orderNumbers = g.Select(i => i.Order.OrderNumber).Distinct().ToList();
-                var movements = _db.InventoryMovements
-                    .Where(m => m.Type == InventoryMovementType.Sale && m.Reference != null && orderNumbers.Contains(m.Reference) && m.ProductId == product.Id)
-                    .ToList();
-
+                // التكلفة الصافية: مطابقة لتكلفة المبيعات المحاسبية (حساب 51101) في قائمة الدخل
+                // SalesAccountingService يستخدم سعر تكلفة المنتج (Product.CostPrice) عند إثبات قيد تكلفة البضاعة المباعة ومرتجعها
                 decimal totalCost = 0;
                 bool costFound = false;
 
                 foreach (var i in g)
                 {
-                    var m = movements.FirstOrDefault(x => x.Reference == i.Order.OrderNumber && x.ProductVariantId == i.ProductVariantId);
-                    if (m != null)
-                    {
-                        totalCost += m.UnitCost * (i.Quantity - i.ReturnedQuantity);
+                    decimal unitCost = product.CostPrice ?? 0;
+                    totalCost += unitCost * (i.Quantity - i.ReturnedQuantity);
+                    if (product.CostPrice.HasValue)
                         costFound = true;
-                    }
-                    else if (product.CostPrice.HasValue)
-                    {
-                        totalCost += product.CostPrice.Value * (i.Quantity - i.ReturnedQuantity);
-                        costFound = true;
-                    }
                 }
 
                 // Profit
@@ -254,8 +239,8 @@ public class ProfitabilityController : ControllerBase
     public async Task<IActionResult> GetSummary([FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null, [FromQuery] int? branchId = null)
     {
         var now = TimeHelper.GetEgyptTime();
-        var from = fromDate?.Date ?? new DateTime(now.Year, now.Month, 1);
-        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? now;
+        var from = (fromDate ?? new DateTime(now.Year, now.Month, 1)).Date.AddHours(TimeHelper.GetBusinessDayEndHour());
+        var to = (toDate ?? now).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
 
         int? isolatedBranchId = await User.HasViewAllBranchesAsync(HttpContext) ? branchId : User.GetBranchId();
 
@@ -292,16 +277,16 @@ public class ProfitabilityController : ControllerBase
 
             // حصة الصنف من خصم الفاتورة (تناسبياً)
             decimal lineOrderDiscountShare = 0;
-            if (i.Order.SubTotal > 0 && i.Order.DiscountAmount > 0)
+            decimal orderTotalDiscount = i.Order.DiscountAmount + i.Order.TemporalDiscount + i.Order.LoyaltyDiscountAmount;
+            if (i.Order.SubTotal > 0 && orderTotalDiscount > 0)
             {
-                lineOrderDiscountShare = (i.TotalPrice / i.Order.SubTotal) * i.Order.DiscountAmount;
+                lineOrderDiscountShare = (i.TotalPrice / i.Order.SubTotal) * orderTotalDiscount;
             }
 
             totalNetRevenue += (lineShareOfSubtotal - (lineOrderDiscountShare * qtyFactor));
             
-            var m = movements.FirstOrDefault(x => x.Reference == i.Order.OrderNumber && x.ProductId == i.ProductId && x.ProductVariantId == i.ProductVariantId);
-            if (m != null) totalCost += m.UnitCost * netQty;
-            else totalCost += (i.Product?.CostPrice ?? 0) * netQty;
+            decimal unitCost = i.Product?.CostPrice ?? 0;
+            totalCost += unitCost * netQty;
         }
 
         var totalProfit = totalNetRevenue - totalCost;
@@ -529,8 +514,8 @@ public class ProfitabilityController : ControllerBase
                 .ThenInclude(o => o.Items)
             .Include(i => i.Product)
             .Where(i => i.Order.Status != OrderStatus.Cancelled
-                     && i.Order.CreatedAt >= startRange
-                     && i.Order.CreatedAt <= endRange
+                     && i.Order.CreatedAt >= from
+                     && i.Order.CreatedAt <= to
                      && i.ProductId.HasValue
                      && relevantProductIds.Contains(i.ProductId.Value)
                      
@@ -657,10 +642,11 @@ public class ProfitabilityController : ControllerBase
 
                     var lineSubtotal = i.TotalPrice;
                     decimal lineOrderDiscountShare = 0;
-                    if (orderSoldItemsTotal > 0 && order.DiscountAmount > 0)
+                    decimal orderTotalDiscount = order.DiscountAmount + order.TemporalDiscount + order.LoyaltyDiscountAmount;
+                    if (orderSoldItemsTotal > 0 && orderTotalDiscount > 0)
                     {
                         var ratio = lineSubtotal / orderSoldItemsTotal;
-                        lineOrderDiscountShare = ratio * order.DiscountAmount;
+                        lineOrderDiscountShare = ratio * orderTotalDiscount;
                     }
 
                     decimal qtyFactor = i.Quantity > 0 ? (decimal)netQty / i.Quantity : 0;
