@@ -159,6 +159,18 @@ public class NotificationService : INotificationService
             adminUserIds = adminUserIds.Distinct().ToList();
         }
 
+        // Determine default link for admin/staff notifications if not provided
+        string? adminLink = link;
+        if (string.IsNullOrEmpty(adminLink))
+        {
+            if (type == "OnlineOrder" && orderId.HasValue)
+                adminLink = $"/admin/store-management?tab=orders&viewId={orderId.Value}";
+            else if ((type == "POSOrder" || type == "Order") && orderId.HasValue)
+                adminLink = $"/admin/orders?viewId={orderId.Value}";
+            else if (type == "ReturnExchangeRequest" && orderId.HasValue)
+                adminLink = $"/admin/store-management?tab=returns&viewId={orderId.Value}";
+        }
+
         // Add the specific user notification if applicable
         if (!string.IsNullOrEmpty(finalUserId))
         {
@@ -169,7 +181,8 @@ public class NotificationService : INotificationService
                 MessageAr = msgAr,
                 MessageEn = msgEn,
                 Type = type,
-                OrderId = orderId
+                OrderId = orderId,
+                Link = link
             });
         }
 
@@ -187,7 +200,8 @@ public class NotificationService : INotificationService
                         MessageAr = msgAr,
                         MessageEn = msgEn,
                         Type = type,
-                        OrderId = orderId
+                        OrderId = orderId,
+                        Link = adminLink ?? link
                     });
                 }
             }
@@ -197,18 +211,6 @@ public class NotificationService : INotificationService
         {
             _db.Notifications.AddRange(notificationsToSave);
             await _db.SaveChangesAsync();
-        }
-
-        // Determine default link for admin/staff notifications if not provided
-        string? adminLink = link;
-        if (string.IsNullOrEmpty(adminLink))
-        {
-            if (type == "OnlineOrder" && orderId.HasValue)
-                adminLink = $"/admin/store-management?tab=orders&viewId={orderId.Value}";
-            else if ((type == "POSOrder" || type == "Order") && orderId.HasValue)
-                adminLink = $"/admin/orders?viewId={orderId.Value}";
-            else if (type == "ReturnExchangeRequest" && orderId.HasValue)
-                adminLink = $"/admin/store-management?tab=returns&viewId={orderId.Value}";
         }
 
         // Broadcast each saved notification to its respective owner in real-time

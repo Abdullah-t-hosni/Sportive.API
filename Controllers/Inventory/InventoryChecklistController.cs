@@ -637,7 +637,7 @@ public class InventoryChecklistController : ControllerBase
         var productName = !string.IsNullOrWhiteSpace(dto.ProductName) 
             ? dto.ProductName 
             : (!string.IsNullOrWhiteSpace(dto.ProductSku) ? dto.ProductSku : $"صنف #{dto.ProductId}");
-        var auditLink = $"/admin/inventory-audit?productId={dto.ProductId}&search={dto.ProductSku ?? dto.ProductId.ToString()}";
+        var auditLink = $"/admin/inventory-audit-catalog?productId={dto.ProductId}&search={dto.ProductSku ?? dto.ProductId.ToString()}";
 
         var notifiedUserIds = new HashSet<string>();
 

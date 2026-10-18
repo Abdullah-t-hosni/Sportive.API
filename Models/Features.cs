@@ -24,4 +24,5 @@ public class Notification : BaseEntity
     public string Type     { get; set; } = "General"; // OrderUpdate | StockAlert | Promo | General
     public bool   IsRead   { get; set; } = false;
     public int?   OrderId  { get; set; }
+    public string? Link    { get; set; }
 }
