@@ -4,9 +4,23 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.Models;
+using Sportive.API.Services;
 using Sportive.API.Utils;
 
 namespace Sportive.API.Controllers.Inventory;
+
+public class NotifyInventoryNoteDto
+{
+    public int ProductId { get; set; }
+    public string? ProductName { get; set; }
+    public string? ProductSku { get; set; }
+    public string NoteText { get; set; } = string.Empty;
+    public string? ReplyToUserId { get; set; }
+    public string? ReplyToUserName { get; set; }
+    public List<string>? ParticipantUserIds { get; set; }
+    public List<string>? ParticipantUserNames { get; set; }
+    public bool IsResolution { get; set; }
+}
 
 public class SaveInventoryChecklistDto
 {
@@ -62,11 +76,16 @@ public class InventoryChecklistController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly ILogger<InventoryChecklistController> _logger;
+    private readonly INotificationService _notificationService;
 
-    public InventoryChecklistController(AppDbContext db, ILogger<InventoryChecklistController> logger)
+    public InventoryChecklistController(
+        AppDbContext db, 
+        ILogger<InventoryChecklistController> logger,
+        INotificationService notificationService)
     {
         _db = db;
         _logger = logger;
+        _notificationService = notificationService;
     }
 
     /// <summary>
@@ -81,11 +100,11 @@ public class InventoryChecklistController : ControllerBase
 
         if (warehouseId.HasValue && warehouseId.Value > 0)
         {
-            query = query.Where(s => s.WarehouseId == warehouseId.Value);
+            query = query.Where(s => s.WarehouseId == warehouseId.Value || s.WarehouseId == null);
         }
         else if (branchId.HasValue && branchId.Value > 0)
         {
-            query = query.Where(s => s.BranchId == branchId.Value);
+            query = query.Where(s => s.BranchId == branchId.Value || s.BranchId == null);
         }
 
         var activeSession = await query
@@ -225,56 +244,36 @@ public class InventoryChecklistController : ControllerBase
                 .FirstOrDefaultAsync(s => s.Id == dto.Id.Value);
         }
 
-        // إذا لم نجدها بالـ ID، نبحث عن جلسة نشطة لنفس المخزن/الفرع
-        if (session == null && (dto.WarehouseId.HasValue || dto.BranchId.HasValue))
+        // إذا لم نجدها بالـ ID، نبحث عن الجلسة النشطة
+        if (session == null)
         {
             var query = _db.InventoryChecklistSessions.Where(s => s.IsActive);
             if (dto.WarehouseId.HasValue && dto.WarehouseId.Value > 0)
-                query = query.Where(s => s.WarehouseId == dto.WarehouseId.Value);
+                query = query.Where(s => s.WarehouseId == dto.WarehouseId.Value || s.WarehouseId == null);
             else if (dto.BranchId.HasValue && dto.BranchId.Value > 0)
-                query = query.Where(s => s.BranchId == dto.BranchId.Value);
+                query = query.Where(s => s.BranchId == dto.BranchId.Value || s.BranchId == null);
 
             session = await query.OrderByDescending(s => s.UpdatedAt ?? s.CreatedAt).FirstOrDefaultAsync();
         }
 
+        if (session == null)
+        {
+            return BadRequest(new { message = "لا توجد جلسة تدقيق محددة أو نشطة للحفظ. يرجى اختيار جلسة من القائمة أو بدء جلسة جديدة." });
+        }
+
         var now = TimeHelper.GetEgyptTime();
 
-        if (session != null)
-        {
-            // تحديث جلسة موجودة
-            if (!string.IsNullOrWhiteSpace(dto.Title)) session.Title = dto.Title;
-            if (dto.BranchId.HasValue) session.BranchId = dto.BranchId;
-            if (dto.WarehouseId.HasValue) session.WarehouseId = dto.WarehouseId;
-            if (dto.VerifiedCount.HasValue) session.VerifiedCount = dto.VerifiedCount.Value;
-            if (dto.IssueCount.HasValue) session.IssueCount = dto.IssueCount.Value;
-            if (dto.TotalItemsCount.HasValue) session.TotalItemsCount = dto.TotalItemsCount.Value;
-            session.Notes = dto.Notes;
-            session.ChecklistJson = dto.ChecklistJson ?? "{}";
-            session.UpdatedAt = now;
-            session.IsActive = true;
-        }
-        else
-        {
-            // إنشاء جلسة جديدة
-            session = new InventoryChecklistSession
-            {
-                Title = string.IsNullOrWhiteSpace(dto.Title) ? $"جرد مخزن {dto.WarehouseId} - {now:yyyy-MM-dd}" : dto.Title,
-                BranchId = dto.BranchId,
-                WarehouseId = dto.WarehouseId,
-                CreatedByUserId = userId,
-                CreatedByName = userName,
-                StartedAt = now,
-                IsActive = true,
-                Notes = dto.Notes,
-                ChecklistJson = dto.ChecklistJson ?? "{}",
-                VerifiedCount = dto.VerifiedCount ?? 0,
-                IssueCount = dto.IssueCount ?? 0,
-                TotalItemsCount = dto.TotalItemsCount ?? 0,
-                CreatedAt = now,
-                UpdatedAt = now
-            };
-            _db.InventoryChecklistSessions.Add(session);
-        }
+        // تحديث الجلسة الموجودة
+        if (!string.IsNullOrWhiteSpace(dto.Title)) session.Title = dto.Title;
+        if (dto.BranchId.HasValue) session.BranchId = dto.BranchId;
+        if (dto.WarehouseId.HasValue) session.WarehouseId = dto.WarehouseId;
+        if (dto.VerifiedCount.HasValue) session.VerifiedCount = dto.VerifiedCount.Value;
+        if (dto.IssueCount.HasValue) session.IssueCount = dto.IssueCount.Value;
+        if (dto.TotalItemsCount.HasValue) session.TotalItemsCount = dto.TotalItemsCount.Value;
+        session.Notes = dto.Notes;
+        session.ChecklistJson = dto.ChecklistJson ?? "{}";
+        session.UpdatedAt = now;
+        session.IsActive = true;
 
         await _db.SaveChangesAsync();
 
@@ -501,9 +500,9 @@ public class InventoryChecklistController : ControllerBase
             .AsNoTracking();
 
         if (warehouseId.HasValue && warehouseId.Value > 0)
-            query = query.Where(s => s.WarehouseId == warehouseId.Value);
+            query = query.Where(s => s.WarehouseId == warehouseId.Value || s.WarehouseId == null);
         else if (branchId.HasValue && branchId.Value > 0)
-            query = query.Where(s => s.BranchId == branchId.Value);
+            query = query.Where(s => s.BranchId == branchId.Value || s.BranchId == null);
 
         var list = await query
             .OrderByDescending(s => s.CreatedAt)
@@ -618,6 +617,180 @@ public class InventoryChecklistController : ControllerBase
         {
             success = true,
             message = $"تم حذف الجلسة '{session.Title}' بنجاح"
+        });
+    }
+
+    /// <summary>
+    /// إرسال إشعار لحظي للمستخدمين عند الرد على ملاحظة أو إضافة ملاحظة في صنف به ملاحظات سابقة
+    /// </summary>
+    [HttpPost("notify-note")]
+    public async Task<IActionResult> NotifyAuditNote([FromBody] NotifyInventoryNoteDto dto)
+    {
+        if (dto == null || dto.ProductId <= 0 || string.IsNullOrWhiteSpace(dto.NoteText))
+        {
+            return BadRequest(new { message = "بيانات غير مكتملة للإشعار" });
+        }
+
+        var currentUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var currentUserName = User.Identity?.Name ?? User.FindFirst("name")?.Value ?? "مستخدم";
+
+        var productName = !string.IsNullOrWhiteSpace(dto.ProductName) 
+            ? dto.ProductName 
+            : (!string.IsNullOrWhiteSpace(dto.ProductSku) ? dto.ProductSku : $"صنف #{dto.ProductId}");
+        var auditLink = $"/admin/inventory-audit?productId={dto.ProductId}&search={dto.ProductSku ?? dto.ProductId.ToString()}";
+
+        var notifiedUserIds = new HashSet<string>();
+
+        bool isDirectReply = !string.IsNullOrWhiteSpace(dto.ReplyToUserId) || !string.IsNullOrWhiteSpace(dto.ReplyToUserName);
+
+        // الحالة الأولى: إذا كان ردًا مباشرًا على ملاحظة مستخدم محدد (يصل للشخص المعني بالرد فقط ولا يصل لأي شخص آخر)
+        if (isDirectReply)
+        {
+            string? targetUserId = dto.ReplyToUserId;
+
+            if (string.IsNullOrWhiteSpace(targetUserId) && !string.IsNullOrWhiteSpace(dto.ReplyToUserName))
+            {
+                var targetUser = await _db.Users
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(u => u.FullName == dto.ReplyToUserName || u.UserName == dto.ReplyToUserName);
+                if (targetUser != null)
+                {
+                    targetUserId = targetUser.Id;
+                }
+            }
+
+            // التأكد من أن المستلم ليس هو نفسه كاتب الرد الحالي، وأنه يوزر حقيقي ومحدد
+            if (!string.IsNullOrWhiteSpace(targetUserId) && targetUserId != currentUserId)
+            {
+                var replyTitleAr = "رد جديد على ملاحظتك في تدقيق المخزون 💬";
+                var replyTitleEn = "New Reply on Your Audit Note";
+                var replyMsgAr = dto.IsResolution
+                    ? $"قام {currentUserName} بحل المشكلة والرد على ملاحظتك في صنف ({productName}): {dto.NoteText}"
+                    : $"قام {currentUserName} بالرد على ملاحظتك في صنف ({productName}): {dto.NoteText}";
+                var replyMsgEn = dto.IsResolution
+                    ? $"{currentUserName} resolved the issue and replied on ({productName}): {dto.NoteText}"
+                    : $"{currentUserName} replied on your note for ({productName}): {dto.NoteText}";
+
+                try
+                {
+                    await _notificationService.SendAsync(
+                        userId: targetUserId,
+                        titleAr: replyTitleAr,
+                        titleEn: replyTitleEn,
+                        msgAr: replyMsgAr,
+                        msgEn: replyMsgEn,
+                        type: "AuditNote",
+                        orderId: null,
+                        link: auditLink
+                    );
+                    notifiedUserIds.Add(targetUserId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to send audit reply notification to user {UserId}", targetUserId);
+                }
+            }
+
+            // في حالة الرد المباشر: ننتهي هنا ولا نرسل لباقي المشاركين!
+            return Ok(new
+            {
+                success = true,
+                isDirectReply = true,
+                notifiedCount = notifiedUserIds.Count,
+                notifiedUserIds = notifiedUserIds.ToList()
+            });
+        }
+
+        // الحالة الثانية: إذا كانت ملاحظة جديدة أضافها مستخدم على صنف كان قد دوّن فيه مستخدمون آخرون ملاحظات سابقة
+        // نرسل فقط للمستخدمين السابقين أصحاب الملاحظات على نفس الصنف (باستثناء كاتب الملاحظة الحالي)
+        if (dto.ParticipantUserIds != null && dto.ParticipantUserIds.Any())
+        {
+            foreach (var participantId in dto.ParticipantUserIds.Distinct())
+            {
+                if (string.IsNullOrWhiteSpace(participantId) || 
+                    participantId == currentUserId || 
+                    notifiedUserIds.Contains(participantId))
+                {
+                    continue;
+                }
+
+                var noteTitleAr = "ملاحظة جديدة في تدقيق صنف شاركت به 📝";
+                var noteTitleEn = "New Note on Product You Audited";
+                var noteMsgAr = dto.IsResolution
+                    ? $"قام {currentUserName} بحل المشكلة وتدوين توضيح في صنف ({productName}): {dto.NoteText}"
+                    : $"أضاف {currentUserName} ملاحظة جديدة في صنف ({productName}): {dto.NoteText}";
+                var noteMsgEn = $"{currentUserName} added a note on ({productName}): {dto.NoteText}";
+
+                try
+                {
+                    await _notificationService.SendAsync(
+                        userId: participantId,
+                        titleAr: noteTitleAr,
+                        titleEn: noteTitleEn,
+                        msgAr: noteMsgAr,
+                        msgEn: noteMsgEn,
+                        type: "AuditNote",
+                        orderId: null,
+                        link: auditLink
+                    );
+                    notifiedUserIds.Add(participantId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to send audit participant notification to user {UserId}", participantId);
+                }
+            }
+        }
+
+        // 3. التحقق من الأسماء لو كانت بعض الملاحظات القديمة لا تحتوي على UserIds
+        if (dto.ParticipantUserNames != null && dto.ParticipantUserNames.Any())
+        {
+            foreach (var participantName in dto.ParticipantUserNames.Distinct())
+            {
+                if (string.IsNullOrWhiteSpace(participantName) || participantName == currentUserName)
+                    continue;
+
+                try
+                {
+                    var user = await _db.Users
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(u => u.FullName == participantName || u.UserName == participantName);
+
+                    if (user != null && user.Id != currentUserId && !notifiedUserIds.Contains(user.Id))
+                    {
+                        var noteTitleAr = "ملاحظة جديدة في تدقيق صنف شاركت به 📝";
+                        var noteTitleEn = "New Note on Product You Audited";
+                        var noteMsgAr = dto.IsResolution
+                            ? $"قام {currentUserName} بحل المشكلة وتدوين توضيح في صنف ({productName}): {dto.NoteText}"
+                            : $"أضاف {currentUserName} ملاحظة جديدة في صنف ({productName}): {dto.NoteText}";
+                        var noteMsgEn = $"{currentUserName} added a note on ({productName}): {dto.NoteText}";
+
+                        await _notificationService.SendAsync(
+                            userId: user.Id,
+                            titleAr: noteTitleAr,
+                            titleEn: noteTitleEn,
+                            msgAr: noteMsgAr,
+                            msgEn: noteMsgEn,
+                            type: "AuditNote",
+                            orderId: null,
+                            link: auditLink
+                        );
+                        notifiedUserIds.Add(user.Id);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to lookup participant {UserName} for audit notification", participantName);
+                }
+            }
+        }
+
+        return Ok(new
+        {
+            success = true,
+            isDirectReply = false,
+            notifiedCount = notifiedUserIds.Count,
+            notifiedUserIds = notifiedUserIds.ToList()
         });
     }
 }

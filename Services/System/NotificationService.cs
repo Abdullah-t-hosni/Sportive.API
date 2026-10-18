@@ -104,7 +104,7 @@ public class NotificationService : INotificationService
 
         // 1. Determine if this notification should go to staff/admins
         var staffTypes = new[] { "Order", "OnlineOrder", "POSOrder", "WhatsApp", "Alert", "Stock", "System", "ReturnExchangeRequest" };
-        if (staffTypes.Contains(type) || string.IsNullOrEmpty(userId))
+        if (type != "AuditNote" && (staffTypes.Contains(type) || string.IsNullOrEmpty(userId)))
         {
             // ✅ جلب الموظفين بـ JOIN واحد مع مقارنة غير حساسة لحالة الأحرف
             var staffRoleNames = new[] { "admin", "superadmin", "super admin", "manager", "staff", "cashier", "moderator" };
@@ -173,20 +173,23 @@ public class NotificationService : INotificationService
             });
         }
 
-        // Add notifications for all admins/staff
-        foreach (var adminId in adminUserIds)
+        // Add notifications for all admins/staff (ONLY for general store notifications, NEVER for targeted AuditNote)
+        if (type != "AuditNote")
         {
-            if (adminId != finalUserId)
+            foreach (var adminId in adminUserIds)
             {
-                notificationsToSave.Add(new Notification {
-                    UserId = adminId,
-                    TitleAr = titleAr,
-                    TitleEn = titleEn,
-                    MessageAr = msgAr,
-                    MessageEn = msgEn,
-                    Type = type,
-                    OrderId = orderId
-                });
+                if (adminId != finalUserId)
+                {
+                    notificationsToSave.Add(new Notification {
+                        UserId = adminId,
+                        TitleAr = titleAr,
+                        TitleEn = titleEn,
+                        MessageAr = msgAr,
+                        MessageEn = msgEn,
+                        Type = type,
+                        OrderId = orderId
+                    });
+                }
             }
         }
 
@@ -217,6 +220,8 @@ public class NotificationService : INotificationService
             var userPayload = new {
                 notif.Id,
                 id = notif.Id,
+                notif.UserId,
+                userId = notif.UserId,
                 notif.TitleAr,
                 titleAr = notif.TitleAr,
                 notif.TitleEn,
