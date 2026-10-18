@@ -92,6 +92,44 @@ public class ProfitabilityController : ControllerBase
 
         var items = await itemsQ.ToListAsync();
 
+        // 1. Resolve Account Mappings for COGS (Account 51101)
+        var maps = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key.ToLower(), m => m.AccountId);
+        var cogsAccId = maps.GetValueOrDefault("costofgoodssoldaccountid");
+        if (!cogsAccId.HasValue)
+        {
+            cogsAccId = await _db.Accounts.AsNoTracking()
+                .Where(a => a.Code == "51101" || a.Code.StartsWith("51101") || a.Code.StartsWith("511") || (a.NameAr != null && a.NameAr.Contains("تكلفة البضاعة")))
+                .Select(a => (int?)a.Id)
+                .FirstOrDefaultAsync();
+        }
+
+        // 2. Fetch posted COGS from General Ledger (Account 51101) for these orders
+        var orderIds = items.Select(i => i.OrderId).Distinct().ToList();
+        var orderNumbers = items.Select(i => i.Order.OrderNumber).Where(r => !string.IsNullOrEmpty(r)).Distinct().ToList();
+
+        var cogsMapByOrderId = new Dictionary<int, decimal>();
+        var cogsMapByRef = new Dictionary<string, decimal>();
+        if (cogsAccId.HasValue)
+        {
+            var cogsQuery = await _db.JournalLines.AsNoTracking()
+                .Where(l => l.AccountId == cogsAccId.Value 
+                         && l.JournalEntry.Status == JournalEntryStatus.Posted
+                         && l.JournalEntry.Type == JournalEntryType.SalesInvoice
+                         && l.Debit > 0
+                         && ((l.OrderId.HasValue && orderIds.Contains(l.OrderId.Value)) 
+                             || (l.JournalEntry.OrderId.HasValue && orderIds.Contains(l.JournalEntry.OrderId.Value)) 
+                             || (l.JournalEntry.Reference != null && orderNumbers.Contains(l.JournalEntry.Reference))))
+                .Select(l => new {
+                    OrderId = l.OrderId ?? l.JournalEntry.OrderId ?? 0,
+                    Ref = l.JournalEntry.Reference,
+                    l.Debit
+                })
+                .ToListAsync();
+
+            cogsMapByOrderId = cogsQuery.Where(x => x.OrderId > 0).GroupBy(x => x.OrderId).ToDictionary(g => g.Key, g => g.Sum(x => x.Debit));
+            cogsMapByRef = cogsQuery.Where(x => !string.IsNullOrEmpty(x.Ref)).GroupBy(x => x.Ref!).ToDictionary(g => g.Key, g => g.Sum(x => x.Debit));
+        }
+
         // --- تجميع حسب المنتج ----------------------------
         var grouped = items
             .Where(i => i.ProductId.HasValue)
@@ -109,9 +147,11 @@ public class ProfitabilityController : ControllerBase
                 var netUnits = g.Sum(i => i.Quantity - i.ReturnedQuantity);
                 if (netUnits < 0) netUnits = 0; // حماية منطقية
 
-                // 2. حساب الإيراد الصافي لكل سطر مع توزيع خصم الفاتورة (Discount Pro-rating)
-                decimal totalNetRevenue      = 0;
-                decimal totalItemDiscount    = 0;
+                // 2. حساب الإيراد الصافي والتكلفة الصافية لكل سطر
+                decimal totalNetRevenue   = 0;
+                decimal totalItemDiscount = 0;
+                decimal totalCost         = 0;
+
                 foreach (var i in g)
                 {
                     // الكمية المباعة فعلياً في هذا السطر بعد المرتجع
@@ -133,31 +173,51 @@ public class ProfitabilityController : ControllerBase
 
                     // صافي الإيراد من هذا السطر لهذه الكمية
                     decimal qtyFactor = (decimal)lineNetQty / i.Quantity;
-                    // الإيراد = سعر السطر - نصيبه من خصم الفاتورة (ولا يشمل الشحن)
                     totalNetRevenue += (lineSubtotal * qtyFactor) - (lineOrderDiscountShare * qtyFactor);
-                    
-                    // إجمالي الخصومات الموزعة (خصم الصنف + خصم الفاتورة النسبي)
                     totalItemDiscount += i.DiscountAmount + (lineOrderDiscountShare * qtyFactor);
-                }
 
-                // التكلفة الصافية: مطابقة لتكلفة المبيعات المحاسبية (حساب 51101) في قائمة الدخل
-                // SalesAccountingService يستخدم سعر تكلفة المنتج (Product.CostPrice) عند إثبات قيد تكلفة البضاعة المباعة ومرتجعها
-                decimal totalCost = 0;
-                bool costFound = false;
+                    // 3. التكلفة الصافية: مطابقة لتكلفة المبيعات المحاسبية (حساب 51101) في قائمة الدخل وربحية الفواتير
+                    decimal orderPostedCogs = 0;
+                    if (cogsMapByOrderId.TryGetValue(i.OrderId, out var pc))
+                        orderPostedCogs = pc;
+                    else if (!string.IsNullOrEmpty(i.Order?.OrderNumber) && cogsMapByRef.TryGetValue(i.Order.OrderNumber, out var prc))
+                        orderPostedCogs = prc;
 
-                foreach (var i in g)
-                {
-                    decimal unitCost = product.CostPrice ?? 0;
-                    totalCost += unitCost * (i.Quantity - i.ReturnedQuantity);
-                    if (product.CostPrice.HasValue)
-                        costFound = true;
+                    decimal itemNetCogs = 0;
+                    if (orderPostedCogs > 0)
+                    {
+                        var orderSoldItems = i.Order.Items.ToList();
+                        var orderBaseCostTotal = orderSoldItems.Sum(x => (x.Product?.CostPrice ?? 0m) * x.Quantity);
+                        decimal itemOrderCostShare;
+                        if (orderBaseCostTotal > 0)
+                        {
+                            var itemBaseCost = (i.Product?.CostPrice ?? 0m) * i.Quantity;
+                            itemOrderCostShare = (itemBaseCost / orderBaseCostTotal) * orderPostedCogs;
+                        }
+                        else
+                        {
+                            var orderSoldItemsTotal = orderSoldItems.Sum(x => x.TotalPrice);
+                            itemOrderCostShare = orderSoldItemsTotal > 0 
+                                ? (i.TotalPrice / orderSoldItemsTotal) * orderPostedCogs 
+                                : orderPostedCogs / Math.Max(1, orderSoldItems.Count);
+                        }
+
+                        itemNetCogs = itemOrderCostShare * qtyFactor;
+                    }
+                    else
+                    {
+                        decimal unitCost = product.CostPrice ?? 0m;
+                        itemNetCogs = unitCost * lineNetQty;
+                    }
+
+                    totalCost += itemNetCogs;
                 }
 
                 // Profit
-                var grossProfit = costFound ? totalNetRevenue - totalCost : (decimal?)null;
-                var marginPct   = (totalNetRevenue > 0 && costFound)
-                    ? Math.Round((grossProfit!.Value / totalNetRevenue) * 100, 1)
-                    : (decimal?)null;
+                var grossProfit = totalNetRevenue - totalCost;
+                var marginPct   = totalNetRevenue > 0
+                    ? Math.Round((grossProfit / totalNetRevenue) * 100, 1)
+                    : 0m;
 
                 var totalSales = g.Sum(i => i.TotalPrice + i.DiscountAmount);
                 var totalReturnsValue = g.Sum(i => i.ReturnedQuantity * i.UnitPrice);
@@ -201,7 +261,7 @@ public class ProfitabilityController : ControllerBase
         };
 
         // --- Summary --------------------------------------------------------
-        var withCost    = grouped.Where(r => r.CostPrice.HasValue).ToList();
+        var withCost = grouped.Where(r => (r.TotalCost ?? 0) > 0 || r.CostPrice.HasValue).ToList();
         var summary = new
         {
             totalProducts    = grouped.Count,
@@ -211,19 +271,19 @@ public class ProfitabilityController : ControllerBase
             totalReturns     = grouped.Sum(r => r.TotalReturns),
             totalDiscounts   = grouped.Sum(r => r.TotalDiscounts),
             totalNetRevenue  = grouped.Sum(r => r.NetRevenue),
-            totalCost        = withCost.Sum(r => r.TotalCost ?? 0),
-            totalGrossProfit = withCost.Sum(r => r.GrossProfit ?? 0),
-            overallMargin    = withCost.Sum(r => r.NetRevenue) > 0
-                ? Math.Round(withCost.Sum(r => r.GrossProfit ?? 0) / withCost.Sum(r => r.NetRevenue) * 100, 1)
+            totalCost        = grouped.Sum(r => r.TotalCost ?? 0),
+            totalGrossProfit = grouped.Sum(r => r.GrossProfit ?? 0),
+            overallMargin    = grouped.Sum(r => r.NetRevenue) > 0
+                ? Math.Round(grouped.Sum(r => r.GrossProfit ?? 0) / grouped.Sum(r => r.NetRevenue) * 100, 1)
                 : 0m,
             totalUnitsSold   = grouped.Sum(r => r.UnitsSold),
             totalReturned    = grouped.Sum(r => r.ReturnedUnits),
             // أعلى هامش ربح
-            topMarginProduct = withCost.OrderByDescending(r => r.MarginPct).FirstOrDefault()?.ProductNameAr,
-            topMarginPct     = withCost.OrderByDescending(r => r.MarginPct).FirstOrDefault()?.MarginPct,
+            topMarginProduct = grouped.OrderByDescending(r => r.MarginPct).FirstOrDefault()?.ProductNameAr,
+            topMarginPct     = grouped.OrderByDescending(r => r.MarginPct).FirstOrDefault()?.MarginPct,
             // أقل هامش ربح (أو خسارة)
-            lowestMarginProduct = withCost.OrderBy(r => r.MarginPct).FirstOrDefault()?.ProductNameAr,
-            lowestMarginPct     = withCost.OrderBy(r => r.MarginPct).FirstOrDefault()?.MarginPct,
+            lowestMarginProduct = grouped.OrderBy(r => r.MarginPct).FirstOrDefault()?.ProductNameAr,
+            lowestMarginPct     = grouped.OrderBy(r => r.MarginPct).FirstOrDefault()?.MarginPct,
         };
 
         if (excel) return ExcelProfitability(grouped, summary, from, to);
