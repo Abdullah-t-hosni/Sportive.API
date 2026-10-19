@@ -321,15 +321,21 @@ public class JournalAccountingService
             });
         }
 
-        // --- مزامنة التغييرات مع الطلب المرتبط (إن وجد) ---
+        // --- مزامنة التغييرات مع الطلب المرتبط (فقط إذا كان القيد فاتورة مبيعات وليس قيد مرتجع أو تسوية) ---
         Order? order = null;
-        if (entry.OrderId.HasValue)
+        bool isSalesInvoiceEntry = (entry.Type == JournalEntryType.SalesInvoice || entry.Type == JournalEntryType.Sales) &&
+                                   (string.IsNullOrEmpty(entry.Reference) || !entry.Reference.Contains("-RTN"));
+
+        if (isSalesInvoiceEntry)
         {
-            order = await _db.Orders.Include(o => o.Payments).FirstOrDefaultAsync(o => o.Id == entry.OrderId.Value);
-        }
-        else if ((entry.Type == JournalEntryType.SalesInvoice || entry.Type == JournalEntryType.Sales) && !string.IsNullOrEmpty(entry.Reference))
-        {
-            order = await _db.Orders.Include(o => o.Payments).FirstOrDefaultAsync(o => o.OrderNumber == entry.Reference);
+            if (entry.OrderId.HasValue)
+            {
+                order = await _db.Orders.Include(o => o.Items).Include(o => o.Payments).FirstOrDefaultAsync(o => o.Id == entry.OrderId.Value);
+            }
+            else if (!string.IsNullOrEmpty(entry.Reference))
+            {
+                order = await _db.Orders.Include(o => o.Items).Include(o => o.Payments).FirstOrDefaultAsync(o => o.OrderNumber == entry.Reference);
+            }
         }
 
         if (order != null)
@@ -337,20 +343,25 @@ public class JournalAccountingService
             var salesAccountId = await _core.GetRequiredMappedAccountAsync(MappingKeys.Sales);
             var discountAccountId = await _core.GetRequiredMappedAccountAsync(MappingKeys.SalesDiscount);
 
-            var revAccountIds = await _db.Accounts.Where(a => a.Code.StartsWith("4") && a.Id != discountAccountId).Select(a => a.Id).ToListAsync();
+            // استبعاد حسابات المرتجعات (4102) وحساب الخصم من حسابات الإيراد
+            var revAccountIds = await _db.Accounts.Where(a => a.Code.StartsWith("4") && a.Id != discountAccountId && !a.Code.StartsWith("4102")).Select(a => a.Id).ToListAsync();
 
             decimal newSubTotal = dto.Lines.Where(l => l.AccountId == salesAccountId || revAccountIds.Contains(l.AccountId)).Sum(l => l.Credit);
             decimal newDiscount = dto.Lines.Where(l => l.AccountId == discountAccountId).Sum(l => l.Debit);
             if (newDiscount == 0)
             {
-                var discAccountIds = await _db.Accounts.Where(a => a.Code.StartsWith("4102") || a.Code.StartsWith("4105")).Select(a => a.Id).ToListAsync();
+                // حسابات الخصم فقط (410101 أو 4105)، وتجنب حساب مرتجع المبيعات 4102 نهائياً
+                var discAccountIds = await _db.Accounts.Where(a => a.Code.StartsWith("410101") || a.Code.StartsWith("4105")).Select(a => a.Id).ToListAsync();
                 newDiscount = dto.Lines.Where(l => discAccountIds.Contains(l.AccountId)).Sum(l => l.Debit);
             }
 
-            order.SubTotal = newSubTotal;
+            if (newSubTotal > 0 || !order.Items.Any())
+            {
+                order.SubTotal = newSubTotal;
+            }
             order.DiscountAmount = newDiscount;
             order.TemporalDiscount = 0; // تصفير خصم العروض لأن القيد يدمج كل الخصومات في الحساب المالي
-            order.TotalAmount = newSubTotal - newDiscount + order.DeliveryFee + order.TotalVatAmount;
+            order.TotalAmount = Math.Max(0, order.SubTotal - newDiscount + order.DeliveryFee + order.TotalVatAmount);
 
             var mappings = await _core.GetSafeSystemMappingsAsync();
             var accountToMethodMap = new Dictionary<int, PaymentMethod>();
