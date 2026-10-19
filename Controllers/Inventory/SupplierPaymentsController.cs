@@ -229,7 +229,7 @@ public class SupplierPaymentsController : ControllerBase
             SupplierId = dto.SupplierId,
             PurchaseInvoiceId = (dto.PurchaseInvoiceId > 0) ? dto.PurchaseInvoiceId : null,
             Amount = dto.Amount,
-            PaymentDate = dto.PaymentDate,
+            PaymentDate = TimeHelper.ResolveBusinessDateTime(dto.PaymentDate),
             PaymentMethod = dto.PaymentMethod,
             AccountName = dto.AccountName,
             CashAccountId = (dto.CashAccountId > 0) ? dto.CashAccountId : null,
@@ -356,7 +356,7 @@ public class SupplierPaymentsController : ControllerBase
         payment.PurchaseInvoiceId = (dto.PurchaseInvoiceId > 0) ? dto.PurchaseInvoiceId : null;
         payment.Invoice = newInvoice;
         payment.Amount = dto.Amount;
-        payment.PaymentDate = dto.PaymentDate;
+        payment.PaymentDate = TimeHelper.ResolveBusinessDateTime(dto.PaymentDate);
         payment.PaymentMethod = dto.PaymentMethod;
         payment.AccountName = dto.AccountName;
         payment.CashAccountId = (dto.CashAccountId > 0) ? dto.CashAccountId : null;
