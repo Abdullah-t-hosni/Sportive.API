@@ -2980,14 +2980,16 @@ public class OrderService : IOrderService
                             dto.Note?.Contains("damaged", StringComparison.OrdinalIgnoreCase) == true;
             }
 
-            // 🛡️ DUPLICATE RETURN PROTECTION: Fetch existing return movements for this order to prevent double-restocking
-            var existingReturnMovements = await _db.InventoryMovements
-                .Where(m => m.Reference == order.OrderNumber && m.Type == InventoryMovementType.ReturnIn)
+            // 🛡️ DUPLICATE RETURN/CANCELLATION PROTECTION: Fetch existing return/adjustment movements for this order to prevent double-restocking
+            var existingRestockMovements = await _db.InventoryMovements
+                .Where(m => m.Reference == order.OrderNumber && 
+                            (m.Type == InventoryMovementType.ReturnIn || 
+                             (m.Type == InventoryMovementType.Adjustment && m.Quantity > 0)))
                 .ToListAsync();
 
             foreach (var item in orderWithItems.Items)
             {
-                int alreadyRestockedQty = existingReturnMovements
+                int alreadyRestockedQty = existingRestockMovements
                     .Where(m => m.ProductId == item.ProductId && m.ProductVariantId == item.ProductVariantId)
                     .Sum(m => m.Quantity);
 
