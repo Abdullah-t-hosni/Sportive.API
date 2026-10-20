@@ -432,18 +432,7 @@ public class CustomerService : ICustomerService
         if (existing != null)
             throw new InvalidOperationException("هذا العميل (أو الهاتف) مسجل بالفعل في ملفات العملاء.");
 
-        // 2. Check if this phone/email belongs to a system user (Staff)
-        var staffRoleIds = await _db.Roles
-            .Where(r => r.Name != null && AppRoles.StaffRoles.Contains(r.Name))
-            .Select(r => r.Id)
-            .ToListAsync();
-
-        var staffExists = await _db.Users.AnyAsync(u => 
-            ((u.PhoneNumber != null && u.PhoneNumber == dto.Phone) || (u.Email != null && u.Email == dto.Email)) && 
-            (_db.UserRoles.Any(ur => ur.UserId == u.Id && staffRoleIds.Contains(ur.RoleId)) || (u.UserName != null && u.UserName.StartsWith("staff_"))));
-        
-        if (staffExists)
-            throw new InvalidOperationException("هذا الرقم/البريد مسجل كمستخدم للنظام (موظف) ولا يمكن إضافته كعميل.");
+        // 2. Staff can also be registered as customers (e.g. for staff purchases/POS orders)
 
         // 3. (REMOVED) Identity Users Conflict Check (Staff and Customers are now separated)
         var generatedEmail = dto.Email;
