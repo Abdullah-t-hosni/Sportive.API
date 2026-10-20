@@ -142,6 +142,11 @@ public class Order : BaseEntity
     public DateTime? CourierSettlementDate { get; set; }
     public string? CourierSettlementReference { get; set; }
 
+    public bool IsReturnSettledWithCourier { get; set; } = false;
+    public DateTime? ReturnCourierSettlementDate { get; set; }
+    public string? ReturnCourierSettlementReference { get; set; }
+    public decimal? ReturnActualDeliveryCost { get; set; }
+
 
     // Navigation
     public ICollection<OrderItem> Items { get; set; } = new List<OrderItem>();

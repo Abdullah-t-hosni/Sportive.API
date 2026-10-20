@@ -43,7 +43,18 @@ public class ShippingSettlementsController : ControllerBase
 
     private async Task<IActionResult> FetchSettlementOrdersAsync(int companyId, string statusFilter)
     {
-        var validStatuses = new[] { OrderStatus.Delivered, OrderStatus.Returned, OrderStatus.PartiallyReturned };
+        var validStatuses = new[] { 
+            OrderStatus.Delivered, 
+            OrderStatus.Returned, 
+            OrderStatus.PartiallyReturned, 
+            OrderStatus.ReturnInShipping 
+        };
+        var returnStatuses = new[] { 
+            OrderStatus.Returned, 
+            OrderStatus.PartiallyReturned, 
+            OrderStatus.ReturnInShipping 
+        };
+
         var company = await _db.ShippingCompanies.FindAsync(companyId);
         bool isAsCompany = company != null && (company.NameAr.Contains("AS") || company.NameAr.Contains("A&S") || (company.NameEn != null && (company.NameEn.Contains("AS") || company.NameEn.Contains("A&S"))));
         
@@ -52,16 +63,19 @@ public class ShippingSettlementsController : ControllerBase
             .Where(o => o.FulfillmentType != FulfillmentType.Pickup &&
                         o.ShippingType != "Pickup" &&
                         (o.ShippingCompanyId == companyId || (isAsCompany && o.ShippingCompanyId == null && o.ShippingType != "Bosta" && o.BostaDeliveryId == null && o.BostaTrackingNumber == null && (o.ShippingCarrierName == null || (!o.ShippingCarrierName.Contains("الجوهري") && !o.ShippingCarrierName.Contains("بوسطة") && !o.ShippingCarrierName.Contains("Bosta") && !o.ShippingCarrierName.Contains("استلام") && !o.ShippingCarrierName.Contains("فرع"))))) && 
-                        validStatuses.Contains(o.Status) &&
+                        (validStatuses.Contains(o.Status) || (int)o.Status == 11) &&
                         o.Source != OrderSource.POS);
 
         if (statusFilter == "pending")
         {
-            q = q.Where(o => o.IsSettledWithCourier == false);
+            // إما طلب لم يُسوّى مطلقاً، أو طلب تم تسليم وتسوية توصيله سابقاً ثم أصبح مرتجعاً ولم تتم تسوية مرتجعه بعد
+            q = q.Where(o => o.IsSettledWithCourier == false || 
+                             (o.IsSettledWithCourier == true && o.IsReturnSettledWithCourier == false && (returnStatuses.Contains(o.Status) || (int)o.Status == 11)));
         }
         else if (statusFilter == "settled")
         {
-            q = q.Where(o => o.IsSettledWithCourier == true);
+            q = q.Where(o => o.IsSettledWithCourier == true && 
+                             (!returnStatuses.Contains(o.Status) && (int)o.Status != 11 || o.IsReturnSettledWithCourier == true));
         }
 
         var orders = await q
@@ -71,18 +85,21 @@ public class ShippingSettlementsController : ControllerBase
                 o.Id,
                 o.OrderNumber,
                 CustomerName = o.Customer.FullName,
-                o.TotalAmount,
+                TotalAmount = (o.IsSettledWithCourier && !o.IsReturnSettledWithCourier) ? 0 : o.TotalAmount,
                 DeliveryDate = o.ActualDeliveryDate ?? o.UpdatedAt,
                 ActualDeliveryDate = o.ActualDeliveryDate,
                 CreatedAt = o.CreatedAt,
                 o.ShippingTrackingNumber,
                 o.BostaTrackingNumber,
                 o.BostaShipmentStatus,
-                ActualDeliveryCost = Math.Round(o.ActualDeliveryCost == 0 ? o.DeliveryFee : o.ActualDeliveryCost, 2),
+                ActualDeliveryCost = (o.IsSettledWithCourier && !o.IsReturnSettledWithCourier)
+                    ? Math.Round(o.ReturnActualDeliveryCost ?? 0, 2)
+                    : Math.Round(o.ActualDeliveryCost == 0 ? o.DeliveryFee : o.ActualDeliveryCost, 2),
                 DeliveryFee = o.DeliveryFee,
-                o.IsSettledWithCourier,
+                IsSettledWithCourier = (o.IsSettledWithCourier && !o.IsReturnSettledWithCourier) ? false : o.IsSettledWithCourier,
                 o.CourierSettlementDate,
                 o.CourierSettlementReference,
+                IsReturnSettlement = o.IsSettledWithCourier && !o.IsReturnSettledWithCourier && (returnStatuses.Contains(o.Status) || (int)o.Status == 11),
                 Status = o.Status.ToString(),
                 PaymentMethod = o.PaymentMethod.ToString()
             })
@@ -104,13 +121,16 @@ public class ShippingSettlementsController : ControllerBase
 
         bool isAsCompany = company != null && (company.NameAr.Contains("AS", StringComparison.OrdinalIgnoreCase) || company.NameAr.Contains("A&S", StringComparison.OrdinalIgnoreCase) || (company.NameEn != null && (company.NameEn.Contains("AS", StringComparison.OrdinalIgnoreCase) || company.NameEn.Contains("A&S", StringComparison.OrdinalIgnoreCase))));
 
+        var returnStatuses = new[] { OrderStatus.Returned, OrderStatus.PartiallyReturned, OrderStatus.ReturnInShipping };
+
         var orders = await _db.Orders
             .Include(o => o.Customer)
             .Where(o => orderIds.Contains(o.Id) && 
                         o.FulfillmentType != FulfillmentType.Pickup &&
                         o.ShippingType != "Pickup" &&
                         (o.ShippingCompanyId == request.ShippingCompanyId || (isAsCompany && o.ShippingCompanyId == null)) &&
-                        o.IsSettledWithCourier == false)
+                        (o.IsSettledWithCourier == false || 
+                         (o.IsSettledWithCourier == true && o.IsReturnSettledWithCourier == false && (returnStatuses.Contains(o.Status) || (int)o.Status == 11))))
             .ToListAsync();
 
         if (!orders.Any())
@@ -177,23 +197,47 @@ public class ShippingSettlementsController : ControllerBase
         foreach (var order in orders)
         {
             var reqOrder = request.Orders?.FirstOrDefault(o => o.OrderId == order.Id);
-            bool isExplicitlySet = false;
+            bool isSecondReturn = order.IsSettledWithCourier && !order.IsReturnSettledWithCourier && 
+                (returnStatuses.Contains(order.Status) || (int)order.Status == 11);
 
-            if (reqOrder != null)
+            if (isSecondReturn)
             {
-                order.ActualDeliveryCost = Math.Round(reqOrder.ActualDeliveryCost, 2);
-                isExplicitlySet = true;
+                order.IsReturnSettledWithCourier = true;
+                order.ReturnCourierSettlementDate = TimeHelper.GetEgyptTime();
+                order.ReturnCourierSettlementReference = collectionRef;
+                if (reqOrder != null)
+                {
+                    order.ReturnActualDeliveryCost = Math.Round(reqOrder.ActualDeliveryCost, 2);
+                }
             }
-            
-            // 🔥 Fallback: Only if the frontend didn't send this order at all (which shouldn't happen, but just in case)
-            if (!isExplicitlySet && order.ActualDeliveryCost == 0 && order.DeliveryFee > 0)
+            else
             {
-                order.ActualDeliveryCost = Math.Round(order.DeliveryFee, 2);
-            }
+                bool isExplicitlySet = false;
+                if (reqOrder != null)
+                {
+                    order.ActualDeliveryCost = Math.Round(reqOrder.ActualDeliveryCost, 2);
+                    isExplicitlySet = true;
+                }
+                
+                // 🔥 Fallback: Only if the frontend didn't send this order at all (which shouldn't happen, but just in case)
+                if (!isExplicitlySet && order.ActualDeliveryCost == 0 && order.DeliveryFee > 0)
+                {
+                    order.ActualDeliveryCost = Math.Round(order.DeliveryFee, 2);
+                }
 
-            order.IsSettledWithCourier = true;
-            order.CourierSettlementDate = TimeHelper.GetEgyptTime();
-            order.CourierSettlementReference = collectionRef;
+                order.IsSettledWithCourier = true;
+                order.CourierSettlementDate = TimeHelper.GetEgyptTime();
+                order.CourierSettlementReference = collectionRef;
+
+                // إذا كان الطلب مرتجعاً بالفعل من البداية وتمت تسويته الآن، فتسويته الأولى هي تسوية مرتجعه أيضاً
+                if (returnStatuses.Contains(order.Status) || (int)order.Status == 11)
+                {
+                    order.IsReturnSettledWithCourier = true;
+                    order.ReturnCourierSettlementDate = order.CourierSettlementDate;
+                    order.ReturnCourierSettlementReference = collectionRef;
+                    order.ReturnActualDeliveryCost = order.ActualDeliveryCost;
+                }
+            }
         }
 
         decimal totalCollected = 0;
@@ -206,9 +250,17 @@ public class ShippingSettlementsController : ControllerBase
         foreach (var order in orders)
         {
             var reqOrder = request.Orders?.FirstOrDefault(x => x.OrderId == order.Id);
-            decimal collected = reqOrder?.CollectedAmount ?? order.TotalAmount;
+            bool isSecondReturn = order.IsReturnSettledWithCourier && 
+                                  order.ReturnCourierSettlementReference == collectionRef && 
+                                  order.CourierSettlementReference != collectionRef;
+
+            decimal collected = isSecondReturn ? 0 : (reqOrder?.CollectedAmount ?? order.TotalAmount);
+            if (order.Status == OrderStatus.Returned) collected = 0;
+
+            decimal shippingCost = reqOrder?.ActualDeliveryCost ?? (isSecondReturn ? (order.ReturnActualDeliveryCost ?? 0) : order.ActualDeliveryCost);
+
             totalCollected += collected;
-            totalShippingCost += reqOrder?.ActualDeliveryCost ?? order.ActualDeliveryCost;
+            totalShippingCost += shippingCost;
         }
 
         decimal netAmount = totalCollected - totalShippingCost;
@@ -258,7 +310,12 @@ public class ShippingSettlementsController : ControllerBase
         // ----------------------------------------------------
         if (totalCollected > 0)
         {
-            var pendingTransferOrders = orders.Where(o => !alreadyTransferredOrderIds.Contains(o.Id)).ToList();
+            var pendingTransferOrders = orders.Where(o => {
+                bool isSecondReturn = o.IsReturnSettledWithCourier && 
+                                      o.ReturnCourierSettlementReference == collectionRef && 
+                                      o.CourierSettlementReference != collectionRef;
+                return !isSecondReturn && !alreadyTransferredOrderIds.Contains(o.Id);
+            }).ToList();
             decimal pendingCollected = pendingTransferOrders.Sum(o => {
                 var reqOrder = request.Orders?.FirstOrDefault(x => x.OrderId == o.Id);
                 return reqOrder?.CollectedAmount ?? o.TotalAmount;
