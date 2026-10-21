@@ -93,7 +93,7 @@ public class ShippingSettlementsController : ControllerBase
                 o.BostaTrackingNumber,
                 o.BostaShipmentStatus,
                 ActualDeliveryCost = (o.IsSettledWithCourier && !o.IsReturnSettledWithCourier)
-                    ? Math.Round(o.ReturnActualDeliveryCost ?? 0, 2)
+                    ? Math.Round((o.ReturnActualDeliveryCost.HasValue && o.ReturnActualDeliveryCost.Value > 0) ? o.ReturnActualDeliveryCost.Value : (o.ActualDeliveryCost > 0 ? o.ActualDeliveryCost : o.DeliveryFee), 2)
                     : Math.Round(o.ActualDeliveryCost == 0 ? o.DeliveryFee : o.ActualDeliveryCost, 2),
                 DeliveryFee = o.DeliveryFee,
                 IsSettledWithCourier = (o.IsSettledWithCourier && !o.IsReturnSettledWithCourier) ? false : o.IsSettledWithCourier,
@@ -205,25 +205,17 @@ public class ShippingSettlementsController : ControllerBase
                 order.IsReturnSettledWithCourier = true;
                 order.ReturnCourierSettlementDate = TimeHelper.GetEgyptTime();
                 order.ReturnCourierSettlementReference = collectionRef;
-                if (reqOrder != null)
-                {
-                    order.ReturnActualDeliveryCost = Math.Round(reqOrder.ActualDeliveryCost, 2);
-                }
+                decimal cost = reqOrder != null && reqOrder.ActualDeliveryCost > 0 
+                    ? reqOrder.ActualDeliveryCost 
+                    : ((order.ReturnActualDeliveryCost.HasValue && order.ReturnActualDeliveryCost.Value > 0) ? order.ReturnActualDeliveryCost.Value : (order.ActualDeliveryCost > 0 ? order.ActualDeliveryCost : order.DeliveryFee));
+                order.ReturnActualDeliveryCost = Math.Round(cost, 2);
             }
             else
             {
-                bool isExplicitlySet = false;
-                if (reqOrder != null)
-                {
-                    order.ActualDeliveryCost = Math.Round(reqOrder.ActualDeliveryCost, 2);
-                    isExplicitlySet = true;
-                }
-                
-                // 🔥 Fallback: Only if the frontend didn't send this order at all (which shouldn't happen, but just in case)
-                if (!isExplicitlySet && order.ActualDeliveryCost == 0 && order.DeliveryFee > 0)
-                {
-                    order.ActualDeliveryCost = Math.Round(order.DeliveryFee, 2);
-                }
+                decimal cost = reqOrder != null && reqOrder.ActualDeliveryCost > 0
+                    ? reqOrder.ActualDeliveryCost
+                    : (order.ActualDeliveryCost > 0 ? order.ActualDeliveryCost : order.DeliveryFee);
+                order.ActualDeliveryCost = Math.Round(cost, 2);
 
                 order.IsSettledWithCourier = true;
                 order.CourierSettlementDate = TimeHelper.GetEgyptTime();
@@ -254,13 +246,17 @@ public class ShippingSettlementsController : ControllerBase
                                   order.ReturnCourierSettlementReference == collectionRef && 
                                   order.CourierSettlementReference != collectionRef;
 
-            decimal collected = isSecondReturn ? 0 : (reqOrder?.CollectedAmount ?? order.TotalAmount);
-            if (order.Status == OrderStatus.Returned) collected = 0;
+            // 🔥 إذا تم تمرير مبلغ التحصيل صراحة من الواجهة (مثل رسوم فلكس شيب للمرتجع أو تحصيل COD)، نعتمد المبلغ صراحة!
+            decimal collected = (reqOrder != null && reqOrder.CollectedAmount.HasValue) 
+                ? reqOrder.CollectedAmount.Value 
+                : (isSecondReturn || returnStatuses.Contains(order.Status) || (int)order.Status == 11 ? 0 : order.TotalAmount);
 
-            decimal shippingCost = reqOrder?.ActualDeliveryCost ?? (isSecondReturn ? (order.ReturnActualDeliveryCost ?? 0) : order.ActualDeliveryCost);
+            decimal shippingCost = isSecondReturn 
+                ? (order.ReturnActualDeliveryCost ?? 0) 
+                : order.ActualDeliveryCost;
 
-            totalCollected += collected;
-            totalShippingCost += shippingCost;
+            totalCollected += Math.Round(collected, 2);
+            totalShippingCost += Math.Round(shippingCost, 2);
         }
 
         decimal netAmount = totalCollected - totalShippingCost;
@@ -316,10 +312,15 @@ public class ShippingSettlementsController : ControllerBase
                                       o.CourierSettlementReference != collectionRef;
                 return !isSecondReturn && !alreadyTransferredOrderIds.Contains(o.Id);
             }).ToList();
-            decimal pendingCollected = pendingTransferOrders.Sum(o => {
+
+            // حساب المبالغ المطلوب تحويل مديونيتها بدقة متناهية
+            decimal pendingCollected = Math.Round(pendingTransferOrders.Sum(o => {
                 var reqOrder = request.Orders?.FirstOrDefault(x => x.OrderId == o.Id);
-                return reqOrder?.CollectedAmount ?? o.TotalAmount;
-            });
+                decimal col = (reqOrder != null && reqOrder.CollectedAmount.HasValue) 
+                    ? reqOrder.CollectedAmount.Value 
+                    : (returnStatuses.Contains(o.Status) || (int)o.Status == 11 ? 0 : o.TotalAmount);
+                return Math.Round(col, 2);
+            }), 2);
 
             if (pendingCollected > 0 && pendingTransferOrders.Any())
             {
@@ -330,10 +331,14 @@ public class ShippingSettlementsController : ControllerBase
                 settlementLines.Add(($"ID:{company.AccountId}", pendingCollected, 0, $"تحصيل مديونية طلبات مجمعة - {company.NameAr}{invNumStr}"));
 
                 // التفقيط الدائن للعملاء
+                decimal totalCreditAdded = 0;
                 foreach (var order in pendingTransferOrders)
                 {
                     var reqOrder = request.Orders?.FirstOrDefault(x => x.OrderId == order.Id);
-                    decimal collected = reqOrder?.CollectedAmount ?? order.TotalAmount;
+                    decimal collected = Math.Round((reqOrder != null && reqOrder.CollectedAmount.HasValue) 
+                        ? reqOrder.CollectedAmount.Value 
+                        : (returnStatuses.Contains(order.Status) || (int)order.Status == 11 ? 0 : order.TotalAmount), 2);
+
                     if (collected > 0)
                     {
                         string customerAcct = order.Customer?.MainAccountId != null 
@@ -341,10 +346,17 @@ public class ShippingSettlementsController : ControllerBase
                             : $"ID:{defaultCustomerAcctId}";
                         
                         settlementLines.Add((customerAcct, 0, collected, $"إقفال مديونية طلب #{order.OrderNumber}"));
+                        totalCreditAdded += collected;
                     }
                 }
 
-                if (settlementLines.Count > 1)
+                // للتأكد التام من توازن القيد المحاسبي بين المدين والدائن وعدم حدوث أي خطأ
+                if (Math.Round(pendingCollected, 2) != Math.Round(totalCreditAdded, 2))
+                {
+                    settlementLines[0] = ($"ID:{company.AccountId}", totalCreditAdded, 0, $"تحصيل مديونية طلبات مجمعة - {company.NameAr}{invNumStr}");
+                }
+
+                if (settlementLines.Count > 1 && totalCreditAdded > 0)
                 {
                     var entrySettle = await _accountingCore.PostEntryAsync(
                         type: JournalEntryType.Manual,
@@ -382,7 +394,7 @@ public class ShippingSettlementsController : ControllerBase
             .Where(o => 
             {
                 var r = request.Orders?.FirstOrDefault(x => x.OrderId == o.Id);
-                decimal col = r?.CollectedAmount ?? o.TotalAmount;
+                decimal col = (r != null && r.CollectedAmount.HasValue) ? r.CollectedAmount.Value : (returnStatuses.Contains(o.Status) || (int)o.Status == 11 ? 0 : o.TotalAmount);
                 return col == 0 && o.DeliveryFee > 0;
             }).ToList();
 
@@ -413,23 +425,29 @@ public class ShippingSettlementsController : ControllerBase
             var uncollectedRef = $"SETTLE-UNCOLLECTED-{company.Id}-{timestamp}";
             var uncollectedLines = new List<(string code, decimal debit, decimal credit, string desc)>();
             
-            decimal totalDeliveryFee = uncollectedOrders.Sum(o => o.DeliveryFee);
-
-            // مدين لإيراد التوصيل بإجمالي الإيراد المرتجع
-            uncollectedLines.Add((deliveryRevenueAccount, totalDeliveryFee, 0, $"عكس إيراد توصيل لطلبات لم تُحصل - {company.NameAr}{invNumStr}"));
-
             // التفقيط الدائن للعملاء
+            decimal totalCreditFee = 0;
+            var customerLines = new List<(string code, decimal debit, decimal credit, string desc)>();
             foreach (var order in uncollectedOrders)
             {
-                string customerAcct = order.Customer?.MainAccountId != null 
-                    ? $"ID:{order.Customer.MainAccountId}" 
-                    : $"ID:{defaultCustomerAcctId}";
-                
-                uncollectedLines.Add((customerAcct, 0, order.DeliveryFee, $"إلغاء مديونية شحن لعدم الاستلام طلب #{order.OrderNumber}"));
+                decimal fee = Math.Round(order.DeliveryFee, 2);
+                if (fee > 0)
+                {
+                    string customerAcct = order.Customer?.MainAccountId != null 
+                        ? $"ID:{order.Customer.MainAccountId}" 
+                        : $"ID:{defaultCustomerAcctId}";
+                    
+                    customerLines.Add((customerAcct, 0, fee, $"إلغاء مديونية شحن لعدم الاستلام طلب #{order.OrderNumber}"));
+                    totalCreditFee += fee;
+                }
             }
 
-            if (uncollectedLines.Count > 1)
+            if (customerLines.Any() && totalCreditFee > 0)
             {
+                // مدين لإيراد التوصيل بإجمالي الإيراد المرتجع المتزن تماماً مع الدائن
+                uncollectedLines.Add((deliveryRevenueAccount, totalCreditFee, 0, $"عكس إيراد توصيل لطلبات لم تُحصل - {company.NameAr}{invNumStr}"));
+                uncollectedLines.AddRange(customerLines);
+
                 var entryUncollected = await _accountingCore.PostEntryAsync(
                     type: JournalEntryType.Manual,
                     reference: uncollectedRef,
