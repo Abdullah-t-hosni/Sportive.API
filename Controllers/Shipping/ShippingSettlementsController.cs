@@ -111,9 +111,6 @@ public class ShippingSettlementsController : ControllerBase
     [HttpPost("settle")]
     public async Task<IActionResult> SettleOrders([FromBody] SettleShippingRequest request)
     {
-        // 🔒 Use a DB transaction so JEs and order flags commit atomically.
-        // This prevents the bug where JEs are saved but order flags are not (or vice versa).
-        using var transaction = await _db.Database.BeginTransactionAsync();
         var orderIds = request.Orders?.Select(o => o.OrderId).ToList() ?? request.OrderIds;
         if (orderIds == null || !orderIds.Any())
             return BadRequest("يجب تحديد الطلبات المراد تسويتها.");
@@ -123,6 +120,15 @@ public class ShippingSettlementsController : ControllerBase
         var company = await _db.ShippingCompanies.FindAsync(request.ShippingCompanyId);
         if (company == null || company.AccountId == null)
             return BadRequest("شركة الشحن غير موجودة أو غير مربوطة بحساب في الدليل المحاسبي.");
+
+        // 🔒 Use execution strategy + DB transaction so JEs and order flags commit atomically.
+        // Required when MySqlRetryingExecutionStrategy is configured.
+        var strategy = _db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync<IActionResult>(async () =>
+        {
+            using var transaction = await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted);
+            try
+            {
 
         bool isAsCompany = company != null && (company.NameAr.Contains("AS", StringComparison.OrdinalIgnoreCase) || company.NameAr.Contains("A&S", StringComparison.OrdinalIgnoreCase) || (company.NameEn != null && (company.NameEn.Contains("AS", StringComparison.OrdinalIgnoreCase) || company.NameEn.Contains("A&S", StringComparison.OrdinalIgnoreCase))));
 
@@ -563,6 +569,13 @@ public class ShippingSettlementsController : ControllerBase
             netAmount        = netAmount,           // موجب = تحصيل، سالب = عجز
             totalSettled     = Math.Max(netAmount, 0), // للتوافق مع الفرونت القديم
             warning          = warningMessage
+        });
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
         });
     }
 
