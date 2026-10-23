@@ -239,8 +239,8 @@ public class ShippingSettlementsController : ControllerBase
                 order.CourierSettlementDate = TimeHelper.GetEgyptTime();
                 order.CourierSettlementReference = collectionRef;
 
-                // إذا كان الطلب مرتجعاً بالفعل من البداية وتمت تسويته الآن، فتسويته الأولى هي تسوية مرتجعه أيضاً
-                if (returnStatuses.Contains(order.Status) || (int)order.Status == 11)
+                // إذا كان الطلب مرتجعاً كلياً من البداية (رفض استلام على الباب ولم يتم تسليمه أصلاً)، فتسويته الأولى هي تسوية مرتجعه الوحيدة
+                if (order.Status == OrderStatus.Returned)
                 {
                     order.IsReturnSettledWithCourier = true;
                     order.ReturnCourierSettlementDate = order.CourierSettlementDate;
