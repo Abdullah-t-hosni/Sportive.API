@@ -37,14 +37,14 @@ public class SettingsController : ControllerBase
 
     private async Task EnsureBostaColumnsExistAsync()
     {
+        if (_bostaColumnsChecked) return;
+        _bostaColumnsChecked = true;
+
         try
         {
             await _db.Database.ExecuteSqlRawAsync("ALTER TABLE `StoreSettings` ADD `MinOrderPaymentMethods` varchar(500) NULL DEFAULT 'Cash,Vodafone,InstaPay';");
         }
         catch { }
-
-        if (_bostaColumnsChecked) return;
-        _bostaColumnsChecked = true;
 
         string[] sqlStatements = new[]
         {
@@ -139,19 +139,26 @@ public class SettingsController : ControllerBase
                 info.WhatsAppPayrollTemplate = "السلام عليكم ورحمة الله وبركاته،\n\nيسعدنا مشاركة تفاصيل راتب شهر {periodMonth} لعام {periodYear} معكم.\n\n👤 الموظف: {employeeName}\n💵 صافي الراتب المستحق: {netPayable}\n\nللاطلاع على تفاصيل الراتب كاملة وتحميل قسيمة الراتب كـ PDF، يرجى الضغط على الرابط التالي:\n{payslipUrl}\n\nشكرًا لجهودكم المميزة،\nإدارة الموارد البشرية - {storeName}";
             }
 
-            // Fetch active subscription expiration
-            if (_tenantContext.CurrentTenant != null)
+            // Fetch active subscription expiration safely
+            try
             {
-                var activeSubscription = await _masterDb.TenantSubscriptions
-                    .Where(ts => ts.TenantGuid == _tenantContext.CurrentTenant.TenantGuid && ts.IsActive)
-                    .OrderByDescending(ts => ts.ExpiresAt)
-                    .FirstOrDefaultAsync();
-
-                if (activeSubscription != null)
+                if (_tenantContext.CurrentTenant != null)
                 {
-                    info.SubscriptionExpiresAt = activeSubscription.ExpiresAt;
-                    info.SubscriptionGraceDays = activeSubscription.GracePeriodDays;
+                    var activeSubscription = await _masterDb.TenantSubscriptions
+                        .Where(ts => ts.TenantGuid == _tenantContext.CurrentTenant.TenantGuid && ts.IsActive)
+                        .OrderByDescending(ts => ts.ExpiresAt)
+                        .FirstOrDefaultAsync();
+
+                    if (activeSubscription != null)
+                    {
+                        info.SubscriptionExpiresAt = activeSubscription.ExpiresAt;
+                        info.SubscriptionGraceDays = activeSubscription.GracePeriodDays;
+                    }
                 }
+            }
+            catch (Exception subEx)
+            {
+                _logger.LogWarning(subEx, "Could not fetch subscription details in SettingsController.Get");
             }
 
             return Ok(info);
