@@ -111,9 +111,14 @@ public class ShippingSettlementsController : ControllerBase
     [HttpPost("settle")]
     public async Task<IActionResult> SettleOrders([FromBody] SettleShippingRequest request)
     {
+        // 🔒 Use a DB transaction so JEs and order flags commit atomically.
+        // This prevents the bug where JEs are saved but order flags are not (or vice versa).
+        using var transaction = await _db.Database.BeginTransactionAsync();
         var orderIds = request.Orders?.Select(o => o.OrderId).ToList() ?? request.OrderIds;
         if (orderIds == null || !orderIds.Any())
             return BadRequest("يجب تحديد الطلبات المراد تسويتها.");
+
+        int requestedCount = orderIds.Count; // عدد الطلبات المطلوبة من الفرونت
 
         var company = await _db.ShippingCompanies.FindAsync(request.ShippingCompanyId);
         if (company == null || company.AccountId == null)
@@ -192,6 +197,13 @@ public class ShippingSettlementsController : ControllerBase
 
         var timestamp = DateTime.Now.ToString("yyyyMMddHHmmss");
         var collectionRef = $"SETTLE-COLLECTION-{company.Id}-{timestamp}";
+
+        // 🛡️ Idempotency: if a JE with this exact batch ref already exists, the settlement already ran.
+        // This prevents double-posting if the client retries after a timeout.
+        var alreadyExists = await _db.JournalEntries
+            .AnyAsync(j => j.Reference != null && j.Reference.StartsWith($"SETTLE-EXP-{company.Id}-{timestamp}"));
+        if (alreadyExists)
+            return Ok(new { success = true, totalSettled = (decimal)0, count = 0, alreadyProcessed = true });
 
         // Update shipping costs, set settlement flag and batch reference
         foreach (var order in orders)
@@ -478,8 +490,11 @@ public class ShippingSettlementsController : ControllerBase
         // ----------------------------------------------------
         // 3️⃣ قيد تحصيل الصافي (بتاريخ التحصيل)
         // ----------------------------------------------------
+        // 3️⃣ قيد التحصيل أو العجز (بتاريخ التحصيل) - يُنشأ دائمًا إلا لو الصافي = 0
+        // ----------------------------------------------------
         if (netAmount > 0)
         {
+            // ✅ الصافي موجب: الشركة تحوّل للمتجر
             var collectionLines = new List<(string code, decimal debit, decimal credit, string desc)>
             {
                 // مدين: البنك / الخزينة / إنستا باي (بالصافي المحول)
@@ -499,13 +514,56 @@ public class ShippingSettlementsController : ControllerBase
                 branchId: orders.FirstOrDefault()?.BranchId
             );
         }
-        // Removed the automatic deficit payment voucher (netAmount < 0) as requested by the user.
+        else if (netAmount < 0)
+        {
+            // 🔴 الصافي سالب: المتجر يدفع عجزًا لشركة الشحن (مصاريف الشحن > المتحصل)
+            var deficitAmount = Math.Abs(netAmount);
+            var deficitRef = $"SETTLE-DEFICIT-{company.Id}-{timestamp}";
+            var deficitLines = new List<(string code, decimal debit, decimal credit, string desc)>
+            {
+                // مدين: حساب شركة الشحن (دين على المتجر)
+                ($"ID:{company.AccountId}", deficitAmount, 0, $"عجز تسوية - مصاريف شحن تجاوزت المتحصل{invNumStr}"),
+                // دائن: البنك / الخزينة (المتجر يدفع للشركة)
+                (cashAccountCode, 0, deficitAmount, $"سداد عجز تسوية شحن {company.NameAr} - {orders.Count} طلبات{invNumStr}")
+            };
+
+            await _accountingCore.PostEntryAsync(
+                type: JournalEntryType.PaymentVoucher,
+                reference: deficitRef,
+                description: $"قيد عجز تسوية شحن: {company.NameAr}{invNumStr}",
+                date: TimeHelper.GetEgyptBusinessDayDate(collectionDate),
+                lines: deficitLines,
+                source: OrderSource.Website,
+                createdAt: currentSysTime,
+                branchId: orders.FirstOrDefault()?.BranchId
+            );
+        }
+        // netAmount == 0: لا يوجد صافي محوّل، لا حاجة لقيد تحصيل
 
 
 
         await _db.SaveChangesAsync();
 
-        return Ok(new { success = true, totalSettled = netAmount, count = orders.Count });
+        // ✅ Commit the transaction only after everything succeeds
+        await transaction.CommitAsync();
+
+        int skippedCount = requestedCount - orders.Count;
+        string? warningMessage = skippedCount > 0
+            ? $"تنبيه: تم تخطي {skippedCount} طلب كانت مسوّاة مسبقًا من أصل {requestedCount} طلب محدد."
+            : null;
+
+        return Ok(new
+        {
+            success     = true,
+            count       = orders.Count,
+            skippedCount,
+            requestedCount,
+            totalCollected   = totalCollected,
+            totalShippingCost = totalShippingCost,
+            netAmount        = netAmount,           // موجب = تحصيل، سالب = عجز
+            totalSettled     = Math.Max(netAmount, 0), // للتوافق مع الفرونت القديم
+            warning          = warningMessage
+        });
     }
 
     [HttpPost("unsettle")]
