@@ -2793,12 +2793,22 @@ public class OrderService : IOrderService
             }
         }
 
-        // ✅ REVERT: If reverting FROM Returned/Cancelled/PartiallyReturned → reverse accounting & inventory
-        if ((oldStatus == OrderStatus.Returned || oldStatus == OrderStatus.Cancelled || oldStatus == OrderStatus.PartiallyReturned) &&
-             dto.Status != OrderStatus.Returned && dto.Status != OrderStatus.Cancelled && dto.Status != OrderStatus.PartiallyReturned)
+        // ✅ REVERT: If reverting FROM Returned/Cancelled/PartiallyReturned/ReturnInShipping
+        // OR if transitioning to an active status (Pending / Confirmed / etc.)
+        bool wasReturnOrCancelled = oldStatus == OrderStatus.Returned || 
+                                    oldStatus == OrderStatus.Cancelled || 
+                                    oldStatus == OrderStatus.PartiallyReturned || 
+                                    oldStatus == OrderStatus.ReturnInShipping;
+
+        bool isNewStatusActive = dto.Status != OrderStatus.Returned && 
+                                 dto.Status != OrderStatus.Cancelled && 
+                                 dto.Status != OrderStatus.PartiallyReturned && 
+                                 dto.Status != OrderStatus.ReturnInShipping;
+
+        if (isNewStatusActive && (wasReturnOrCancelled || dto.Status == OrderStatus.Pending || dto.Status == OrderStatus.Confirmed))
         {
             // 🔄 Revert loyalty reversals if order was previously Returned or Cancelled
-            if (order.CustomerId > 0)
+            if (order.CustomerId > 0 && (oldStatus == OrderStatus.Returned || oldStatus == OrderStatus.Cancelled))
             {
                 try
                 {
@@ -2810,10 +2820,27 @@ public class OrderService : IOrderService
                 }
             }
 
+            // 🔄 Cancel any pending or approved return requests linked to this order so it disappears from ReturnInShipping
+            var activeReturnRequests = await _db.ReturnExchangeRequests
+                .Where(r => r.OrderId == order.Id && (r.Status == ReturnExchangeStatus.Pending || r.Status == ReturnExchangeStatus.Approved))
+                .ToListAsync();
+
+            if (activeReturnRequests.Any())
+            {
+                foreach (var req in activeReturnRequests)
+                {
+                    req.Status = ReturnExchangeStatus.Cancelled;
+                    req.AdminNotes = (string.IsNullOrEmpty(req.AdminNotes) ? "" : req.AdminNotes + " | ") + 
+                        $"تم إلغاء طلب المرتجع تلقائياً لتغيير حالة الطلب من {oldStatus} إلى {dto.Status}";
+                }
+                _logger.LogInformation("[Orders] Cancelled {Count} return requests for order {Ref} on status change to {Status}.", activeReturnRequests.Count, order.OrderNumber, dto.Status);
+            }
+
             // 1️⃣ Remove SalesReturn journal entries for this order
             var returnEntries = await _db.JournalEntries
                 .Include(e => e.Lines)
-                .Where(e => e.Type == JournalEntryType.SalesReturn && e.Reference != null && e.Reference.StartsWith(order.OrderNumber))
+                .Where(e => e.Type == JournalEntryType.SalesReturn && 
+                            (e.OrderId == order.Id || (e.Reference != null && e.Reference.StartsWith(order.OrderNumber))))
                 .ToListAsync();
 
             if (returnEntries.Any())

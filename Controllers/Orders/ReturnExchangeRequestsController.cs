@@ -1471,11 +1471,35 @@ public class ReturnExchangeRequestsController : ControllerBase
     [HttpPost("return-exchange-requests/{requestId}/reject")]
     public async Task<IActionResult> RejectRequest(int requestId, [FromBody] RejectReturnExchangeRequestDto dto)
     {
-        var req = await _db.ReturnExchangeRequests.FirstOrDefaultAsync(r => r.Id == requestId);
+        var req = await _db.ReturnExchangeRequests
+            .Include(r => r.Order)
+            .FirstOrDefaultAsync(r => r.Id == requestId);
         if (req == null) return NotFound("الطلب غير موجود.");
 
+        var oldReqStatus = req.Status;
         req.Status = ReturnExchangeStatus.Rejected;
         req.RejectionReason = dto?.Reason ?? "مرفوض من قبل الإدارة";
+
+        // إذا كان الطلب قد تم قبوله سابقاً، نعكس تأثيره المحاسبي ونعيد حالة الأوردر إذا كان مرتجع لدى الشحن
+        if (oldReqStatus == ReturnExchangeStatus.Approved && req.Order != null)
+        {
+            if (req.Order.Status == OrderStatus.ReturnInShipping)
+            {
+                req.Order.Status = OrderStatus.Pending;
+            }
+
+            var returnEntries = await _db.JournalEntries
+                .Include(e => e.Lines)
+                .Where(e => e.Type == JournalEntryType.SalesReturn &&
+                            (e.OrderId == req.Order.Id || (e.Reference != null && e.Reference.StartsWith(req.Order.OrderNumber))))
+                .ToListAsync();
+
+            if (returnEntries.Any())
+            {
+                _db.JournalLines.RemoveRange(returnEntries.SelectMany(e => e.Lines));
+                _db.JournalEntries.RemoveRange(returnEntries);
+            }
+        }
 
         await _db.SaveChangesAsync();
         return Ok(new { message = "تم رفض الطلب." });
