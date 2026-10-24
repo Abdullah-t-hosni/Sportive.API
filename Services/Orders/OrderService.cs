@@ -104,6 +104,13 @@ public class OrderService : IOrderService
                 (o.Customer != null && o.Customer.PhoneHash != null && o.Customer.PhoneHash == phoneHash));
         }
 
+        // 🚫 Hide courier settlement dummy return orders (-RTN) from normal orders listing
+        // unless specifically requested by typing -RTN in the search box
+        if (string.IsNullOrWhiteSpace(search) || !search.Trim().EndsWith("-RTN", StringComparison.OrdinalIgnoreCase))
+        {
+            query = query.Where(o => !o.OrderNumber.EndsWith("-RTN"));
+        }
+
         var total = await query.CountAsync();
 
         if (!string.IsNullOrEmpty(orderBy) && orderBy.Equals("updatedAt", StringComparison.OrdinalIgnoreCase))

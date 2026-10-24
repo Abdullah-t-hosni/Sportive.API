@@ -47,7 +47,7 @@ public class DashboardService : IDashboardService
         var lastMonthStart = monthStart.AddMonths(-1);
 
         // --- Base Query for Orders ---
-        var query = _db.Orders.Where(o => o.Status != OrderStatus.Cancelled);
+        var query = _db.Orders.Where(o => o.Status != OrderStatus.Cancelled && !o.OrderNumber.EndsWith("-RTN"));
         if (source.HasValue)
         {
             query = query.Where(o => o.Source == source.Value);
