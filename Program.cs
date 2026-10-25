@@ -19,11 +19,13 @@ using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using OpenTelemetry.Metrics;
 
+var isDev = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development";
 Log.Logger = new LoggerConfiguration()
-    .MinimumLevel.Is(Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development" ? LogEventLevel.Debug : LogEventLevel.Information)
+    .MinimumLevel.Is(isDev ? LogEventLevel.Debug : LogEventLevel.Information)
     .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
     .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
-    .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Database.Command", LogEventLevel.Information)
+    .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Database.Command", isDev ? LogEventLevel.Information : LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Infrastructure", LogEventLevel.Warning)
     .Enrich.FromLogContext()
     .Enrich.WithEnvironmentName()
     .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
@@ -110,24 +112,34 @@ builder.Services.AddApplicationServices();
 builder.Services.AddHostedService<TaskGenerationService>();
 
 // ── OPENTELEMETRY ─────────────────────────────────────
-var otelEndpoint = builder.Configuration["OpenTelemetry:Endpoint"] ?? "http://localhost:4317";
-builder.Services.AddOpenTelemetry()
-    .ConfigureResource(resource => resource
-        .AddService(serviceName: "Sportive.API", serviceVersion: "1.0.0")
-        .AddAttributes(new Dictionary<string, object>
-        {
-            { "deployment.environment", Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production" }
-        }))
-    .WithTracing(tracing => tracing
-        .AddSource("Sportive.API")
-        .AddAspNetCoreInstrumentation()
-        .AddHttpClientInstrumentation()
-        .AddOtlpExporter(opt => opt.Endpoint = new Uri(otelEndpoint)))
-    .WithMetrics(metrics => metrics
-        .AddAspNetCoreInstrumentation()
-        .AddHttpClientInstrumentation()
-        .AddRuntimeInstrumentation()
-        .AddOtlpExporter(opt => opt.Endpoint = new Uri(otelEndpoint)));
+var otelEndpoint = builder.Configuration["OpenTelemetry:Endpoint"];
+var otelEnabled = builder.Configuration.GetValue<bool>("OpenTelemetry:Enabled", false)
+    && !string.IsNullOrWhiteSpace(otelEndpoint)
+    && !otelEndpoint.Contains(":5173");
+
+if (otelEnabled)
+{
+    builder.Services.AddOpenTelemetry()
+        .ConfigureResource(resource => resource
+            .AddService(serviceName: "Sportive.API", serviceVersion: "1.0.0")
+            .AddAttributes(new Dictionary<string, object>
+            {
+                { "deployment.environment", Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production" }
+            }))
+        .WithTracing(tracing => tracing
+            .AddSource("Sportive.API")
+            .AddAspNetCoreInstrumentation()
+            .AddHttpClientInstrumentation(opt =>
+            {
+                opt.FilterHttpRequestMessage = req => !req.RequestUri?.ToString().StartsWith(otelEndpoint!) ?? true;
+            })
+            .AddOtlpExporter(opt => opt.Endpoint = new Uri(otelEndpoint!)))
+        .WithMetrics(metrics => metrics
+            .AddAspNetCoreInstrumentation()
+            .AddHttpClientInstrumentation()
+            .AddRuntimeInstrumentation()
+            .AddOtlpExporter(opt => opt.Endpoint = new Uri(otelEndpoint!)));
+}
 
 // ── HANGFIRE (Background Jobs) ── minimal in-memory for schema extraction ──
 builder.Services.AddHangfire((provider, config) => config
@@ -269,7 +281,26 @@ if (app.Environment.IsDevelopment())
 }
 app.UseResponseCompression(); // ✅ single call — was duplicated previously
 app.UseCors("AllowReactApp");
-app.UseSerilogRequestLogging();
+app.UseSerilogRequestLogging(options =>
+{
+    options.GetLevel = (httpContext, elapsed, ex) =>
+    {
+        if (ex != null || httpContext.Response.StatusCode >= 500)
+            return LogEventLevel.Error;
+        if (httpContext.Response.StatusCode >= 400)
+            return LogEventLevel.Warning;
+
+        var path = httpContext.Request.Path.Value ?? "";
+        // Suppress noisy health checks and realtime signalr ping logs from flooding console
+        if (path.Equals("/health", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("/notifications-hub", StringComparison.OrdinalIgnoreCase))
+        {
+            return LogEventLevel.Verbose;
+        }
+
+        return LogEventLevel.Information;
+    };
+});
 
 // ── SECURITY HEADERS ──────────────────────────────────
 app.Use(async (ctx, next) =>
