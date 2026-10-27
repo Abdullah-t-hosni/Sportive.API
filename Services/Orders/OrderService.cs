@@ -502,7 +502,12 @@ public class OrderService : IOrderService
                 var targetCustomer = await _db.Customers.FindAsync(customerId.Value);
                 if (targetCustomer != null && !targetCustomer.IsActive)
                 {
-                    throw new InvalidOperationException(_t.Get("Orders.CustomerAccountDisabled") ?? "حساب العميل معطل ومحظور من إتمام الطلبات. يرجى مراجعة إدارة المتجر.");
+                    var disabledMsg = _t.Get("Orders.CustomerAccountDisabled");
+                    if (string.IsNullOrWhiteSpace(disabledMsg) || disabledMsg == "Orders.CustomerAccountDisabled")
+                    {
+                        disabledMsg = "حساب العميل معطل ومحظور من إتمام الطلبات. يرجى مراجعة إدارة المتجر.";
+                    }
+                    throw new InvalidOperationException(disabledMsg);
                 }
 
                 // If guest address is provided (or top-level address fields sent), save it to the customer account and get Address ID

@@ -126,6 +126,7 @@
   "Orders.InvoiceNotFound": "Invoice not found",
   "Orders.InvoiceDetailsNotFound": "Invoice details not found",
   "Orders.NoIdsProvided": "No order IDs provided",
+  "Orders.CustomerAccountDisabled": "Customer account is deactivated and blocked from placing orders. Please contact store support.",
   "Orders.Archived": "Archived",
   "Orders.Unarchived": "Unarchived",
   "General.Success": "Operation successful",
