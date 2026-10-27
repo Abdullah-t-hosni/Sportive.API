@@ -498,6 +498,13 @@ public class OrderService : IOrderService
 
                 if (!customerId.HasValue) throw new ArgumentException(_t.Get("Auth.IdentifierRequired"));
 
+                // 🛡️ BLOCK DISABLED/INACTIVE CUSTOMERS FROM ORDERING
+                var targetCustomer = await _db.Customers.FindAsync(customerId.Value);
+                if (targetCustomer != null && !targetCustomer.IsActive)
+                {
+                    throw new InvalidOperationException(_t.Get("Orders.CustomerAccountDisabled") ?? "حساب العميل معطل ومحظور من إتمام الطلبات. يرجى مراجعة إدارة المتجر.");
+                }
+
                 // If guest address is provided (or top-level address fields sent), save it to the customer account and get Address ID
                 int? finalDeliveryAddressId = dto.DeliveryAddressId;
                 var effectiveGuestAddress = dto.GuestAddress;
@@ -528,11 +535,10 @@ public class OrderService : IOrderService
                 bool isCreditOrder = dto.PaymentMethod == PaymentMethod.Credit || (dto.Payments != null && dto.Payments.Any(p => p.Method == PaymentMethod.Credit));
                 if (isCreditOrder)
                 {
-                    var customer = await _db.Customers.FindAsync(customerId.Value);
-                    if (customer == null || 
-                        customer.FullName == "Walk-in Customer" || 
-                        customer.Phone == "0000000000" || 
-                        string.IsNullOrEmpty(customer.Phone))
+                    if (targetCustomer == null || 
+                        targetCustomer.FullName == "Walk-in Customer" || 
+                        targetCustomer.Phone == "0000000000" || 
+                        string.IsNullOrEmpty(targetCustomer.Phone))
                     {
                         throw new ArgumentException(_t.Get("Orders.CreditPolicyViolation"));
                     }

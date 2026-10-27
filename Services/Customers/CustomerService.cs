@@ -484,6 +484,7 @@ public class CustomerService : ICustomerService
             var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == customer.AppUserId);
             if (user != null)
             {
+                user.IsActive = customer.IsActive;
                 user.FullName = customer.FullName;
                 user.PhoneNumber = customer.Phone;
                 
