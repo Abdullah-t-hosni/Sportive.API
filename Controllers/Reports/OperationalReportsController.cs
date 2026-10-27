@@ -3786,6 +3786,15 @@ public class OperationalReportsController : ControllerBase
 
         // 1. Resolve Account Mappings with Chart of Accounts fallback
         var maps = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key.ToLower(), m => m.AccountId);
+        var salesRevAccId = maps.GetValueOrDefault("salesaccountid") ?? maps.GetValueOrDefault("salesrevenueaccountid");
+        if (!salesRevAccId.HasValue)
+        {
+            salesRevAccId = await _db.Accounts.AsNoTracking()
+                .Where(a => a.Code == "4101" || a.Code.StartsWith("4101") || (a.NameAr != null && a.NameAr.Contains("إيرادات المبيعات")))
+                .Select(a => (int?)a.Id)
+                .FirstOrDefaultAsync();
+        }
+
         var salesReturnAccId = maps.GetValueOrDefault("salesreturnaccountid");
         if (!salesReturnAccId.HasValue)
         {
@@ -3813,59 +3822,93 @@ public class OperationalReportsController : ControllerBase
                 .FirstOrDefaultAsync();
         }
 
-        // 2. Fetch posted COGS from General Ledger (Account 51101) for these orders
+        // 2. Fetch posted GL Lines (Revenue 4101, Discounts 410101, COGS 51101) for these orders
+        var salesMapByOrderId = new Dictionary<int, decimal>();
+        var salesMapByRef = new Dictionary<string, decimal>();
+        var discMapByOrderId = new Dictionary<int, decimal>();
+        var discMapByRef = new Dictionary<string, decimal>();
         var cogsMapByOrderId = new Dictionary<int, decimal>();
         var cogsMapByRef = new Dictionary<string, decimal>();
-        if (cogsAccId.HasValue)
+
+        var targetAccIds = new List<int>();
+        if (salesRevAccId.HasValue) targetAccIds.Add(salesRevAccId.Value);
+        if (salesDiscountAccId.HasValue) targetAccIds.Add(salesDiscountAccId.Value);
+        if (cogsAccId.HasValue) targetAccIds.Add(cogsAccId.Value);
+
+        if (targetAccIds.Any())
         {
-            var cogsQuery = await _db.JournalLines.AsNoTracking()
-                .Where(l => l.AccountId == cogsAccId.Value 
+            var glLines = await _db.JournalLines.AsNoTracking()
+                .Where(l => targetAccIds.Contains(l.AccountId)
                          && l.JournalEntry.Status == JournalEntryStatus.Posted
                          && l.JournalEntry.Type == JournalEntryType.SalesInvoice
-                         && l.Debit > 0
                          && ((l.OrderId.HasValue && orderIds.Contains(l.OrderId.Value)) 
                              || (l.JournalEntry.OrderId.HasValue && orderIds.Contains(l.JournalEntry.OrderId.Value)) 
                              || (l.JournalEntry.Reference != null && orderNumbers.Contains(l.JournalEntry.Reference))))
                 .Select(l => new {
                     OrderId = l.OrderId ?? l.JournalEntry.OrderId ?? 0,
                     Ref = l.JournalEntry.Reference,
-                    l.Debit
+                    l.AccountId,
+                    l.Debit,
+                    l.Credit
                 })
                 .ToListAsync();
 
-            cogsMapByOrderId = cogsQuery.Where(x => x.OrderId > 0).GroupBy(x => x.OrderId).ToDictionary(g => g.Key, g => g.Sum(x => x.Debit));
-            cogsMapByRef = cogsQuery.Where(x => !string.IsNullOrEmpty(x.Ref)).GroupBy(x => x.Ref!).ToDictionary(g => g.Key, g => g.Sum(x => x.Debit));
+            if (salesRevAccId.HasValue)
+            {
+                var revs = glLines.Where(x => x.AccountId == salesRevAccId.Value);
+                salesMapByOrderId = revs.Where(x => x.OrderId > 0).GroupBy(x => x.OrderId).ToDictionary(g => g.Key, g => g.Sum(x => x.Credit - x.Debit));
+                salesMapByRef = revs.Where(x => !string.IsNullOrEmpty(x.Ref)).GroupBy(x => x.Ref!).ToDictionary(g => g.Key, g => g.Sum(x => x.Credit - x.Debit));
+            }
+
+            if (salesDiscountAccId.HasValue)
+            {
+                var discs = glLines.Where(x => x.AccountId == salesDiscountAccId.Value);
+                discMapByOrderId = discs.Where(x => x.OrderId > 0).GroupBy(x => x.OrderId).ToDictionary(g => g.Key, g => g.Sum(x => x.Debit - x.Credit));
+                discMapByRef = discs.Where(x => !string.IsNullOrEmpty(x.Ref)).GroupBy(x => x.Ref!).ToDictionary(g => g.Key, g => g.Sum(x => x.Debit - x.Credit));
+            }
+
+            if (cogsAccId.HasValue)
+            {
+                var cogs = glLines.Where(x => x.AccountId == cogsAccId.Value);
+                cogsMapByOrderId = cogs.Where(x => x.OrderId > 0).GroupBy(x => x.OrderId).ToDictionary(g => g.Key, g => g.Sum(x => x.Debit - x.Credit));
+                cogsMapByRef = cogs.Where(x => !string.IsNullOrEmpty(x.Ref)).GroupBy(x => x.Ref!).ToDictionary(g => g.Key, g => g.Sum(x => x.Debit - x.Credit));
+            }
         }
 
         var invoiceRows = new List<Sportive.API.DTOs.Reports.InvoiceProfitabilityDto>();
 
         foreach (var order in orders)
         {
-            decimal orderSoldItemsTotal = order.Items
-                .Where(item => item.UnitPrice > 0 && item.TotalPrice > 0 && item.Quantity > 0)
-                .Sum(item => item.TotalPrice);
-
-            decimal orderTotalDiscounts = order.DiscountAmount + order.TemporalDiscount + order.LoyaltyDiscountAmount;
-            decimal grossRevenue = Math.Max(0, orderSoldItemsTotal - orderTotalDiscounts);
-            decimal revenue = grossRevenue;
-
+            decimal grossSales = 0;
+            decimal disc = 0;
             decimal cost = 0;
-            if (cogsMapByOrderId.TryGetValue(order.Id, out var postedCogs))
+
+            bool hasPostedRev = salesMapByOrderId.TryGetValue(order.Id, out var sVal) 
+                || (!string.IsNullOrEmpty(order.OrderNumber) && salesMapByRef.TryGetValue(order.OrderNumber, out sVal));
+            bool hasPostedDisc = discMapByOrderId.TryGetValue(order.Id, out var dVal) 
+                || (!string.IsNullOrEmpty(order.OrderNumber) && discMapByRef.TryGetValue(order.OrderNumber, out dVal));
+            bool hasPostedCogs = cogsMapByOrderId.TryGetValue(order.Id, out var cVal) 
+                || (!string.IsNullOrEmpty(order.OrderNumber) && cogsMapByRef.TryGetValue(order.OrderNumber, out cVal));
+
+            if (hasPostedRev)
             {
-                cost = postedCogs;
-            }
-            else if (!string.IsNullOrEmpty(order.OrderNumber) && cogsMapByRef.TryGetValue(order.OrderNumber, out var postedRefCogs))
-            {
-                cost = postedRefCogs;
+                grossSales = sVal;
+                disc = hasPostedDisc ? dVal : 0;
+                cost = hasPostedCogs ? cVal : 0;
             }
             else
             {
-                cost = order.Items
-                    .Sum(item => (item.Product?.CostPrice ?? 0) * item.Quantity);
+                grossSales = order.Items.Sum(item => item.Quantity * (item.OriginalUnitPrice > 0 ? item.OriginalUnitPrice : item.UnitPrice));
+                decimal orderSoldActual = order.Items.Sum(item => item.TotalPrice);
+                decimal lineDiff = Math.Max(0, grossSales - orderSoldActual);
+                decimal unallocatedDisc = Math.Max(0, (order.DiscountAmount + order.LoyaltyDiscountAmount) - lineDiff);
+                disc = lineDiff + unallocatedDisc;
+                cost = order.Items.Sum(item => (item.Product?.CostPrice ?? 0m) * item.Quantity);
             }
 
-            decimal profit = grossRevenue - cost;
-            decimal margin = grossRevenue > 0 ? (profit / grossRevenue) * 100 : 0;
+            decimal revenue = grossSales - disc;
+            decimal profit = revenue - cost;
+            decimal margin = revenue > 0 ? (profit / revenue) * 100 : 0;
 
             invoiceRows.Add(new Sportive.API.DTOs.Reports.InvoiceProfitabilityDto {
                 OrderId = order.Id,
@@ -3880,8 +3923,6 @@ public class OperationalReportsController : ControllerBase
         }
 
         // Fetch SalesReturn journal entries in the period to represent all kinds of returns (including direct and partial ones)
-        var maps2 = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key.ToLower(), m => m.AccountId);
-
         if (salesReturnAccId.HasValue)
         {
             var returnEntriesQ = _db.JournalEntries.AsNoTracking()
@@ -3909,21 +3950,21 @@ public class OperationalReportsController : ControllerBase
             foreach (var j in returnEntries)
             {
                 decimal salesReturnDebit = j.Lines
-                    .Where(l => l.Debit > 0 && l.AccountId == salesReturnAccId)
-                    .Sum(l => l.Debit);
+                    .Where(l => l.AccountId == salesReturnAccId)
+                    .Sum(l => l.Debit - l.Credit);
 
                 decimal discountCredit = salesDiscountAccId.HasValue
                     ? j.Lines
-                        .Where(l => l.Credit > 0 && l.AccountId == salesDiscountAccId)
-                        .Sum(l => l.Credit)
+                        .Where(l => l.AccountId == salesDiscountAccId)
+                        .Sum(l => l.Credit - l.Debit)
                     : 0;
 
                 decimal netReturn = salesReturnDebit - discountCredit;
 
                 decimal costReturn = cogsAccId.HasValue
                     ? j.Lines
-                        .Where(l => l.Credit > 0 && l.AccountId == cogsAccId)
-                        .Sum(l => l.Credit)
+                        .Where(l => l.AccountId == cogsAccId)
+                        .Sum(l => l.Credit - l.Debit)
                     : 0;
 
                 int? customerId = j.Lines.FirstOrDefault(l => l.CustomerId.HasValue)?.CustomerId;
@@ -3934,7 +3975,6 @@ public class OperationalReportsController : ControllerBase
                 }
                 else
                 {
-                    // Fallback to parsing from description or default to Walk-in
                     customerName = j.Description?.Contains(" - ") == true 
                         ? j.Description.Split(" - ").Last() 
                         : "Walk-in";

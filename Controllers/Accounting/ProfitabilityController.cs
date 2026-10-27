@@ -92,8 +92,27 @@ public class ProfitabilityController : ControllerBase
 
         var items = await itemsQ.ToListAsync();
 
-        // 1. Resolve Account Mappings for COGS (Account 51101)
+        // 1. Resolve Account Mappings for Sales (4101), Discounts (410101), and COGS (51101)
         var maps = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key.ToLower(), m => m.AccountId);
+        
+        var salesRevAccId = maps.GetValueOrDefault("salesaccountid") ?? maps.GetValueOrDefault("salesrevenueaccountid");
+        if (!salesRevAccId.HasValue)
+        {
+            salesRevAccId = await _db.Accounts.AsNoTracking()
+                .Where(a => a.Code == "4101" || a.Code.StartsWith("4101") || (a.NameAr != null && a.NameAr.Contains("إيرادات المبيعات")))
+                .Select(a => (int?)a.Id)
+                .FirstOrDefaultAsync();
+        }
+
+        var salesDiscAccId = maps.GetValueOrDefault("salesdiscountaccountid");
+        if (!salesDiscAccId.HasValue)
+        {
+            salesDiscAccId = await _db.Accounts.AsNoTracking()
+                .Where(a => a.Code == "410101" || a.Code.StartsWith("410101") || (a.NameAr != null && (a.NameAr.Contains("الخصم الممنوح") || a.NameAr.Contains("الخصم المسموح"))))
+                .Select(a => (int?)a.Id)
+                .FirstOrDefaultAsync();
+        }
+
         var cogsAccId = maps.GetValueOrDefault("costofgoodssoldaccountid");
         if (!cogsAccId.HasValue)
         {
@@ -103,31 +122,84 @@ public class ProfitabilityController : ControllerBase
                 .FirstOrDefaultAsync();
         }
 
-        // 2. Fetch posted COGS from General Ledger (Account 51101) for these orders
+        // 2. Fetch posted GL entries from General Ledger for these orders
         var orderIds = items.Select(i => i.OrderId).Distinct().ToList();
         var orderNumbers = items.Select(i => i.Order.OrderNumber).Where(r => !string.IsNullOrEmpty(r)).Distinct().ToList();
 
+        var salesMapByOrderId = new Dictionary<int, decimal>();
+        var salesMapByRef = new Dictionary<string, decimal>();
+        var discMapByOrderId = new Dictionary<int, decimal>();
+        var discMapByRef = new Dictionary<string, decimal>();
         var cogsMapByOrderId = new Dictionary<int, decimal>();
         var cogsMapByRef = new Dictionary<string, decimal>();
-        if (cogsAccId.HasValue)
+
+        var targetAccIds = new List<int>();
+        if (salesRevAccId.HasValue) targetAccIds.Add(salesRevAccId.Value);
+        if (salesDiscAccId.HasValue) targetAccIds.Add(salesDiscAccId.Value);
+        if (cogsAccId.HasValue) targetAccIds.Add(cogsAccId.Value);
+
+        if (targetAccIds.Any())
         {
-            var cogsQuery = await _db.JournalLines.AsNoTracking()
-                .Where(l => l.AccountId == cogsAccId.Value 
+            var glLines = await _db.JournalLines.AsNoTracking()
+                .Where(l => targetAccIds.Contains(l.AccountId)
                          && l.JournalEntry.Status == JournalEntryStatus.Posted
                          && l.JournalEntry.Type == JournalEntryType.SalesInvoice
-                         && l.Debit > 0
                          && ((l.OrderId.HasValue && orderIds.Contains(l.OrderId.Value)) 
                              || (l.JournalEntry.OrderId.HasValue && orderIds.Contains(l.JournalEntry.OrderId.Value)) 
                              || (l.JournalEntry.Reference != null && orderNumbers.Contains(l.JournalEntry.Reference))))
                 .Select(l => new {
                     OrderId = l.OrderId ?? l.JournalEntry.OrderId ?? 0,
                     Ref = l.JournalEntry.Reference,
-                    l.Debit
+                    l.AccountId,
+                    l.Debit,
+                    l.Credit
                 })
                 .ToListAsync();
 
-            cogsMapByOrderId = cogsQuery.Where(x => x.OrderId > 0).GroupBy(x => x.OrderId).ToDictionary(g => g.Key, g => g.Sum(x => x.Debit));
-            cogsMapByRef = cogsQuery.Where(x => !string.IsNullOrEmpty(x.Ref)).GroupBy(x => x.Ref!).ToDictionary(g => g.Key, g => g.Sum(x => x.Debit));
+            if (salesRevAccId.HasValue)
+            {
+                var revs = glLines.Where(x => x.AccountId == salesRevAccId.Value);
+                salesMapByOrderId = revs.Where(x => x.OrderId > 0).GroupBy(x => x.OrderId).ToDictionary(g => g.Key, g => g.Sum(x => x.Credit - x.Debit));
+                salesMapByRef = revs.Where(x => !string.IsNullOrEmpty(x.Ref)).GroupBy(x => x.Ref!).ToDictionary(g => g.Key, g => g.Sum(x => x.Credit - x.Debit));
+            }
+
+            if (salesDiscAccId.HasValue)
+            {
+                var discs = glLines.Where(x => x.AccountId == salesDiscAccId.Value);
+                discMapByOrderId = discs.Where(x => x.OrderId > 0).GroupBy(x => x.OrderId).ToDictionary(g => g.Key, g => g.Sum(x => x.Debit - x.Credit));
+                discMapByRef = discs.Where(x => !string.IsNullOrEmpty(x.Ref)).GroupBy(x => x.Ref!).ToDictionary(g => g.Key, g => g.Sum(x => x.Debit - x.Credit));
+            }
+
+            if (cogsAccId.HasValue)
+            {
+                var cogs = glLines.Where(x => x.AccountId == cogsAccId.Value);
+                cogsMapByOrderId = cogs.Where(x => x.OrderId > 0).GroupBy(x => x.OrderId).ToDictionary(g => g.Key, g => g.Sum(x => x.Debit - x.Credit));
+                cogsMapByRef = cogs.Where(x => !string.IsNullOrEmpty(x.Ref)).GroupBy(x => x.Ref!).ToDictionary(g => g.Key, g => g.Sum(x => x.Debit - x.Credit));
+            }
+        }
+
+        // 3. Precompute Order-Level Accounting Financials for exact item attribution
+        var orderItemsGrouped = items.GroupBy(i => i.OrderId).ToDictionary(g => g.Key, g => g.ToList());
+        var orderSummaryMap = new Dictionary<int, (decimal OrderGross, decimal OrderBaseCost, decimal PostedSales, decimal PostedDisc, decimal PostedCogs)>();
+
+        foreach (var (oId, oItems) in orderItemsGrouped)
+        {
+            var first = oItems[0];
+            string refNum = first.Order.OrderNumber;
+
+            decimal orderGross = oItems.Sum(x => x.Quantity * (x.OriginalUnitPrice > 0 ? x.OriginalUnitPrice : x.UnitPrice));
+            decimal orderActual = oItems.Sum(x => x.TotalPrice);
+            decimal orderBaseCost = oItems.Sum(x => x.Quantity * (x.Product?.CostPrice ?? 0m));
+
+            decimal lineDiff = Math.Max(0, orderGross - orderActual);
+            decimal unallocDisc = Math.Max(0, (first.Order.DiscountAmount + first.Order.LoyaltyDiscountAmount) - lineDiff);
+            decimal calcDisc = lineDiff + unallocDisc;
+
+            decimal postedSales = salesMapByOrderId.TryGetValue(oId, out var sVal) || (!string.IsNullOrEmpty(refNum) && salesMapByRef.TryGetValue(refNum, out sVal)) ? sVal : orderGross;
+            decimal postedDisc = discMapByOrderId.TryGetValue(oId, out var dVal) || (!string.IsNullOrEmpty(refNum) && discMapByRef.TryGetValue(refNum, out dVal)) ? dVal : calcDisc;
+            decimal postedCogs = cogsMapByOrderId.TryGetValue(oId, out var cVal) || (!string.IsNullOrEmpty(refNum) && cogsMapByRef.TryGetValue(refNum, out cVal)) ? cVal : orderBaseCost;
+
+            orderSummaryMap[oId] = (orderGross, orderBaseCost, postedSales, postedDisc, postedCogs);
         }
 
         // --- تجميع حسب المنتج ----------------------------
@@ -142,75 +214,39 @@ public class ProfitabilityController : ControllerBase
 
                 var mainImage = product.Images.FirstOrDefault()?.ImageUrl;
                 
-                // في نظام "فاتورة المبيعات"، نحتاج لحساب الصافي الحقيقي لكل سطر:
-                // 1. الكمية الصافية (المباع - المرتجع)
                 var netUnits = g.Sum(i => i.Quantity - i.ReturnedQuantity);
-                if (netUnits < 0) netUnits = 0; // حماية منطقية
+                if (netUnits < 0) netUnits = 0;
 
-                // 2. حساب الإيراد الصافي والتكلفة الصافية لكل سطر
+                decimal totalSales        = 0;
+                decimal totalReturnsValue = 0;
+                decimal totalDiscounts    = 0;
                 decimal totalNetRevenue   = 0;
-                decimal totalItemDiscount = 0;
                 decimal totalCost         = 0;
 
                 foreach (var i in g)
                 {
-                    // الكمية المباعة فعلياً في هذا السطر بعد المرتجع
-                    var lineNetQty = (i.Quantity - i.ReturnedQuantity);
-                    if (lineNetQty <= 0) continue;
+                    if (!orderSummaryMap.TryGetValue(i.OrderId, out var os)) continue;
 
-                    // السعر قبل خصم الفاتورة (لكن بعد خصم السطر إن وجد)
-                    var lineSubtotal = i.TotalPrice;
-                    
-                    // توزيع خصم رأس الفاتورة نسبياً فقط (يشمل الخصم اليدوي + خصم العروض + نقاط الولاء)
-                    decimal lineOrderDiscountShare = 0;
-                    decimal orderTotalDiscount = i.Order.DiscountAmount + i.Order.TemporalDiscount + i.Order.LoyaltyDiscountAmount;
+                    decimal basePrice = i.OriginalUnitPrice > 0 ? i.OriginalUnitPrice : i.UnitPrice;
+                    decimal itemGross = i.Quantity * basePrice;
+                    decimal itemRetGross = i.ReturnedQuantity * basePrice;
 
-                    if (i.Order.SubTotal > 0 && orderTotalDiscount > 0)
-                    {
-                        var ratio = lineSubtotal / i.Order.SubTotal;
-                        lineOrderDiscountShare = ratio * orderTotalDiscount;
-                    }
+                    totalSales += itemGross;
+                    totalReturnsValue += itemRetGross;
 
-                    // صافي الإيراد من هذا السطر لهذه الكمية
-                    decimal qtyFactor = (decimal)lineNetQty / i.Quantity;
-                    totalNetRevenue += (lineSubtotal * qtyFactor) - (lineOrderDiscountShare * qtyFactor);
-                    totalItemDiscount += i.DiscountAmount + (lineOrderDiscountShare * qtyFactor);
+                    decimal itemDisc = os.OrderGross > 0 ? (itemGross / os.OrderGross) * os.PostedDisc : 0;
+                    totalDiscounts += itemDisc;
 
-                    // 3. التكلفة الصافية: مطابقة لتكلفة المبيعات المحاسبية (حساب 51101) في قائمة الدخل وربحية الفواتير
-                    decimal orderPostedCogs = 0;
-                    if (cogsMapByOrderId.TryGetValue(i.OrderId, out var pc))
-                        orderPostedCogs = pc;
-                    else if (!string.IsNullOrEmpty(i.Order?.OrderNumber) && cogsMapByRef.TryGetValue(i.Order.OrderNumber, out var prc))
-                        orderPostedCogs = prc;
+                    decimal itemBaseCost = i.Quantity * (i.Product?.CostPrice ?? 0m);
+                    decimal itemCogs = (os.OrderBaseCost > 0 && os.PostedCogs > 0)
+                        ? (itemBaseCost / os.OrderBaseCost) * os.PostedCogs
+                        : itemBaseCost;
 
-                    decimal itemNetCogs = 0;
-                    if (orderPostedCogs > 0)
-                    {
-                        var orderSoldItems = i.Order.Items.ToList();
-                        var orderBaseCostTotal = orderSoldItems.Sum(x => (x.Product?.CostPrice ?? 0m) * x.Quantity);
-                        decimal itemOrderCostShare;
-                        if (orderBaseCostTotal > 0)
-                        {
-                            var itemBaseCost = (i.Product?.CostPrice ?? 0m) * i.Quantity;
-                            itemOrderCostShare = (itemBaseCost / orderBaseCostTotal) * orderPostedCogs;
-                        }
-                        else
-                        {
-                            var orderSoldItemsTotal = orderSoldItems.Sum(x => x.TotalPrice);
-                            itemOrderCostShare = orderSoldItemsTotal > 0 
-                                ? (i.TotalPrice / orderSoldItemsTotal) * orderPostedCogs 
-                                : orderPostedCogs / Math.Max(1, orderSoldItems.Count);
-                        }
+                    int netUnitsLine = Math.Max(0, i.Quantity - i.ReturnedQuantity);
+                    decimal qtyFactor = i.Quantity > 0 ? (decimal)netUnitsLine / i.Quantity : 0;
 
-                        itemNetCogs = itemOrderCostShare * qtyFactor;
-                    }
-                    else
-                    {
-                        decimal unitCost = product.CostPrice ?? 0m;
-                        itemNetCogs = unitCost * lineNetQty;
-                    }
-
-                    totalCost += itemNetCogs;
+                    totalNetRevenue += (itemGross - itemDisc) * qtyFactor;
+                    totalCost += itemCogs * qtyFactor;
                 }
 
                 // Profit
@@ -218,16 +254,6 @@ public class ProfitabilityController : ControllerBase
                 var marginPct   = totalNetRevenue > 0
                     ? Math.Round((grossProfit / totalNetRevenue) * 100, 1)
                     : 0m;
-
-                // إجمالي المبيعات الأصلية (الGross قبل الخصم، مطابق لحساب المبيعات 4101 في القيود)
-                var totalSales = g.Sum(i => i.Quantity * (i.OriginalUnitPrice > 0 ? i.OriginalUnitPrice : i.UnitPrice));
-                // إجمالي المرتجعات بقيمتها المسجلة في قيود المرتجع (حساب 4102)
-                var totalReturnsValue = g.Sum(i => i.ReturnedQuantity * (i.OriginalUnitPrice > 0 ? i.OriginalUnitPrice : i.UnitPrice));
-                // إجمالي الخصومات (مطابق لحساب الخصم المسموح 410101)
-                var totalDiscounts = g.Sum(i => (i.Quantity * (i.OriginalUnitPrice > 0 ? i.OriginalUnitPrice : i.UnitPrice)) - i.TotalPrice) + g.Sum(i => {
-                    decimal orderTotalDiscount = i.Order.DiscountAmount + i.Order.TemporalDiscount + i.Order.LoyaltyDiscountAmount;
-                    return (i.Order.SubTotal > 0 && orderTotalDiscount > 0) ? (i.TotalPrice / i.Order.SubTotal) * orderTotalDiscount : 0m;
-                });
 
                 return new ProductProfitRow(
                     ProductId:        g.Key,
@@ -506,16 +532,7 @@ public class ProfitabilityController : ControllerBase
     private static bool IsSoldItem(OrderItem? item)
     {
         if (item == null) return false;
-        if (item.UnitPrice <= 0 || item.TotalPrice <= 0 || item.Quantity <= 0) return false;
-
-        var nameAr = item.ProductNameAr ?? item.Product?.NameAr ?? "";
-        var nameEn = item.ProductNameEn ?? item.Product?.NameEn ?? "";
-        if (nameAr.Contains("خردة") || nameAr.Contains("بطارية قديمة") || nameAr.Contains("استبدال خردة"))
-            return false;
-        if (nameEn.IndexOf("trade-in", StringComparison.OrdinalIgnoreCase) >= 0)
-            return false;
-
-        return true;
+        return item.UnitPrice > 0 && item.TotalPrice > 0 && item.Quantity > 0;
     }
 
 // ======================================================================
