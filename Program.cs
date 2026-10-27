@@ -26,6 +26,8 @@ Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
     .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Database.Command", isDev ? LogEventLevel.Information : LogEventLevel.Warning)
     .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Infrastructure", LogEventLevel.Warning)
+    .MinimumLevel.Override("Hangfire", LogEventLevel.Warning)
+    .MinimumLevel.Override("System.Net.Http", LogEventLevel.Warning)
     .Enrich.FromLogContext()
     .Enrich.WithEnvironmentName()
     .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
@@ -290,10 +292,21 @@ app.UseSerilogRequestLogging(options =>
         if (httpContext.Response.StatusCode >= 400)
             return LogEventLevel.Warning;
 
+        // Skip OPTIONS requests (CORS preflight)
+        if (HttpMethods.IsOptions(httpContext.Request.Method))
+            return LogEventLevel.Verbose;
+
         var path = httpContext.Request.Path.Value ?? "";
-        // Suppress noisy health checks and realtime signalr ping logs from flooding console
+        // Suppress noisy health checks, root ping, signalr, and static assets/uploads from flooding console
         if (path.Equals("/health", StringComparison.OrdinalIgnoreCase) ||
-            path.StartsWith("/notifications-hub", StringComparison.OrdinalIgnoreCase))
+            path.Equals("/", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("/uploads", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("/notifications-hub", StringComparison.OrdinalIgnoreCase) ||
+            path.EndsWith(".ico", StringComparison.OrdinalIgnoreCase) ||
+            path.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
+            path.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
+            path.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+            path.EndsWith(".webp", StringComparison.OrdinalIgnoreCase))
         {
             return LogEventLevel.Verbose;
         }
