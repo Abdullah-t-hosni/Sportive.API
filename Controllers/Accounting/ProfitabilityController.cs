@@ -219,9 +219,15 @@ public class ProfitabilityController : ControllerBase
                     ? Math.Round((grossProfit / totalNetRevenue) * 100, 1)
                     : 0m;
 
-                var totalSales = g.Sum(i => i.TotalPrice + i.DiscountAmount);
-                var totalReturnsValue = g.Sum(i => i.ReturnedQuantity * i.UnitPrice);
-                var totalDiscounts = totalItemDiscount;
+                // إجمالي المبيعات الأصلية (الGross قبل الخصم، مطابق لحساب المبيعات 4101 في القيود)
+                var totalSales = g.Sum(i => i.Quantity * (i.OriginalUnitPrice > 0 ? i.OriginalUnitPrice : i.UnitPrice));
+                // إجمالي المرتجعات بقيمتها المسجلة في قيود المرتجع (حساب 4102)
+                var totalReturnsValue = g.Sum(i => i.ReturnedQuantity * (i.OriginalUnitPrice > 0 ? i.OriginalUnitPrice : i.UnitPrice));
+                // إجمالي الخصومات (مطابق لحساب الخصم المسموح 410101)
+                var totalDiscounts = g.Sum(i => (i.Quantity * (i.OriginalUnitPrice > 0 ? i.OriginalUnitPrice : i.UnitPrice)) - i.TotalPrice) + g.Sum(i => {
+                    decimal orderTotalDiscount = i.Order.DiscountAmount + i.Order.TemporalDiscount + i.Order.LoyaltyDiscountAmount;
+                    return (i.Order.SubTotal > 0 && orderTotalDiscount > 0) ? (i.TotalPrice / i.Order.SubTotal) * orderTotalDiscount : 0m;
+                });
 
                 return new ProductProfitRow(
                     ProductId:        g.Key,

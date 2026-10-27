@@ -838,10 +838,11 @@ public class FinancialReportsController : ControllerBase
         var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(TimeHelper.GetBusinessDayEndHour());
         var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
 
-        // حسابات النقدية الحقيقية فقط (الخزينة 1101 والبنك 1102)
-        // نستبعد 1103 (العملاء) لأنها ليست نقدية سائلة مباشرة بالقيد المحاسبي
+        // حسابات النقدية وما في حكمها الحقيقية:
+        // 1101 (الخزائن والصناديق)، 1102 (البنوك والشبكات)، 1103 (المحافظ الإلكترونية: فودافون كاش، إنستاباي)
+        // ونستبعد 1107 (العملاء) لأنها ذمم مدينة وليست نقدية سائلة
         var cashAccounts = await _db.Accounts
-            .Where(a => a.IsLeaf && (a.Code.StartsWith("1101") || a.Code.StartsWith("1102") || a.Code.StartsWith("1107")))
+            .Where(a => a.IsLeaf && (a.Code.StartsWith("1101") || a.Code.StartsWith("1102") || a.Code.StartsWith("1103")))
             .ToListAsync();
 
         var cashIds = cashAccounts.Select(a => a.Id).ToHashSet();
@@ -850,7 +851,7 @@ public class FinancialReportsController : ControllerBase
         var cashLinesQuery = _db.JournalLines
             .Include(l => l.JournalEntry)
             .Include(l => l.Account)
-            .Where(l => l.JournalEntry.Status != JournalEntryStatus.Draft
+            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
                      && l.JournalEntry.EntryDate >= from
                      && l.JournalEntry.EntryDate <= to
                      && cashIds.Contains(l.AccountId));
@@ -895,7 +896,7 @@ public class FinancialReportsController : ControllerBase
         var entriesInPeriod = await _db.JournalLines
             .Include(l => l.Account)
             .Include(l => l.JournalEntry)
-            .Where(l => l.JournalEntry.Status != JournalEntryStatus.Draft
+            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
                      && l.JournalEntry.EntryDate >= from
                      && l.JournalEntry.EntryDate <= to)
             .GroupBy(l => l.JournalEntryId)
@@ -959,7 +960,7 @@ public class FinancialReportsController : ControllerBase
         {
             var ol = await _db.JournalLines
                 .Where(l => l.AccountId == ca.Id
-                         && l.JournalEntry.Status != JournalEntryStatus.Draft
+                         && l.JournalEntry.Status == JournalEntryStatus.Posted
                          && l.JournalEntry.EntryDate < from)
                 .SumAsync(l => l.Debit - l.Credit);
             
@@ -972,7 +973,7 @@ public class FinancialReportsController : ControllerBase
         {
             var totalMv = await _db.JournalLines
                 .Where(l => l.AccountId == ca.Id
-                         && l.JournalEntry.Status != JournalEntryStatus.Draft
+                         && l.JournalEntry.Status == JournalEntryStatus.Posted
                          && l.JournalEntry.EntryDate <= to)
                 .SumAsync(l => l.Debit - l.Credit);
             actualClosingBalance += totalMv + ca.OpeningBalance;
