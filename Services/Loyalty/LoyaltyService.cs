@@ -244,6 +244,15 @@ public class LoyaltyService : ILoyaltyService
         var customer = await _db.Customers.FindAsync(customerId);
         if (customer == null) return (0, CustomerLoyaltyTier.Bronze);
 
+        // Guard: Do not award loyalty points for Credit (آجل) or CostPrice (سعر التكلفة) orders
+        var order = await _db.Orders.FindAsync(orderId);
+        if (order != null && (order.PaymentMethod == PaymentMethod.Credit ||
+                              order.PaymentMethod == PaymentMethod.CostPrice ||
+                              (order.AdminNotes != null && order.AdminNotes.Contains("[CostSale]"))))
+        {
+            return (0, customer.CurrentTier);
+        }
+
         // Recalculate tier based on customer's total spent
         customer.CurrentTier = CalculateTier(customer.TotalSales, settings);
         var multiplier = GetTierMultiplier(customer.CurrentTier, settings);
@@ -274,7 +283,6 @@ public class LoyaltyService : ILoyaltyService
             _db.LoyaltyPointTransactions.Add(tx);
 
             // Update order record
-            var order = await _db.Orders.FindAsync(orderId);
             if (order != null)
             {
                 order.LoyaltyPointsEarned = pointsEarned;

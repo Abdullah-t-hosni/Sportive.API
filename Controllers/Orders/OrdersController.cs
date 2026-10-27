@@ -531,12 +531,34 @@ public class OrdersController : ControllerBase
                     );
                 }
 
-                if (order.TotalAmount > 0)
+                // ✅ Do not award loyalty points for Credit (آجل) or CostPrice (سعر التكلفة) orders
+                bool isCreditOrCost = posDto.PaymentMethod == PaymentMethod.Credit ||
+                                      posDto.PaymentMethod == PaymentMethod.CostPrice ||
+                                      string.Equals(order.PaymentMethod, nameof(PaymentMethod.Credit), StringComparison.OrdinalIgnoreCase) ||
+                                      string.Equals(order.PaymentMethod, nameof(PaymentMethod.CostPrice), StringComparison.OrdinalIgnoreCase) ||
+                                      (order.AdminNotes != null && order.AdminNotes.Contains("[CostSale]"));
+
+                decimal eligibleLoyaltyAmount = 0;
+                if (!isCreditOrCost)
+                {
+                    if (posDto.PaymentMethod == PaymentMethod.Mixed ||
+                        string.Equals(order.PaymentMethod, nameof(PaymentMethod.Mixed), StringComparison.OrdinalIgnoreCase))
+                    {
+                        // In mixed payments, only the collected cash portion earns loyalty points
+                        eligibleLoyaltyAmount = Math.Max(0, Math.Min(order.PaidAmount, order.TotalAmount));
+                    }
+                    else
+                    {
+                        eligibleLoyaltyAmount = order.TotalAmount;
+                    }
+                }
+
+                if (eligibleLoyaltyAmount > 0)
                 {
                     var (pts, _) = await _loyaltyService.ProcessOrderEarnedPointsAsync(
                         order.Id,
                         posDto.CustomerId.Value,
-                        order.TotalAmount,
+                        eligibleLoyaltyAmount,
                         order.OrderNumber
                     );
                     earnedLoyaltyPoints = pts;
