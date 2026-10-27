@@ -838,53 +838,73 @@ public class FinancialReportsController : ControllerBase
         var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(TimeHelper.GetBusinessDayEndHour());
         var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
 
+        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
+        if (!canViewAll)
+        {
+            int? isolatedBranchId = User.GetBranchId();
+            if (isolatedBranchId.HasValue) branchId = isolatedBranchId.Value;
+        }
+
         // حسابات النقدية وما في حكمها الحقيقية:
         // 1101 (الخزائن والصناديق)، 1102 (البنوك والشبكات)، 1103 (المحافظ الإلكترونية: فودافون كاش، إنستاباي)
-        // ونستبعد 1107 (العملاء) لأنها ذمم مدينة وليست نقدية سائلة
-        var cashAccounts = await _db.Accounts
-            .Where(a => a.IsLeaf && (a.Code.StartsWith("1101") || a.Code.StartsWith("1102") || a.Code.StartsWith("1103")))
-            .ToListAsync();
+        // مع استبعاد الحسابات غير النقدية مثل فروق الجرد والعجز والزيادة
+        var cashAccountsQuery = _db.Accounts.AsNoTracking()
+            .Where(a => a.IsLeaf && (a.Code.StartsWith("1101") || a.Code.StartsWith("1102") || a.Code.StartsWith("1103")));
+
+        if (branchId.HasValue)
+        {
+            cashAccountsQuery = cashAccountsQuery.Where(a => a.BranchId == branchId.Value || a.BranchId == null);
+        }
+
+        var cashAccounts = await cashAccountsQuery.ToListAsync();
+        cashAccounts = cashAccounts.Where(a =>
+            a.Code != "110104" && // استبعاد العجز والزيادة (ليس نقدية)
+            a.Code != "110106" && // استبعاد فرق جرد المخزون (ليس نقدية)
+            !a.NameAr.Contains("عجز") &&
+            !a.NameAr.Contains("جرد")
+        ).ToList();
 
         var cashIds = cashAccounts.Select(a => a.Id).ToHashSet();
 
-   
-        var cashLinesQuery = _db.JournalLines
-            .Include(l => l.JournalEntry)
-            .Include(l => l.Account)
+        // استعلام قيود الفترة المرتبطة بالنقدية
+        var cashLinesQuery = _db.JournalLines.AsNoTracking()
             .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
                      && l.JournalEntry.EntryDate >= from
                      && l.JournalEntry.EntryDate <= to
                      && cashIds.Contains(l.AccountId));
 
-        bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
-        if (!canViewAll)
-        {
-            int? isolatedBranchId = User.GetBranchId();
-            if (isolatedBranchId.HasValue)
-            {
-                cashLinesQuery = cashLinesQuery.Where(l => l.BranchId == isolatedBranchId.Value);
-            }
-        }
-        else if (branchId.HasValue)
-        {
+        if (branchId.HasValue)
             cashLinesQuery = cashLinesQuery.Where(l => l.BranchId == branchId.Value);
-        }
 
         if (source.HasValue)
             cashLinesQuery = cashLinesQuery.Where(l => l.CostCenter == source.Value);
 
-        var cashLines = await cashLinesQuery.ToListAsync();
-        cashLines = cashLines.OrderBy(l => l.JournalEntry.EntryDate)
-                     .ThenBy(l => l.JournalEntry.CreatedAt)
-                     .ThenBy(l => l.JournalEntryId)
-                     .ThenBy(l => l.Id)
-                     .ToList();
+        var cashEntryIds = await cashLinesQuery.Select(l => l.JournalEntryId).Distinct().ToListAsync();
 
-        // لجلب الطرف الآخر من القيد، نحتاج كل سطور القيود المعنية
-        var entryIds = cashLines.Select(l => l.JournalEntryId).Distinct().ToList();
-        var allLines = await _db.JournalLines
+        // جلب القيود المحاسبية المعنية بكامل أطرافها
+        var entriesInPeriod = await _db.JournalLines.AsNoTracking()
             .Include(l => l.Account)
-            .Where(l => entryIds.Contains(l.JournalEntryId))
+            .Include(l => l.JournalEntry)
+            .Where(l => cashEntryIds.Contains(l.JournalEntryId))
+            .GroupBy(l => l.JournalEntryId)
+            .Select(g => new { 
+                EntryId = g.Key,
+                EntryDate = g.First().JournalEntry.EntryDate,
+                EntryNumber = g.First().JournalEntry.EntryNumber,
+                EntryType = g.First().JournalEntry.Type,
+                Description = g.First().JournalEntry.Description,
+                Lines = g.Select(l => new { 
+                    l.AccountId, 
+                    l.Account.Code, 
+                    l.Account.NameAr, 
+                    l.Account.Type, 
+                    l.Debit, 
+                    l.Credit, 
+                    l.Description,
+                    l.BranchId,
+                    l.CostCenter
+                }).ToList()
+            })
             .ToListAsync();
 
         decimal operating = 0, investing = 0, financing = 0;
@@ -892,41 +912,81 @@ public class FinancialReportsController : ControllerBase
         var invItems = new List<CashFlowItem>();
         var finItems = new List<CashFlowItem>();
 
-        // نأخذ كل القيود التي تخص تلك الفترة ولها علاقة بالنقدية
-        var entriesInPeriod = await _db.JournalLines
-            .Include(l => l.Account)
-            .Include(l => l.JournalEntry)
-            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
-                     && l.JournalEntry.EntryDate >= from
-                     && l.JournalEntry.EntryDate <= to)
-            .GroupBy(l => l.JournalEntryId)
-            .Select(g => new { 
-                EntryDate = g.First().JournalEntry.EntryDate,
-                EntryNumber = g.First().JournalEntry.EntryNumber,
-                Description = g.First().JournalEntry.Description,
-                Lines = g.Select(l => new { l.AccountId, l.Account.Code, l.Account.NameAr, l.Account.Type, l.Debit, l.Credit, l.Description }).ToList()
-            })
-            .ToListAsync();
-
         foreach (var entry in entriesInPeriod)
         {
             var cashLinesInEntry = entry.Lines.Where(l => cashIds.Contains(l.AccountId)).ToList();
-            var nonCashLinesInEntry = entry.Lines.Where(l => !cashIds.Contains(l.AccountId)).ToList();
+            if (branchId.HasValue) cashLinesInEntry = cashLinesInEntry.Where(l => l.BranchId == branchId.Value).ToList();
+            if (source.HasValue) cashLinesInEntry = cashLinesInEntry.Where(l => l.CostCenter == source.Value).ToList();
 
-            // إذا لم يكن هناك طرف نقدي أو لم يكن هناك طرف "غير نقدي" (تحويل داخلي)، نتجاهل القيد
-            if (!cashLinesInEntry.Any() || !nonCashLinesInEntry.Any()) continue;
+            var netCash = cashLinesInEntry.Sum(l => l.Debit - l.Credit);
 
-            // في قائمة التدفقات النقدية (الطريقة المباشرة)، التدفق النقدي هو صافي القيد للطرف النقدي
-            // لكن لكي يكون لدينا تفصيل بالحسابات المقابلة، سنوزع هذا التدفق على الحسابات غير النقدية
-            
-            // القاعدة: التدفق لمواجهة حساب غير نقدي = (دائن - مدين) للحساب غير النقدي
-            // إذا كان الحساب غير النقدي مدين (دفعنا مصروف)، فالتدفق سالب (نقص في النقدية)
-            // إذا كان الحساب غير النقدي دائن (استلمنا مبيعات)، فالتدفق موجب (زيادة في النقدية)
-            
-            foreach (var nc in nonCashLinesInEntry)
+            // التحويلات الداخلية بين الحسابات النقدية يكون صافيها صفراً وبالتالي لا تؤثر على التدفق النقدي
+            if (Math.Abs(netCash) < 0.001m) continue;
+
+            // 1. فواتير المبيعات: التدفق النقدي هو المقبوضات النقدية الفعلية من المبيعات (بدون تحميل تكلفة البضاعة أو المخزون غير النقدي)
+            if (entry.EntryType == JournalEntryType.SalesInvoice || (int)entry.EntryType == 2)
             {
-                var flowAmount = nc.Credit - nc.Debit;
-                if (flowAmount == 0) continue;
+                var item = new CashFlowItem(
+                    entry.EntryDate,
+                    entry.EntryNumber,
+                    entry.Description ?? "مبيعات نقدية",
+                    "مبيعات نقدية",
+                    netCash
+                );
+                operating += netCash;
+                opItems.Add(item);
+                continue;
+            }
+
+            // 2. مردودات المبيعات: التدفق النقدي هو المبالغ المردودة نقداً للعملاء (بدون تحميل حركة المخزون غير النقدية)
+            if (entry.EntryType == JournalEntryType.SalesReturn || (int)entry.EntryType == 3)
+            {
+                var item = new CashFlowItem(
+                    entry.EntryDate,
+                    entry.EntryNumber,
+                    entry.Description ?? "مردودات مبيعات نقدية",
+                    "مردودات مبيعات نقدية",
+                    netCash
+                );
+                operating += netCash;
+                opItems.Add(item);
+                continue;
+            }
+
+            // 3. باقي القيود (سندات الصرف والقبض والقيود اليومية ومشتريات الأصول):
+            // نأخذ الأطراف المقابلة غير النقدية مع استبعاد حركات المخزون وتكلفة البضاعة التي قد تظهر عرضاً
+            var validCounterparts = entry.Lines
+                .Where(l => !cashIds.Contains(l.AccountId) 
+                         && !l.Code.StartsWith("1106") 
+                         && !l.Code.StartsWith("51101")
+                         && !l.Code.StartsWith("410101"))
+                .ToList();
+
+            if (!validCounterparts.Any())
+            {
+                var item = new CashFlowItem(
+                    entry.EntryDate,
+                    entry.EntryNumber,
+                    entry.Description ?? "حركات نقدية متنوعة",
+                    entry.Description ?? "حركات نقدية تشغيلية متنوعة",
+                    netCash
+                );
+                operating += netCash;
+                opItems.Add(item);
+                continue;
+            }
+
+            var totalRawFlow = validCounterparts.Sum(l => l.Credit - l.Debit);
+
+            foreach (var nc in validCounterparts)
+            {
+                var rawFlow = nc.Credit - nc.Debit;
+                if (Math.Abs(rawFlow) < 0.001m) continue;
+
+                // توزيع netCash بنسبة الطرف المقابل لضمان مطابقة 100% مع صافي حركة النقدية
+                var flowAmount = Math.Abs(totalRawFlow) > 0.001m 
+                    ? netCash * (rawFlow / totalRawFlow) 
+                    : rawFlow;
 
                 var item = new CashFlowItem(
                     entry.EntryDate,
@@ -936,17 +996,24 @@ public class FinancialReportsController : ControllerBase
                     flowAmount
                 );
 
-                if (nc.Code.StartsWith("12")) // أصول ثابتة
+                if (nc.Code.StartsWith("12")) // تدفقات استثمارية: أصول ثابتة
                 {
                     investing += flowAmount;
                     invItems.Add(item);
                 }
-                else if (nc.Type == AccountType.Equity || nc.Code.StartsWith("22")) // حقوق ملكية أو قروض
+                else if (nc.Code.StartsWith("2101") || nc.NameAr.Contains("مورد") || nc.Code.StartsWith("2103") || nc.NameAr.Contains("رواتب مستحقة"))
                 {
+                    // مدفوعات الموردين ومستحقات الرواتب هي أنشطة تشغيلية
+                    operating += flowAmount;
+                    opItems.Add(item);
+                }
+                else if (nc.Type == AccountType.Equity || nc.Code.StartsWith("22") || nc.Code.StartsWith("3105") || nc.Code.StartsWith("3205") || nc.NameAr.Contains("جاري") || nc.NameAr.Contains("شريك"))
+                {
+                    // تدفقات تمويلية: جاري الشركاء، مساهمين، قروض وسلف، جمعيات، حقوق الملكية
                     financing += flowAmount;
                     finItems.Add(item);
                 }
-                else // تشغيلية
+                else // أنشطة تشغيلية: مصاريف، إيرادات أخرى، تحصيلات عملاء وشركات شحن
                 {
                     operating += flowAmount;
                     opItems.Add(item);
@@ -958,25 +1025,38 @@ public class FinancialReportsController : ControllerBase
         var openCash = 0m;
         foreach (var ca in cashAccounts)
         {
-            var ol = await _db.JournalLines
+            var olQuery = _db.JournalLines.AsNoTracking()
                 .Where(l => l.AccountId == ca.Id
                          && l.JournalEntry.Status == JournalEntryStatus.Posted
-                         && l.JournalEntry.EntryDate < from)
-                .SumAsync(l => l.Debit - l.Credit);
+                         && l.JournalEntry.EntryDate < from);
+            if (branchId.HasValue) olQuery = olQuery.Where(l => l.BranchId == branchId.Value);
+
+            var ol = await olQuery.SumAsync(l => l.Debit - l.Credit);
             
-            openCash += ol + ca.OpeningBalance;
+            if (!branchId.HasValue || ca.BranchId == branchId.Value)
+            {
+                openCash += ca.OpeningBalance;
+            }
+            openCash += ol;
         }
 
-        // الرصيد النهائي الفعلي من الحسابات (للتحقق)
+        // الرصيد النهائي الفعلي من الحسابات
         var actualClosingBalance = 0m;
         foreach (var ca in cashAccounts)
         {
-            var totalMv = await _db.JournalLines
+            var totalMvQuery = _db.JournalLines.AsNoTracking()
                 .Where(l => l.AccountId == ca.Id
                          && l.JournalEntry.Status == JournalEntryStatus.Posted
-                         && l.JournalEntry.EntryDate <= to)
-                .SumAsync(l => l.Debit - l.Credit);
-            actualClosingBalance += totalMv + ca.OpeningBalance;
+                         && l.JournalEntry.EntryDate <= to);
+            if (branchId.HasValue) totalMvQuery = totalMvQuery.Where(l => l.BranchId == branchId.Value);
+
+            var totalMv = await totalMvQuery.SumAsync(l => l.Debit - l.Credit);
+
+            if (!branchId.HasValue || ca.BranchId == branchId.Value)
+            {
+                actualClosingBalance += ca.OpeningBalance;
+            }
+            actualClosingBalance += totalMv;
         }
 
         var netCashFlow = operating + investing + financing;
@@ -993,7 +1073,7 @@ public class FinancialReportsController : ControllerBase
             investingActivities = new { items = invItems, total = investing },
             financingActivities = new { items = finItems, total = financing },
             netCashFlow,
-            closingCashBalance = actualClosingBalance // نستخدم الرصيد الفعلي لضمان الدقة
+            closingCashBalance = actualClosingBalance
         });
     }
 
