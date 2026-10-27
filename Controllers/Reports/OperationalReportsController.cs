@@ -3882,6 +3882,23 @@ public class OperationalReportsController : ControllerBase
         var totalProfit = totalRevenue - totalCost;
         var averageMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
 
+        decimal totalGrossSales = glLines.Where(l => salesRevAccId.HasValue && l.AccountId == salesRevAccId.Value).Sum(l => l.Credit - l.Debit);
+        decimal totalDiscounts = glLines.Where(l => salesDiscountAccId.HasValue && l.AccountId == salesDiscountAccId.Value).Sum(l => l.Debit - l.Credit);
+        decimal totalReturns = glLines.Where(l => salesReturnAccId.HasValue && l.AccountId == salesReturnAccId.Value).Sum(l => l.Debit - l.Credit);
+
+        int salesCount = 0;
+        int returnsCount = 0;
+        foreach (var eg in entryGroups)
+        {
+            if (salesRevAccId.HasValue && eg.Any(l => l.AccountId == salesRevAccId.Value && (l.Credit - l.Debit) > 0))
+                salesCount++;
+            else if (salesReturnAccId.HasValue && eg.Any(l => l.AccountId == salesReturnAccId.Value && (l.Debit - l.Credit) > 0))
+                returnsCount++;
+        }
+
+        decimal avgInvoiceValue = salesCount > 0 ? Math.Round(totalGrossSales / salesCount, 2) : 0;
+        decimal avgProfitPerInvoice = salesCount > 0 ? Math.Round(totalProfit / salesCount, 2) : 0;
+
         if (excel)
         {
             return ExcelInvoiceProfitability(invoiceRows, totalInvoices, totalRevenue, totalCost, totalProfit, averageMargin, from, to);
@@ -3894,10 +3911,17 @@ public class OperationalReportsController : ControllerBase
             FromDate = from,
             ToDate = to,
             TotalInvoices = totalInvoices,
+            SalesInvoiceCount = salesCount,
+            SalesReturnCount = returnsCount,
+            TotalGrossSales = totalGrossSales,
+            TotalDiscounts = totalDiscounts,
+            TotalReturns = totalReturns,
             TotalRevenue = totalRevenue,
             TotalCost = totalCost,
             TotalProfit = totalProfit,
             AverageMargin = averageMargin,
+            AvgInvoiceValue = avgInvoiceValue,
+            AvgProfitPerInvoice = avgProfitPerInvoice,
             Invoices = paginatedRows,
             Pagination = new {
                 TotalCount = totalInvoices,
