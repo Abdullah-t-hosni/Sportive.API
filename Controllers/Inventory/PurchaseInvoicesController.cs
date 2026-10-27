@@ -298,12 +298,34 @@ public class PurchaseInvoicesController : ControllerBase
                         if (product != null)
                         {
                             var newCost = multiplier > 0 ? Math.Round(item.UnitCost / multiplier, 2) : item.UnitCost;
-                        if (product.CostPrice.HasValue && product.CostPrice.Value > 0 && newCost > product.CostPrice.Value) {
-                                var diff = newCost - product.CostPrice.Value;
-                                var pct  = Math.Round((diff / product.CostPrice.Value) * 100, 1);
-                                warnings.Add(_t.Get("Purchases.PriceIncreaseWarning", product.NameAr, pct, product.CostPrice.Value, newCost));
+                            var receivedQty = item.Quantity * multiplier;
+
+                            // 📊 المتوسط المرجح المتحرك (Moving Weighted Average Cost):
+                            // _inventory.LogMovementAsync أضاف بالفعل receivedQty إلى product.TotalStock
+                            var stockBeforeReceipt = product.TotalStock - receivedQty;
+                            var oldCost = product.CostPrice ?? 0m;
+
+                            decimal weightedCost;
+                            if (stockBeforeReceipt <= 0 || oldCost <= 0)
+                            {
+                                // رصيد سابق فارغ أو سالب أو لا توجد تكلفة سابقة: تصبح التكلفة هي سعر الشراء الجديد
+                                weightedCost = newCost;
                             }
-                            product.CostPrice = newCost;
+                            else
+                            {
+                                // دمج الرصيد القديم مع الكمية الجديدة لحساب متوسط مرجح عادل
+                                var totalStockAfter = stockBeforeReceipt + receivedQty;
+                                weightedCost = totalStockAfter > 0 
+                                    ? Math.Round(((stockBeforeReceipt * oldCost) + (receivedQty * newCost)) / totalStockAfter, 2)
+                                    : newCost;
+                            }
+
+                            if (oldCost > 0 && newCost > oldCost) {
+                                var diff = newCost - oldCost;
+                                var pct  = Math.Round((diff / oldCost) * 100, 1);
+                                warnings.Add(_t.Get("Purchases.PriceIncreaseWarning", product.NameAr, pct, oldCost, newCost));
+                            }
+                            product.CostPrice = weightedCost;
                             product.UpdatedAt = TimeHelper.GetEgyptTime();
                         }
                     }
@@ -826,7 +848,7 @@ public class PurchaseInvoicesController : ControllerBase
                 else
                     inv.Status = PurchaseInvoiceStatus.Received;
 
-                // ——— Auto-update and Alert on Price Changes ———
+                // ——— Auto-update and Alert on Price Changes (Moving Weighted Average) ———
                 var warnings = new List<string>();
                 foreach (var item in inv.Items.Where(i => i.ProductId.HasValue))
                 {
@@ -835,12 +857,30 @@ public class PurchaseInvoicesController : ControllerBase
                     {
                         var multiplier = GetMultiplier(pUnits, item.Unit);
                         var newCost = multiplier > 0 ? Math.Round(item.UnitCost / multiplier, 2) : item.UnitCost;
-                        if (product.CostPrice.HasValue && product.CostPrice.Value > 0 && newCost > product.CostPrice.Value) {
-                            var diff = newCost - product.CostPrice.Value;
-                            var pct  = Math.Round((diff / product.CostPrice.Value) * 100, 1);
-                            warnings.Add(_t.Get("Purchases.PriceIncreaseWarning", product.NameAr, pct, product.CostPrice.Value, newCost));
+                        var lineQty = item.Quantity * multiplier;
+
+                        var currentStock = product.TotalStock;
+                        var oldCost = product.CostPrice ?? 0m;
+
+                        decimal weightedCost;
+                        if (currentStock <= 0 || oldCost <= 0)
+                        {
+                            weightedCost = newCost;
                         }
-                        product.CostPrice = newCost;
+                        else
+                        {
+                            var totalStock = currentStock + lineQty;
+                            weightedCost = totalStock > 0 
+                                ? Math.Round(((currentStock * oldCost) + (lineQty * newCost)) / totalStock, 2)
+                                : newCost;
+                        }
+
+                        if (oldCost > 0 && newCost > oldCost) {
+                            var diff = newCost - oldCost;
+                            var pct  = Math.Round((diff / oldCost) * 100, 1);
+                            warnings.Add(_t.Get("Purchases.PriceIncreaseWarning", product.NameAr, pct, oldCost, newCost));
+                        }
+                        product.CostPrice = weightedCost;
                         product.UpdatedAt = TimeHelper.GetEgyptTime();
                     }
                 }
