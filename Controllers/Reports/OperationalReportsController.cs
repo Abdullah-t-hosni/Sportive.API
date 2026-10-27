@@ -3768,22 +3768,6 @@ public class OperationalReportsController : ControllerBase
         var from = (fromDate ?? new DateTime(now.Year, now.Month, 1)).Date.AddHours(TimeHelper.GetBusinessDayEndHour());
         var to = (toDate ?? now).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
 
-        var ordersQuery = _db.Orders.AsNoTracking()
-            .Include(o => o.Customer)
-            .Include(o => o.Items)
-                .ThenInclude(i => i.Product)
-            .Where(o => o.CreatedAt >= from && o.CreatedAt <= to && o.Status != OrderStatus.Cancelled);
-
-        if (branchId.HasValue)
-        {
-            ordersQuery = ordersQuery.Where(o => o.BranchId == branchId.Value);
-        }
-
-        var orders = await ordersQuery.ToListAsync();
-
-        var orderIds = orders.Select(o => o.Id).ToList();
-        var orderNumbers = orders.Select(o => o.OrderNumber).Where(r => !string.IsNullOrEmpty(r)).Distinct().ToList();
-
         // 1. Resolve Account Mappings with Chart of Accounts fallback
         var maps = await _db.AccountSystemMappings.ToDictionaryAsync(m => m.Key.ToLower(), m => m.AccountId);
         var salesRevAccId = maps.GetValueOrDefault("salesaccountid") ?? maps.GetValueOrDefault("salesrevenueaccountid");
@@ -3822,178 +3806,72 @@ public class OperationalReportsController : ControllerBase
                 .FirstOrDefaultAsync();
         }
 
-        // 2. Fetch posted GL Lines (Revenue 4101, Discounts 410101, COGS 51101) for these orders
-        var salesMapByOrderId = new Dictionary<int, decimal>();
-        var salesMapByRef = new Dictionary<string, decimal>();
-        var discMapByOrderId = new Dictionary<int, decimal>();
-        var discMapByRef = new Dictionary<string, decimal>();
-        var cogsMapByOrderId = new Dictionary<int, decimal>();
-        var cogsMapByRef = new Dictionary<string, decimal>();
-
         var targetAccIds = new List<int>();
         if (salesRevAccId.HasValue) targetAccIds.Add(salesRevAccId.Value);
+        if (salesReturnAccId.HasValue) targetAccIds.Add(salesReturnAccId.Value);
         if (salesDiscountAccId.HasValue) targetAccIds.Add(salesDiscountAccId.Value);
         if (cogsAccId.HasValue) targetAccIds.Add(cogsAccId.Value);
 
-        if (targetAccIds.Any())
+        // 2. Query General Ledger lines in the period (reconciled 100% with Income Statement)
+        var glQuery = _db.JournalLines.AsNoTracking()
+            .Where(l => targetAccIds.Contains(l.AccountId)
+                     && l.JournalEntry.Status != JournalEntryStatus.Draft
+                     && l.JournalEntry.EntryDate >= from
+                     && l.JournalEntry.EntryDate <= to);
+
+        if (branchId.HasValue)
         {
-            var glLines = await _db.JournalLines.AsNoTracking()
-                .Where(l => targetAccIds.Contains(l.AccountId)
-                         && l.JournalEntry.Status == JournalEntryStatus.Posted
-                         && l.JournalEntry.Type == JournalEntryType.SalesInvoice
-                         && ((l.OrderId.HasValue && orderIds.Contains(l.OrderId.Value)) 
-                             || (l.JournalEntry.OrderId.HasValue && orderIds.Contains(l.JournalEntry.OrderId.Value)) 
-                             || (l.JournalEntry.Reference != null && orderNumbers.Contains(l.JournalEntry.Reference))))
-                .Select(l => new {
-                    OrderId = l.OrderId ?? l.JournalEntry.OrderId ?? 0,
-                    Ref = l.JournalEntry.Reference,
-                    l.AccountId,
-                    l.Debit,
-                    l.Credit
-                })
-                .ToListAsync();
-
-            if (salesRevAccId.HasValue)
-            {
-                var revs = glLines.Where(x => x.AccountId == salesRevAccId.Value);
-                salesMapByOrderId = revs.Where(x => x.OrderId > 0).GroupBy(x => x.OrderId).ToDictionary(g => g.Key, g => g.Sum(x => x.Credit - x.Debit));
-                salesMapByRef = revs.Where(x => !string.IsNullOrEmpty(x.Ref)).GroupBy(x => x.Ref!).ToDictionary(g => g.Key, g => g.Sum(x => x.Credit - x.Debit));
-            }
-
-            if (salesDiscountAccId.HasValue)
-            {
-                var discs = glLines.Where(x => x.AccountId == salesDiscountAccId.Value);
-                discMapByOrderId = discs.Where(x => x.OrderId > 0).GroupBy(x => x.OrderId).ToDictionary(g => g.Key, g => g.Sum(x => x.Debit - x.Credit));
-                discMapByRef = discs.Where(x => !string.IsNullOrEmpty(x.Ref)).GroupBy(x => x.Ref!).ToDictionary(g => g.Key, g => g.Sum(x => x.Debit - x.Credit));
-            }
-
-            if (cogsAccId.HasValue)
-            {
-                var cogs = glLines.Where(x => x.AccountId == cogsAccId.Value);
-                cogsMapByOrderId = cogs.Where(x => x.OrderId > 0).GroupBy(x => x.OrderId).ToDictionary(g => g.Key, g => g.Sum(x => x.Debit - x.Credit));
-                cogsMapByRef = cogs.Where(x => !string.IsNullOrEmpty(x.Ref)).GroupBy(x => x.Ref!).ToDictionary(g => g.Key, g => g.Sum(x => x.Debit - x.Credit));
-            }
+            if (branchId.Value == 5)
+                glQuery = glQuery.Where(l => l.BranchId == 5 || l.CostCenter == OrderSource.Website || l.JournalEntry.CostCenter == OrderSource.Website);
+            else
+                glQuery = glQuery.Where(l => l.BranchId == branchId.Value);
         }
 
+        var glLines = await glQuery
+            .Select(l => new {
+                l.JournalEntryId,
+                l.AccountId,
+                l.Debit,
+                l.Credit,
+                EntryDate = l.JournalEntry.EntryDate,
+                OrderId = l.OrderId ?? l.JournalEntry.OrderId ?? 0,
+                Reference = l.JournalEntry.Reference ?? l.JournalEntry.EntryNumber,
+                Description = l.JournalEntry.Description,
+                CustomerName = l.Customer != null ? l.Customer.FullName : (l.JournalEntry.Order != null && l.JournalEntry.Order.Customer != null ? l.JournalEntry.Order.Customer.FullName : null)
+            })
+            .ToListAsync();
+
+        var entryGroups = glLines.GroupBy(l => l.JournalEntryId).ToList();
         var invoiceRows = new List<Sportive.API.DTOs.Reports.InvoiceProfitabilityDto>();
 
-        foreach (var order in orders)
+        foreach (var eg in entryGroups)
         {
-            decimal grossSales = 0;
-            decimal disc = 0;
-            decimal cost = 0;
+            var first = eg.First();
 
-            bool hasPostedRev = salesMapByOrderId.TryGetValue(order.Id, out var sVal) 
-                || (!string.IsNullOrEmpty(order.OrderNumber) && salesMapByRef.TryGetValue(order.OrderNumber, out sVal));
-            bool hasPostedDisc = discMapByOrderId.TryGetValue(order.Id, out var dVal) 
-                || (!string.IsNullOrEmpty(order.OrderNumber) && discMapByRef.TryGetValue(order.OrderNumber, out dVal));
-            bool hasPostedCogs = cogsMapByOrderId.TryGetValue(order.Id, out var cVal) 
-                || (!string.IsNullOrEmpty(order.OrderNumber) && cogsMapByRef.TryGetValue(order.OrderNumber, out cVal));
+            decimal sales = salesRevAccId.HasValue ? eg.Where(l => l.AccountId == salesRevAccId.Value).Sum(l => l.Credit - l.Debit) : 0;
+            decimal disc = salesDiscountAccId.HasValue ? eg.Where(l => l.AccountId == salesDiscountAccId.Value).Sum(l => l.Debit - l.Credit) : 0;
+            decimal ret = salesReturnAccId.HasValue ? eg.Where(l => l.AccountId == salesReturnAccId.Value).Sum(l => l.Debit - l.Credit) : 0;
+            decimal cogs = cogsAccId.HasValue ? eg.Where(l => l.AccountId == cogsAccId.Value).Sum(l => l.Debit - l.Credit) : 0;
 
-            if (hasPostedRev)
-            {
-                grossSales = sVal;
-                disc = hasPostedDisc ? dVal : 0;
-                cost = hasPostedCogs ? cVal : 0;
-            }
-            else
-            {
-                grossSales = order.Items.Sum(item => item.Quantity * (item.OriginalUnitPrice > 0 ? item.OriginalUnitPrice : item.UnitPrice));
-                decimal orderSoldActual = order.Items.Sum(item => item.TotalPrice);
-                decimal lineDiff = Math.Max(0, grossSales - orderSoldActual);
-                decimal unallocatedDisc = Math.Max(0, (order.DiscountAmount + order.LoyaltyDiscountAmount) - lineDiff);
-                disc = lineDiff + unallocatedDisc;
-                cost = order.Items.Sum(item => (item.Product?.CostPrice ?? 0m) * item.Quantity);
-            }
+            decimal netRevenue = sales - disc - ret;
+            if (netRevenue == 0 && cogs == 0) continue;
 
-            decimal revenue = grossSales - disc;
-            decimal profit = revenue - cost;
-            decimal margin = revenue > 0 ? (profit / revenue) * 100 : 0;
+            decimal profit = netRevenue - cogs;
+            decimal margin = netRevenue > 0 ? (profit / netRevenue) * 100 : (netRevenue < 0 ? (profit / -netRevenue) * 100 : 0);
+
+            string custName = eg.Select(l => l.CustomerName).FirstOrDefault(n => !string.IsNullOrEmpty(n))
+                ?? (first.Description?.Contains(" - ") == true ? first.Description.Split(" - ").Last() : "Walk-in");
 
             invoiceRows.Add(new Sportive.API.DTOs.Reports.InvoiceProfitabilityDto {
-                OrderId = order.Id,
-                OrderNumber = order.OrderNumber,
-                Date = order.CreatedAt,
-                CustomerName = order.Customer?.FullName ?? "Walk-in",
-                Revenue = revenue,
-                Cost = cost,
+                OrderId = first.OrderId,
+                OrderNumber = first.Reference,
+                Date = first.EntryDate,
+                CustomerName = custName,
+                Revenue = netRevenue,
+                Cost = cogs,
                 Profit = profit,
                 Margin = margin
             });
-        }
-
-        // Fetch SalesReturn journal entries in the period to represent all kinds of returns (including direct and partial ones)
-        if (salesReturnAccId.HasValue)
-        {
-            var returnEntriesQ = _db.JournalEntries.AsNoTracking()
-                .Include(j => j.Lines)
-                    .ThenInclude(l => l.Account)
-                .Where(j => j.Type == JournalEntryType.SalesReturn 
-                         && j.EntryDate >= from && j.EntryDate <= to
-                         && j.Status == JournalEntryStatus.Posted);
-
-            if (branchId.HasValue)
-            {
-                returnEntriesQ = returnEntriesQ.Where(j => (j.Order != null && j.Order.BranchId == branchId.Value) || j.Lines.Any(l => l.BranchId == branchId.Value));
-            }
-            var returnEntries = await returnEntriesQ.ToListAsync();
-
-            var customerIds = returnEntries.SelectMany(e => e.Lines)
-                .Where(l => l.CustomerId.HasValue)
-                .Select(l => l.CustomerId!.Value)
-                .Distinct()
-                .ToList();
-            var customersMap = await _db.Customers.AsNoTracking()
-                .Where(c => customerIds.Contains(c.Id))
-                .ToDictionaryAsync(c => c.Id);
-
-            foreach (var j in returnEntries)
-            {
-                decimal salesReturnDebit = j.Lines
-                    .Where(l => l.AccountId == salesReturnAccId)
-                    .Sum(l => l.Debit - l.Credit);
-
-                decimal discountCredit = salesDiscountAccId.HasValue
-                    ? j.Lines
-                        .Where(l => l.AccountId == salesDiscountAccId)
-                        .Sum(l => l.Credit - l.Debit)
-                    : 0;
-
-                decimal netReturn = salesReturnDebit - discountCredit;
-
-                decimal costReturn = cogsAccId.HasValue
-                    ? j.Lines
-                        .Where(l => l.AccountId == cogsAccId)
-                        .Sum(l => l.Credit - l.Debit)
-                    : 0;
-
-                int? customerId = j.Lines.FirstOrDefault(l => l.CustomerId.HasValue)?.CustomerId;
-                string customerName = "Walk-in";
-                if (customerId.HasValue && customersMap.TryGetValue(customerId.Value, out var cust))
-                {
-                    customerName = cust.FullName;
-                }
-                else
-                {
-                    customerName = j.Description?.Contains(" - ") == true 
-                        ? j.Description.Split(" - ").Last() 
-                        : "Walk-in";
-                }
-
-                decimal profit = -netReturn - (-costReturn);
-                decimal margin = netReturn > 0 ? (profit / -netReturn) * 100 : 0;
-
-                invoiceRows.Add(new Sportive.API.DTOs.Reports.InvoiceProfitabilityDto {
-                    OrderId = j.OrderId ?? 0,
-                    OrderNumber = j.Reference ?? j.EntryNumber,
-                    Date = j.EntryDate,
-                    CustomerName = customerName,
-                    Revenue = -netReturn, // negative revenue
-                    Cost = -costReturn,   // negative cost
-                    Profit = profit,
-                    Margin = margin
-                });
-            }
         }
 
         invoiceRows = invoiceRows.OrderByDescending(x => x.Date).ToList();

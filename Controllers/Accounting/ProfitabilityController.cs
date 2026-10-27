@@ -42,7 +42,47 @@ public class ProfitabilityController : ControllerBase
 
         int? isolatedBranchId = await User.HasViewAllBranchesAsync(HttpContext) ? branchId : User.GetBranchId();
 
-        // --- جلب كل المبيعات في الفترة (باستثناء الملغي فقط) ------------------
+        // 0. Fetch Period GL Figures directly from General Ledger for 100% reconciliation with Income Statement
+        var glTargetAccCodes = new[] { "4101", "410101", "4102", "51101" };
+        var glQuery = _db.JournalLines.AsNoTracking()
+            .Where(l => l.JournalEntry.Status != JournalEntryStatus.Draft
+                     && l.JournalEntry.EntryDate >= from
+                     && l.JournalEntry.EntryDate <= to
+                     && glTargetAccCodes.Contains(l.Account.Code));
+
+        if (isolatedBranchId.HasValue)
+        {
+            if (isolatedBranchId.Value == 5)
+                glQuery = glQuery.Where(l => l.BranchId == 5 || l.CostCenter == OrderSource.Website || l.JournalEntry.CostCenter == OrderSource.Website);
+            else
+                glQuery = glQuery.Where(l => l.BranchId == isolatedBranchId.Value);
+        }
+
+        var glLinesSummary = await glQuery
+            .GroupBy(l => l.Account.Code)
+            .Select(g => new {
+                Code = g.Key,
+                Debit = g.Sum(l => l.Debit),
+                Credit = g.Sum(l => l.Credit)
+            })
+            .ToListAsync();
+
+        var glSales = glLinesSummary.Where(x => x.Code == "4101").Sum(x => x.Credit - x.Debit);
+        var glDiscounts = glLinesSummary.Where(x => x.Code == "410101").Sum(x => x.Debit - x.Credit);
+        var glReturns = glLinesSummary.Where(x => x.Code == "4102").Sum(x => x.Debit - x.Credit);
+        var glCogs = glLinesSummary.Where(x => x.Code == "51101").Sum(x => x.Debit - x.Credit);
+        var glNetRevenue = glSales - glDiscounts - glReturns;
+        var glGrossProfit = glNetRevenue - glCogs;
+        var glMargin = glNetRevenue > 0 ? Math.Round((glGrossProfit / glNetRevenue) * 100, 1) : 0m;
+
+        // --- جلب مبيعات الأصناف للفترة للطلبات المرحلة accounting-posted ------------------
+        var postedOrderIdsQ = _db.JournalEntries.AsNoTracking()
+            .Where(j => j.Status != JournalEntryStatus.Draft
+                     && j.Type == JournalEntryType.SalesInvoice
+                     && j.EntryDate >= from && j.EntryDate <= to
+                     && j.OrderId.HasValue)
+            .Select(j => j.OrderId!.Value);
+
         var itemsQ = _db.OrderItems
             .Include(i => i.Order)
             .Include(i => i.Product)
@@ -54,8 +94,7 @@ public class ProfitabilityController : ControllerBase
             .Include(i => i.Product)
                 .ThenInclude(p => p!.Variants)
             .Where(i => i.Order.Status != OrderStatus.Cancelled
-                     && i.Order.CreatedAt >= from
-                     && i.Order.CreatedAt <= to);
+                     && postedOrderIdsQ.Contains(i.OrderId));
 
         if (isolatedBranchId.HasValue)
         {
@@ -293,21 +332,22 @@ public class ProfitabilityController : ControllerBase
         };
 
         // --- Summary --------------------------------------------------------
+        bool isFiltered = categoryId.HasValue || brandId.HasValue || !string.IsNullOrEmpty(color) || !string.IsNullOrEmpty(size) || productId.HasValue || hasCost;
         var withCost = grouped.Where(r => (r.TotalCost ?? 0) > 0 || r.CostPrice.HasValue).ToList();
         var summary = new
         {
             totalProducts    = grouped.Count,
             withCostCount    = withCost.Count,
             withoutCostCount = grouped.Count - withCost.Count,
-            totalSales       = grouped.Sum(r => r.TotalSales),
-            totalReturns     = grouped.Sum(r => r.TotalReturns),
-            totalDiscounts   = grouped.Sum(r => r.TotalDiscounts),
-            totalNetRevenue  = grouped.Sum(r => r.NetRevenue),
-            totalCost        = grouped.Sum(r => r.TotalCost ?? 0),
-            totalGrossProfit = grouped.Sum(r => r.GrossProfit ?? 0),
-            overallMargin    = grouped.Sum(r => r.NetRevenue) > 0
-                ? Math.Round(grouped.Sum(r => r.GrossProfit ?? 0) / grouped.Sum(r => r.NetRevenue) * 100, 1)
-                : 0m,
+            totalSales       = isFiltered ? grouped.Sum(r => r.TotalSales) : glSales,
+            totalReturns     = isFiltered ? grouped.Sum(r => r.TotalReturns) : glReturns,
+            totalDiscounts   = isFiltered ? grouped.Sum(r => r.TotalDiscounts) : glDiscounts,
+            totalNetRevenue  = isFiltered ? grouped.Sum(r => r.NetRevenue) : glNetRevenue,
+            totalCost        = isFiltered ? grouped.Sum(r => r.TotalCost ?? 0) : glCogs,
+            totalGrossProfit = isFiltered ? grouped.Sum(r => r.GrossProfit ?? 0) : glGrossProfit,
+            overallMargin    = isFiltered 
+                ? (grouped.Sum(r => r.NetRevenue) > 0 ? Math.Round(grouped.Sum(r => r.GrossProfit ?? 0) / grouped.Sum(r => r.NetRevenue) * 100, 1) : 0m)
+                : glMargin,
             totalUnitsSold   = grouped.Sum(r => r.UnitsSold),
             totalReturned    = grouped.Sum(r => r.ReturnedUnits),
             // أعلى هامش ربح
@@ -336,55 +376,39 @@ public class ProfitabilityController : ControllerBase
 
         int? isolatedBranchId = await User.HasViewAllBranchesAsync(HttpContext) ? branchId : User.GetBranchId();
 
-        var itemsQ = _db.OrderItems
-            .Include(i => i.Order)
-            .Include(i => i.Product)
-            .Where(i => i.Order.Status != OrderStatus.Cancelled
-                     && i.Order.CreatedAt >= from && i.Order.CreatedAt <= to
-                     && i.ProductId.HasValue);
+        var glTargetAccCodes = new[] { "4101", "410101", "4102", "51101" };
+        var glQuery = _db.JournalLines.AsNoTracking()
+            .Where(l => l.JournalEntry.Status != JournalEntryStatus.Draft
+                     && l.JournalEntry.EntryDate >= from
+                     && l.JournalEntry.EntryDate <= to
+                     && glTargetAccCodes.Contains(l.Account.Code));
 
         if (isolatedBranchId.HasValue)
         {
-            itemsQ = itemsQ.Where(i => i.Order.BranchId == isolatedBranchId.Value);
+            if (isolatedBranchId.Value == 5)
+                glQuery = glQuery.Where(l => l.BranchId == 5 || l.CostCenter == OrderSource.Website || l.JournalEntry.CostCenter == OrderSource.Website);
+            else
+                glQuery = glQuery.Where(l => l.BranchId == isolatedBranchId.Value);
         }
 
-        var items = await itemsQ.ToListAsync();
-
-        decimal totalNetRevenue = 0;
-        decimal totalCost       = 0;
-
-        var orderNumbers = items.Select(i => i.Order.OrderNumber).Distinct().ToList();
-        var movements = await _db.InventoryMovements
-            .Where(m => m.Type == InventoryMovementType.Sale && m.Reference != null && orderNumbers.Contains(m.Reference))
+        var glLinesSummary = await glQuery
+            .GroupBy(l => l.Account.Code)
+            .Select(g => new {
+                Code = g.Key,
+                Debit = g.Sum(l => l.Debit),
+                Credit = g.Sum(l => l.Credit)
+            })
             .ToListAsync();
 
-        foreach (var i in items)
-        {
-            var netQty = i.Quantity - i.ReturnedQuantity;
-            if (netQty <= 0) continue;
+        var glSales = glLinesSummary.Where(x => x.Code == "4101").Sum(x => x.Credit - x.Debit);
+        var glDiscounts = glLinesSummary.Where(x => x.Code == "410101").Sum(x => x.Debit - x.Credit);
+        var glReturns = glLinesSummary.Where(x => x.Code == "4102").Sum(x => x.Debit - x.Credit);
+        var glCogs = glLinesSummary.Where(x => x.Code == "51101").Sum(x => x.Debit - x.Credit);
+        var glNetRevenue = glSales - glDiscounts - glReturns;
+        var glGrossProfit = glNetRevenue - glCogs;
+        var glMargin = glNetRevenue > 0 ? Math.Round((glGrossProfit / glNetRevenue) * 100, 1) : 0m;
 
-            // حصة الصنف من إجمالي السعر قبل خصم الفاتورة (لصافي الكمية)
-            decimal qtyFactor = (decimal)netQty / i.Quantity;
-            decimal lineShareOfSubtotal = i.TotalPrice * qtyFactor;
-
-            // حصة الصنف من خصم الفاتورة (تناسبياً)
-            decimal lineOrderDiscountShare = 0;
-            decimal orderTotalDiscount = i.Order.DiscountAmount + i.Order.TemporalDiscount + i.Order.LoyaltyDiscountAmount;
-            if (i.Order.SubTotal > 0 && orderTotalDiscount > 0)
-            {
-                lineOrderDiscountShare = (i.TotalPrice / i.Order.SubTotal) * orderTotalDiscount;
-            }
-
-            totalNetRevenue += (lineShareOfSubtotal - (lineOrderDiscountShare * qtyFactor));
-            
-            decimal unitCost = i.Product?.CostPrice ?? 0;
-            totalCost += unitCost * netQty;
-        }
-
-        var totalProfit = totalNetRevenue - totalCost;
-        var margin      = totalNetRevenue > 0 ? Math.Round(totalProfit / totalNetRevenue * 100, 1) : 0;
-
-        return Ok(new { totalRevenue = totalNetRevenue, totalCost, totalProfit, marginPct = margin, from, to });
+        return Ok(new { totalRevenue = glNetRevenue, totalCost = glCogs, totalProfit = glGrossProfit, marginPct = glMargin, from, to });
     }
 
     // ======================================================================
