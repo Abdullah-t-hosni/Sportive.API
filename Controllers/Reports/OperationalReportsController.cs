@@ -4245,7 +4245,9 @@ public class OperationalReportsController : ControllerBase
                 a.NameAr.Contains("جاري الشريك") ||
                 a.NameAr.Contains("جاري الشركاء") ||
                 a.Code.StartsWith("3105") ||
-                a.Code.StartsWith("3205")
+                a.Code.StartsWith("3205") ||
+                a.Code.StartsWith("2204") ||
+                a.Code.StartsWith("2205")
             ))
             .ToListAsync();
 
@@ -4256,6 +4258,8 @@ public class OperationalReportsController : ControllerBase
             a.Code != "110106" && // Exclude فرق جرد المخزون
             !a.Code.StartsWith("1105") && // Exclude سلف الموظفين
             !a.Code.StartsWith("1107") && // Exclude العملاء
+            a.Code != "2204" && // Exclude parent header 2204 (keep accounts under 2204)
+            a.Code != "2205" && // Exclude parent header 2205 (keep accounts under 2205)
             !a.NameAr.Contains("مخزون") &&
             !a.NameAr.Contains("جرد") &&
             !a.NameAr.Contains("عجز") &&
@@ -4269,7 +4273,7 @@ public class OperationalReportsController : ControllerBase
             var lq = _db.JournalLines.AsNoTracking().Where(l => l.AccountId == acc.Id);
             if (branchId.HasValue) lq = lq.Where(l => l.BranchId == branchId.Value);
 
-            bool isCreditNature = acc.Nature == AccountNature.Credit || acc.Type == AccountType.Liability || acc.Type == AccountType.Equity || acc.NameAr.Contains("جاري") || acc.Code.StartsWith("3105") || acc.Code.StartsWith("2105");
+            bool isCreditNature = acc.Nature == AccountNature.Credit || acc.Type == AccountType.Liability || acc.Type == AccountType.Equity || acc.NameAr.Contains("جاري") || acc.Code.StartsWith("3105") || acc.Code.StartsWith("2105") || acc.Code.StartsWith("2204") || acc.Code.StartsWith("2205");
 
             decimal dailyNet = 0;
             decimal cumulative = 0;
@@ -4289,7 +4293,15 @@ public class OperationalReportsController : ControllerBase
 
             // Determine category
             string category = "GeneralCash";
-            if (acc.NameAr.Contains("جاري") || acc.NameAr.Contains("شريك") || acc.Code.StartsWith("3105") || acc.Code.StartsWith("3205"))
+            if (acc.Code.StartsWith("2204"))
+            {
+                category = "Shareholder";
+            }
+            else if (acc.Code.StartsWith("2205"))
+            {
+                category = "Advance";
+            }
+            else if (acc.NameAr.Contains("جاري") || acc.NameAr.Contains("شريك") || acc.Code.StartsWith("3105") || acc.Code.StartsWith("3205"))
             {
                 category = "PartnerCurrent";
             }
