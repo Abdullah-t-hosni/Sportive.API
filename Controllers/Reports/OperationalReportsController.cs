@@ -3834,6 +3834,7 @@ public class OperationalReportsController : ControllerBase
                 l.Debit,
                 l.Credit,
                 EntryDate = l.JournalEntry.EntryDate,
+                EntryType = l.JournalEntry.Type,
                 OrderId = l.OrderId ?? l.JournalEntry.OrderId ?? 0,
                 Reference = l.JournalEntry.Reference ?? l.JournalEntry.EntryNumber,
                 Description = l.JournalEntry.Description,
@@ -3847,6 +3848,16 @@ public class OperationalReportsController : ControllerBase
         foreach (var eg in entryGroups)
         {
             var first = eg.First();
+
+            // استبعاد قيود اليومية اليدوية غير المرتبطة بفاتورة (Manual Adjustment JVs) من جدول الفواتير
+            bool isSalesOrReturn = first.EntryType == JournalEntryType.SalesInvoice 
+                                || first.EntryType == JournalEntryType.SalesReturn 
+                                || (int)first.EntryType == 2 
+                                || (int)first.EntryType == 3 
+                                || first.OrderId > 0;
+
+            if (!isSalesOrReturn)
+                continue;
 
             decimal sales = salesRevAccId.HasValue ? eg.Where(l => l.AccountId == salesRevAccId.Value).Sum(l => l.Credit - l.Debit) : 0;
             decimal disc = salesDiscountAccId.HasValue ? eg.Where(l => l.AccountId == salesDiscountAccId.Value).Sum(l => l.Debit - l.Credit) : 0;
@@ -3876,20 +3887,28 @@ public class OperationalReportsController : ControllerBase
 
         invoiceRows = invoiceRows.OrderByDescending(x => x.Date).ToList();
 
-        var totalInvoices = invoiceRows.Count;
-        var totalRevenue = invoiceRows.Sum(x => x.Revenue);
-        var totalCost = invoiceRows.Sum(x => x.Cost);
-        var totalProfit = totalRevenue - totalCost;
-        var averageMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
-
         decimal totalGrossSales = glLines.Where(l => salesRevAccId.HasValue && l.AccountId == salesRevAccId.Value).Sum(l => l.Credit - l.Debit);
         decimal totalDiscounts = glLines.Where(l => salesDiscountAccId.HasValue && l.AccountId == salesDiscountAccId.Value).Sum(l => l.Debit - l.Credit);
         decimal totalReturns = glLines.Where(l => salesReturnAccId.HasValue && l.AccountId == salesReturnAccId.Value).Sum(l => l.Debit - l.Credit);
+
+        var totalInvoices = invoiceRows.Count;
+        var totalRevenue = totalGrossSales - totalDiscounts - totalReturns;
+        var totalCost = glLines.Where(l => cogsAccId.HasValue && l.AccountId == cogsAccId.Value).Sum(l => l.Debit - l.Credit);
+        var totalProfit = totalRevenue - totalCost;
+        var averageMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
 
         int salesCount = 0;
         int returnsCount = 0;
         foreach (var eg in entryGroups)
         {
+            var first = eg.First();
+            bool isSalesOrReturn = first.EntryType == JournalEntryType.SalesInvoice 
+                                || first.EntryType == JournalEntryType.SalesReturn 
+                                || (int)first.EntryType == 2 
+                                || (int)first.EntryType == 3 
+                                || first.OrderId > 0;
+            if (!isSalesOrReturn) continue;
+
             if (salesRevAccId.HasValue && eg.Any(l => l.AccountId == salesRevAccId.Value && (l.Credit - l.Debit) > 0))
                 salesCount++;
             else if (salesReturnAccId.HasValue && eg.Any(l => l.AccountId == salesReturnAccId.Value && (l.Debit - l.Credit) > 0))
