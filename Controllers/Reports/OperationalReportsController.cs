@@ -4279,10 +4279,16 @@ public class OperationalReportsController : ControllerBase
                 a.Code.StartsWith("1103") ||
                 a.NameAr.Contains("جاري الشريك") ||
                 a.NameAr.Contains("جاري الشركاء") ||
+                a.NameAr.Contains("جاري") ||
                 a.Code.StartsWith("3105") ||
                 a.Code.StartsWith("3205") ||
+                a.Code.StartsWith("3204") ||
+                a.Code.StartsWith("3104") ||
                 a.Code.StartsWith("2204") ||
-                a.Code.StartsWith("2205")
+                a.Code.StartsWith("2205") ||
+                a.NameAr.Contains("مساهم") ||
+                a.NameAr.Contains("مساهمين") ||
+                a.NameAr.Contains("سلف")
             ))
             .ToListAsync();
 
@@ -4293,8 +4299,10 @@ public class OperationalReportsController : ControllerBase
             a.Code != "110106" && // Exclude فرق جرد المخزون
             !a.Code.StartsWith("1105") && // Exclude سلف الموظفين
             !a.Code.StartsWith("1107") && // Exclude العملاء
-            a.Code != "2204" && // Exclude parent header 2204 (keep accounts under 2204)
-            a.Code != "2205" && // Exclude parent header 2205 (keep accounts under 2205)
+            a.Code != "2204" && // Exclude parent header 2204
+            a.Code != "2205" && // Exclude parent header 2205
+            a.Code != "3204" && // Exclude parent header 3204
+            a.Code != "3104" && // Exclude parent header 3104
             !a.NameAr.Contains("مخزون") &&
             !a.NameAr.Contains("جرد") &&
             !a.NameAr.Contains("عجز") &&
@@ -4306,9 +4314,17 @@ public class OperationalReportsController : ControllerBase
         foreach (var acc in balanceAccounts)
         {
             var lq = _db.JournalLines.AsNoTracking().Where(l => l.AccountId == acc.Id);
-            if (branchId.HasValue) lq = lq.Where(l => l.BranchId == branchId.Value);
+            if (branchId.HasValue && acc.BranchId.HasValue) lq = lq.Where(l => l.BranchId == branchId.Value);
 
-            bool isCreditNature = acc.Nature == AccountNature.Credit || acc.Type == AccountType.Liability || acc.Type == AccountType.Equity || acc.NameAr.Contains("جاري") || acc.Code.StartsWith("3105") || acc.Code.StartsWith("2105") || acc.Code.StartsWith("2204") || acc.Code.StartsWith("2205");
+            bool isCreditNature = acc.Nature == AccountNature.Credit 
+                || acc.Type == AccountType.Liability 
+                || acc.Type == AccountType.Equity 
+                || acc.NameAr.Contains("جاري") 
+                || acc.NameAr.Contains("مساهم")
+                || acc.Code.StartsWith("3") 
+                || acc.Code.StartsWith("2204") 
+                || acc.Code.StartsWith("2205") 
+                || acc.Code.StartsWith("2105");
 
             decimal dailyNet = 0;
             decimal cumulative = 0;
