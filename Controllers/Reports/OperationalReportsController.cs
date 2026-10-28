@@ -3835,6 +3835,8 @@ public class OperationalReportsController : ControllerBase
                 l.Credit,
                 EntryDate = l.JournalEntry.EntryDate,
                 EntryType = l.JournalEntry.Type,
+                EntryStatus = l.JournalEntry.Status,
+                ReversalOfId = l.JournalEntry.ReversalOfId,
                 OrderId = l.OrderId ?? l.JournalEntry.OrderId ?? 0,
                 Reference = l.JournalEntry.Reference ?? l.JournalEntry.EntryNumber,
                 Description = l.JournalEntry.Description,
@@ -3849,12 +3851,20 @@ public class OperationalReportsController : ControllerBase
         {
             var first = eg.First();
 
-            // استبعاد قيود اليومية اليدوية غير المرتبطة بفاتورة (Manual Adjustment JVs) من جدول الفواتير
-            bool isSalesOrReturn = first.EntryType == JournalEntryType.SalesInvoice 
-                                || first.EntryType == JournalEntryType.SalesReturn 
-                                || (int)first.EntryType == 2 
-                                || (int)first.EntryType == 3 
-                                || first.OrderId > 0;
+            // تطبيق الخيار الثاني: استبعاد الفواتير الملغاة وقيودها العكسية من جدول الفواتير لتصفيتها
+            bool isReversal = first.ReversalOfId.HasValue 
+                           || first.EntryStatus == JournalEntryStatus.Reversed 
+                           || (first.Description != null && first.Description.StartsWith("عكس:"));
+
+            if (isReversal)
+                continue;
+
+            bool isSalesOrReturn = (first.EntryType == JournalEntryType.SalesInvoice 
+                                 || first.EntryType == JournalEntryType.SalesReturn 
+                                 || (int)first.EntryType == 2 
+                                 || (int)first.EntryType == 3 
+                                 || first.OrderId > 0)
+                                 && !(first.Reference != null && first.Reference.StartsWith("JE-") && first.OrderId == 0);
 
             if (!isSalesOrReturn)
                 continue;
@@ -3902,11 +3912,17 @@ public class OperationalReportsController : ControllerBase
         foreach (var eg in entryGroups)
         {
             var first = eg.First();
-            bool isSalesOrReturn = first.EntryType == JournalEntryType.SalesInvoice 
-                                || first.EntryType == JournalEntryType.SalesReturn 
-                                || (int)first.EntryType == 2 
-                                || (int)first.EntryType == 3 
-                                || first.OrderId > 0;
+            bool isReversal = first.ReversalOfId.HasValue 
+                           || first.EntryStatus == JournalEntryStatus.Reversed 
+                           || (first.Description != null && first.Description.StartsWith("عكس:"));
+            if (isReversal) continue;
+
+            bool isSalesOrReturn = (first.EntryType == JournalEntryType.SalesInvoice 
+                                 || first.EntryType == JournalEntryType.SalesReturn 
+                                 || (int)first.EntryType == 2 
+                                 || (int)first.EntryType == 3 
+                                 || first.OrderId > 0)
+                                 && !(first.Reference != null && first.Reference.StartsWith("JE-") && first.OrderId == 0);
             if (!isSalesOrReturn) continue;
 
             if (salesRevAccId.HasValue && eg.Any(l => l.AccountId == salesRevAccId.Value && (l.Credit - l.Debit) > 0))
