@@ -4327,12 +4327,12 @@ public class OperationalReportsController : ControllerBase
             }
 
             // Determine category
-            string category = "GeneralCash";
-            if (acc.Code.StartsWith("2204"))
+            string category = "Other";
+            if (acc.Code.StartsWith("2204") || acc.NameAr.Contains("مساهم"))
             {
                 category = "Shareholder";
             }
-            else if (acc.Code.StartsWith("2205"))
+            else if (acc.Code.StartsWith("2205") || acc.NameAr.Contains("سلف"))
             {
                 category = "Advance";
             }
@@ -4357,9 +4357,17 @@ public class OperationalReportsController : ControllerBase
                 {
                     category = "BankAndClosures";
                 }
-                else
+                else if (acc.Code.StartsWith("1101") || acc.Code.StartsWith("1103"))
                 {
                     category = "GeneralCash";
+                }
+                else if (acc.Code.StartsWith("220") || acc.NameAr.Contains("جمعية") || acc.NameAr.Contains("قرض"))
+                {
+                    category = "Shareholder";
+                }
+                else
+                {
+                    category = "Other";
                 }
             }
 
