@@ -171,6 +171,23 @@ public class ReceiptVouchersController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateReceiptVoucherDto dto)
     {
+        // 🔒 حماية لمنع تكرار السند عند الضغط المتكرر (Double-Click / Idempotency Protection)
+        var recentThreshold = TimeHelper.GetEgyptTime().AddSeconds(-15);
+        var currentUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var existingDuplicate = await _db.ReceiptVouchers
+            .Where(v => v.Amount == dto.Amount
+                     && v.CashAccountId == dto.CashAccountId
+                     && v.FromAccountId == dto.FromAccountId
+                     && v.Description == dto.Description
+                     && v.CreatedAt >= recentThreshold
+                     && (currentUserId == null || v.CreatedByUserId == currentUserId))
+            .FirstOrDefaultAsync();
+
+        if (existingDuplicate != null)
+        {
+            return Ok(new { id = existingDuplicate.Id, message = "تم حفظ السند بنجاح." });
+        }
+
         var vNo = await _seq.NextAsync("RV");
         
         var cashAccount = await _db.Accounts.FindAsync(dto.CashAccountId);
