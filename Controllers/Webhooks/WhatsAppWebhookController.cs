@@ -64,7 +64,7 @@ public class WhatsAppWebhookController : ControllerBase
     {
         try
         {
-            _logger.LogInformation("Received WhatsApp Webhook Payload: {Payload}", payload.GetRawText());
+            _logger.LogDebug("Received WhatsApp Webhook payload");
 
             string? phone = ExtractPhone(payload);
             string? customerName = ExtractCustomerName(payload);
@@ -187,7 +187,7 @@ public class WhatsAppWebhookController : ControllerBase
                 link = chatLink
             });
 
-            _logger.LogInformation("Dispatched WhatsApp SignalR message for {Name} ({Phone}), fromMe={FromMe}", displayName, cleanPhone, fromMe);
+            _logger.LogDebug("Dispatched WhatsApp SignalR message for {Name} ({Phone}), fromMe={FromMe}", displayName, cleanPhone, fromMe);
 
             return Ok(new
             {

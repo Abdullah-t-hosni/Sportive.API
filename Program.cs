@@ -21,16 +21,18 @@ using OpenTelemetry.Metrics;
 
 var isDev = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development";
 Log.Logger = new LoggerConfiguration()
-    .MinimumLevel.Is(isDev ? LogEventLevel.Debug : LogEventLevel.Information)
+    .MinimumLevel.Is(isDev ? LogEventLevel.Debug : LogEventLevel.Warning)
     .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
     .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
-    .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Database.Command", isDev ? LogEventLevel.Information : LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Database.Command", isDev ? LogEventLevel.Information : LogEventLevel.Error)
     .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Infrastructure", LogEventLevel.Warning)
+    .MinimumLevel.Override("Sportive.API.Controllers.Webhooks", LogEventLevel.Warning)
     .MinimumLevel.Override("Hangfire", LogEventLevel.Warning)
     .MinimumLevel.Override("System.Net.Http", LogEventLevel.Warning)
     .Enrich.FromLogContext()
     .Enrich.WithEnvironmentName()
-    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
+    .WriteTo.Console(restrictedToMinimumLevel: isDev ? LogEventLevel.Debug : LogEventLevel.Warning, outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
     .WriteTo.File("logs/sportive-.log", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 30)
     .CreateLogger();
 
@@ -297,11 +299,15 @@ app.UseSerilogRequestLogging(options =>
             return LogEventLevel.Verbose;
 
         var path = httpContext.Request.Path.Value ?? "";
-        // Suppress noisy health checks, root ping, signalr, and static assets/uploads from flooding console
+        // Suppress noisy health checks, root ping, signalr, webhooks, and polling endpoints from flooding console
         if (path.Equals("/health", StringComparison.OrdinalIgnoreCase) ||
             path.Equals("/", StringComparison.OrdinalIgnoreCase) ||
             path.StartsWith("/uploads", StringComparison.OrdinalIgnoreCase) ||
             path.StartsWith("/notifications-hub", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("/api/webhooks", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("/webhooks", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("/api/internal-chat/channels", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("/api/whatsapp/status", StringComparison.OrdinalIgnoreCase) ||
             path.EndsWith(".ico", StringComparison.OrdinalIgnoreCase) ||
             path.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
             path.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
@@ -311,7 +317,7 @@ app.UseSerilogRequestLogging(options =>
             return LogEventLevel.Verbose;
         }
 
-        return LogEventLevel.Information;
+        return isDev ? LogEventLevel.Information : LogEventLevel.Verbose;
     };
 });
 
