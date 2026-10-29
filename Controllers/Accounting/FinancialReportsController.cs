@@ -833,7 +833,8 @@ public class FinancialReportsController : ControllerBase
         [FromQuery] DateTime? toDate   = null,
         [FromQuery] OrderSource? source = null,
         [FromQuery] bool      excel    = false,
-        [FromQuery] int?      branchId = null)
+        [FromQuery] int?      branchId = null,
+        [FromQuery] bool      separateFinancing = false)
     {
         var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, 1, 1)).Date.AddHours(TimeHelper.GetBusinessDayEndHour());
         var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
@@ -996,25 +997,20 @@ public class FinancialReportsController : ControllerBase
                     flowAmount
                 );
 
-                if (nc.Code.StartsWith("12")) // تدفقات استثمارية: أصول ثابتة
+                if (nc.Code.StartsWith("12")) // تدفقات استثمارية: أصول ثابتة (التغير في الأصول)
                 {
                     investing += flowAmount;
                     invItems.Add(item);
                 }
-                else if (nc.Code.StartsWith("2101") || nc.NameAr.Contains("مورد") || nc.Code.StartsWith("2103") || nc.NameAr.Contains("رواتب مستحقة"))
+                else if (separateFinancing && (nc.Type == AccountType.Equity || nc.Code.StartsWith("22") || nc.Code.StartsWith("3105") || nc.Code.StartsWith("3205") || nc.NameAr.Contains("جاري") || nc.NameAr.Contains("شريك")))
                 {
-                    // مدفوعات الموردين ومستحقات الرواتب هي أنشطة تشغيلية
-                    operating += flowAmount;
-                    opItems.Add(item);
-                }
-                else if (nc.Type == AccountType.Equity || nc.Code.StartsWith("22") || nc.Code.StartsWith("3105") || nc.Code.StartsWith("3205") || nc.NameAr.Contains("جاري") || nc.NameAr.Contains("شريك"))
-                {
-                    // تدفقات تمويلية: جاري الشركاء، مساهمين، قروض وسلف، جمعيات، حقوق الملكية
+                    // تدفقات تمويلية: جاري الشركاء، مساهمين، قروض وسلف، جمعيات، حقوق الملكية (في حال تفعيل العرض المنفصل)
                     financing += flowAmount;
                     finItems.Add(item);
                 }
-                else // أنشطة تشغيلية: مصاريف، إيرادات أخرى، تحصيلات عملاء وشركات شحن
+                else
                 {
+                    // أنشطة تشغيلية: تشمل كافة العمليات، الموردين، المصاريف، المبيعات، ومسحوبات وإيداعات الشركاء والجمعيات
                     operating += flowAmount;
                     opItems.Add(item);
                 }
@@ -1040,8 +1036,10 @@ public class FinancialReportsController : ControllerBase
             openCash += ol;
         }
 
-        // الرصيد النهائي الفعلي من الحسابات
+        // الرصيد النهائي الفعلي وتفصيل السيولة من كل الحسابات (البنوك، المحافظ، الخزائن)
         var actualClosingBalance = 0m;
+        var cashBreakdown = new List<object>();
+
         foreach (var ca in cashAccounts)
         {
             var totalMvQuery = _db.JournalLines.AsNoTracking()
@@ -1052,11 +1050,25 @@ public class FinancialReportsController : ControllerBase
 
             var totalMv = await totalMvQuery.SumAsync(l => l.Debit - l.Credit);
 
+            decimal accBal = 0m;
             if (!branchId.HasValue || ca.BranchId == branchId.Value)
             {
-                actualClosingBalance += ca.OpeningBalance;
+                accBal += ca.OpeningBalance;
             }
-            actualClosingBalance += totalMv;
+            accBal += totalMv;
+            actualClosingBalance += accBal;
+
+            if (accBal != 0 || ca.Code == "110101" || ca.Code == "110103" || ca.Code == "110201" || ca.Code.StartsWith("1103"))
+            {
+                string cat = ca.Code.StartsWith("1102") ? "bank" : (ca.Code.StartsWith("1103") ? "wallet" : "safe");
+                cashBreakdown.Add(new {
+                    id = ca.Id,
+                    code = ca.Code,
+                    name = ca.NameAr,
+                    balance = accBal,
+                    category = cat
+                });
+            }
         }
 
         var netCashFlow = operating + investing + financing;
@@ -1073,7 +1085,8 @@ public class FinancialReportsController : ControllerBase
             investingActivities = new { items = invItems, total = investing },
             financingActivities = new { items = finItems, total = financing },
             netCashFlow,
-            closingCashBalance = actualClosingBalance
+            closingCashBalance = actualClosingBalance,
+            cashBreakdown
         });
     }
 
@@ -1352,17 +1365,20 @@ public class FinancialReportsController : ControllerBase
             r += 2;
         }
 
-        AddSection("Operational Activities", op,  XLColor.FromHtml("#e8f5e9"));
-        AddSection("Investment Activities", inv, XLColor.FromHtml("#fff3e0"));
-        AddSection("Financing Activities", fin, XLColor.FromHtml("#e1f5fe"));
+        AddSection("التغير في الأنشطة التشغيلية", op,  XLColor.FromHtml("#e8f5e9"));
+        AddSection("التغير في الأصول (الأنشطة الاستثمارية)", inv, XLColor.FromHtml("#fff3e0"));
+        if (fin.Any())
+        {
+            AddSection("الأنشطة التمويلية", fin, XLColor.FromHtml("#e1f5fe"));
+        }
 
-        ws.Cell(r, 2).Value = "Net Cash Flow"; ws.Cell(r, 2).Style.Font.Bold = true;
+        ws.Cell(r, 2).Value = "صافي التغير في النقدية (صافي التدفق)"; ws.Cell(r, 2).Style.Font.Bold = true;
         ws.Cell(r, 3).Value = op.Sum(x => x.Amount) + inv.Sum(x => x.Amount) + fin.Sum(x => x.Amount);
-        ws.Cell(r, 3).Style.Font.Bold = true; ws.Cell(r, 3).Style.NumberFormat.Format = "General";
+        ws.Cell(r, 3).Style.Font.Bold = true; ws.Cell(r, 3).Style.NumberFormat.Format = "#,##0.00";
         r++;
-        ws.Cell(r, 2).Value = "Ending Balance"; ws.Cell(r, 2).Style.Font.Bold = true;
+        ws.Cell(r, 2).Value = "إجمالي السيولة النقدية المتاحة نهاية الفترة"; ws.Cell(r, 2).Style.Font.Bold = true;
         ws.Cell(r, 3).Value = openBal + op.Sum(x => x.Amount) + inv.Sum(x => x.Amount) + fin.Sum(x => x.Amount);
-        ws.Cell(r, 3).Style.Font.Bold = true; ws.Cell(r, 3).Style.NumberFormat.Format = "General";
+        ws.Cell(r, 3).Style.Font.Bold = true; ws.Cell(r, 3).Style.NumberFormat.Format = "#,##0.00";
 
         ws.Columns().AdjustToContents();
         return ExcelResult(wb, $"cash_flow_{from:yyyyMMdd}.xlsx");
