@@ -300,59 +300,67 @@ public class OrdersController : ControllerBase
             _logger.LogWarning(ex, "Failed to send SignalR print notification for order {OrderId}", order.Id);
         }
 
-        try {
-            var capi = HttpContext.RequestServices.GetService<IFacebookCapiService>();
-            if (capi != null) {
-                var ip = GetClientIpAddress();
-                var ua = Request.Headers["User-Agent"].ToString();
-                var referer = Request.Headers["Referer"].ToString();
-                var fbp = dto.Fbp ?? Request.Cookies["_fbp"];
-                var fbc = dto.Fbc ?? Request.Cookies["_fbc"];
-                var fullOrder = await _db.Orders.Include(o => o.Customer).Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == order.Id);
-                if (fullOrder != null) {
-                    _ = capi.SendPurchaseEventAsync(fullOrder, ip, ua, fbp, fbc, referer);
-                }
-            }
-        } catch (Exception ex) { _logger.LogWarning(ex, "CAPI invoke failed"); }
+        // ⚡ Run CAPI and WhatsApp in background to keep CreateOrder HTTP request lightning-fast (< 500ms)
+        var orderId = order.Id;
+        var clientIp = GetClientIpAddress();
+        var clientUa = Request.Headers["User-Agent"].ToString();
+        var clientReferer = Request.Headers["Referer"].ToString();
+        var clientFbp = dto.Fbp ?? Request.Cookies["_fbp"];
+        var clientFbc = dto.Fbc ?? Request.Cookies["_fbc"];
 
-        // 💬 Dispatch automatic WhatsApp Order Received Confirmation to Customer
-        try
+        _ = Task.Run(async () =>
         {
-            var waService = HttpContext.RequestServices.GetService<IWaMeService>();
-            var waApi = HttpContext.RequestServices.GetService<IWhatsAppApiService>();
-            if (waService != null && waApi != null)
+            try
             {
-                var fullOrderForWa = await _db.Orders
+                using var scope = _scopeFactory.CreateScope();
+                var scopedDb = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var capi = scope.ServiceProvider.GetService<IFacebookCapiService>();
+                var waService = scope.ServiceProvider.GetService<IWaMeService>();
+                var waApi = scope.ServiceProvider.GetService<IWhatsAppApiService>();
+
+                var fullOrder = await scopedDb.Orders
+                    .AsNoTracking()
                     .Include(o => o.Customer)
                     .Include(o => o.Items)
-                    .FirstOrDefaultAsync(o => o.Id == order.Id);
+                    .FirstOrDefaultAsync(o => o.Id == orderId);
 
-                if (fullOrderForWa != null && !string.IsNullOrWhiteSpace(fullOrderForWa.Customer?.Phone))
+                if (fullOrder == null) return;
+
+                // 1. Facebook CAPI Event
+                if (capi != null)
                 {
-                    var confirmResult = waService.OrderConfirmation(fullOrderForWa);
-                    if (!string.IsNullOrWhiteSpace(confirmResult.FullMessage))
+                    try
                     {
-                        var targetPhone = fullOrderForWa.Customer.Phone;
-                        var msgText = confirmResult.FullMessage;
-                        _ = Task.Run(async () =>
+                        await capi.SendPurchaseEventAsync(fullOrder, clientIp, clientUa, clientFbp, clientFbc, clientReferer);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Background CAPI invoke failed for order {OrderId}", orderId);
+                    }
+                }
+
+                // 2. WhatsApp Auto-Confirmation
+                if (waService != null && waApi != null && !string.IsNullOrWhiteSpace(fullOrder.Customer?.Phone))
+                {
+                    try
+                    {
+                        var confirmResult = waService.OrderConfirmation(fullOrder);
+                        if (!string.IsNullOrWhiteSpace(confirmResult.FullMessage))
                         {
-                            try
-                            {
-                                await waApi.SendWhatsAppMessageAsync(targetPhone, msgText);
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogWarning(ex, "Failed to send auto WhatsApp confirmation for order {OrderId}", order.Id);
-                            }
-                        });
+                            await waApi.SendWhatsAppMessageAsync(fullOrder.Customer.Phone, confirmResult.FullMessage);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Background WhatsApp confirmation failed for order {OrderId}", orderId);
                     }
                 }
             }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Error building WhatsApp order confirmation for order {OrderId}", order.Id);
-        }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Background post-order tasks failed for order {OrderId}", orderId);
+            }
+        });
 
         return CreatedAtAction(nameof(GetOrder), new { id = order.Id }, order);
     }
