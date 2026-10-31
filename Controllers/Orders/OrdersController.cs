@@ -38,6 +38,13 @@ public class OrdersController : ControllerBase
     private readonly IHubContext<NotificationHub> _hubContext;
     private readonly ITenantContext _tenantContext;
     private readonly Sportive.API.Services.Loyalty.ILoyaltyService _loyaltyService;
+    private static readonly HttpClient _bostaHttpClient = new HttpClient(new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(15)
+    })
+    {
+        Timeout = TimeSpan.FromSeconds(3)
+    };
 
     public OrdersController(
         IOrderService orderService, 
@@ -1909,12 +1916,18 @@ public class OrdersController : ControllerBase
         {
             storeOrdersQuery = storeOrdersQuery.Where(o => o.CustomerId == customerId.Value);
         }
-        else if (!string.IsNullOrEmpty(phoneSuffix))
+        else if (!string.IsNullOrEmpty(phoneSuffix) && phoneSuffix.Length >= 7)
         {
-            storeOrdersQuery = storeOrdersQuery.Where(o => o.Customer != null && o.Customer.Phone != null && o.Customer.Phone.Contains(phoneSuffix));
+            storeOrdersQuery = storeOrdersQuery.Where(o => o.Customer != null && o.Customer.Phone != null && (o.Customer.Phone.EndsWith(phoneSuffix) || o.Customer.Phone.Contains(phoneSuffix)));
+        }
+        else
+        {
+            return BadRequest("Valid Phone or CustomerId is required.");
         }
 
         var storeOrders = await storeOrdersQuery
+            .OrderByDescending(o => o.Id)
+            .Take(50)
             .Select(o => new { 
                 o.Id, 
                 o.Status, 
@@ -1976,14 +1989,13 @@ public class OrdersController : ControllerBase
             try
             {
                 string baseUrl = storeSettings!.BostaUseSandbox ? "https://stg-api.bosta.co" : "https://api.bosta.co";
-                using var client = new System.Net.Http.HttpClient();
-                client.Timeout = TimeSpan.FromSeconds(4);
-                client.DefaultRequestHeaders.Add("Authorization", storeSettings.BostaApiKey);
-
-                // Query Bosta search endpoint
                 var searchPayload = System.Text.Json.JsonSerializer.Serialize(new { phone = cleanPhone });
-                using var content = new System.Net.Http.StringContent(searchPayload, System.Text.Encoding.UTF8, "application/json");
-                var bostaRes = await client.PostAsync($"{baseUrl}/api/v2/deliveries/search", content);
+                using var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/api/v2/deliveries/search")
+                {
+                    Content = new StringContent(searchPayload, System.Text.Encoding.UTF8, "application/json")
+                };
+                request.Headers.Add("Authorization", storeSettings.BostaApiKey);
+                var bostaRes = await _bostaHttpClient.SendAsync(request);
 
                 if (bostaRes.IsSuccessStatusCode)
                 {
@@ -2092,7 +2104,7 @@ public class OrdersController : ControllerBase
             bosta = bostaStats
         };
 
-        _cache.Set(cacheKey, result, TimeSpan.FromMinutes(10));
+        _cache.Set(cacheKey, result, TimeSpan.FromMinutes(30));
         return Ok(result);
     }
 
