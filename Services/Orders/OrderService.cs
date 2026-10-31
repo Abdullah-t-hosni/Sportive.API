@@ -73,9 +73,6 @@ public class OrderService : IOrderService
     {
         pageSize = Math.Clamp(pageSize, 1, 2000);
         var query = _db.Orders
-            .Include(o => o.Customer)
-            .Include(o => o.DeliveryAddress)
-            .Include(o => o.StatusHistory)
             .AsNoTracking();
 
         if (status.HasValue) query = query.Where(o => o.Status == status.Value);
@@ -169,6 +166,8 @@ public class OrderService : IOrderService
     public async Task<OrderDetailDto?> GetOrderByIdAsync(int id)
     {
         var o = await _db.Orders
+            .AsNoTracking()
+            .AsSplitQuery()
             .Include(o => o.Customer)
             .Include(o => o.DeliveryAddress)
             .Include(o => o.Items)

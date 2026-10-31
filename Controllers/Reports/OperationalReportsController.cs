@@ -4909,14 +4909,9 @@ public class OperationalReportsController : ControllerBase
         var to = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
 
         // 1. Orders Base Query for Online Store (Source == Website or 3)
+        // Project lightweight scalars first; load Customer & Items ONLY for the requested page!
         var ordersQuery = _db.Orders
             .AsNoTracking()
-            .Include(o => o.Customer)
-            .Include(o => o.ShippingCompany)
-            .Include(o => o.Items)
-                .ThenInclude(i => i.Product)
-            .Include(o => o.Items)
-                .ThenInclude(i => i.ProductVariant)
             .Where(o => o.Source == OrderSource.Website && o.CreatedAt >= from && o.CreatedAt <= to);
 
         // Load Shipping Companies to identify Bosta, Gohary, and AS
@@ -4985,15 +4980,77 @@ public class OperationalReportsController : ControllerBase
         if (!string.IsNullOrEmpty(search))
         {
             var s = search.Trim().ToLower();
+            var searchHash = Customer.EncryptionHelper?.ComputeSearchHash(search.Trim()) ?? "";
             ordersQuery = ordersQuery.Where(o =>
                 o.OrderNumber.ToLower().Contains(s) ||
-                (o.Customer != null && (o.Customer.FullName.ToLower().Contains(s) || o.Customer.Phone.Contains(s))) ||
+                (o.Customer != null && (o.Customer.FullName.ToLower().Contains(s) || (!string.IsNullOrEmpty(searchHash) && o.Customer.PhoneHash == searchHash))) ||
                 (o.ShippingTrackingNumber != null && o.ShippingTrackingNumber.ToLower().Contains(s)) ||
                 (o.BostaTrackingNumber != null && o.BostaTrackingNumber.ToLower().Contains(s))
             );
         }
 
-        var allOrders = await ordersQuery.OrderByDescending(o => o.CreatedAt).ToListAsync();
+        var allOrders = await ordersQuery
+            .OrderByDescending(o => o.CreatedAt)
+            .Select(o => new
+            {
+                o.Id,
+                o.OrderNumber,
+                o.CreatedAt,
+                o.Status,
+                o.PaymentMethod,
+                o.PaymentStatus,
+                o.FulfillmentType,
+                o.ShippingType,
+                ShippingCompanyNameAr = o.ShippingCompany != null ? o.ShippingCompany.NameAr : null,
+                o.ShippingCarrierName,
+                o.ShippingTrackingNumber,
+                o.BostaDeliveryId,
+                o.BostaTrackingNumber,
+                o.SubTotal,
+                o.DiscountAmount,
+                o.TemporalDiscount,
+                o.DeliveryFee,
+                o.ActualDeliveryCost,
+                o.TotalAmount,
+                o.IsSettledWithCourier,
+                o.CourierSettlementDate,
+                o.CourierSettlementReference,
+                ItemsSumTotal = o.Items.Sum(i => (decimal?)i.TotalPrice) ?? 0m,
+                OrderCogs = o.Items.Sum(i => (decimal?)((i.Product != null ? i.Product.CostPrice : 0m) * (i.Quantity > 0 ? i.Quantity : 1))) ?? 0m,
+                ItemsCount = o.Items.Count
+            })
+            .ToListAsync();
+
+        var pagedOrderIds = (excel ? allOrders : allOrders.Skip((page - 1) * pageSize).Take(pageSize))
+            .Select(x => x.Id)
+            .ToHashSet();
+
+        var pagedOrderDetails = pagedOrderIds.Count == 0
+            ? new Dictionary<int, (string CustomerName, string CustomerPhone, object Items)>()
+            : (await _db.Orders
+                .AsNoTracking()
+                .AsSplitQuery()
+                .Include(o => o.Customer)
+                .Include(o => o.Items).ThenInclude(i => i.Product)
+                .Include(o => o.Items).ThenInclude(i => i.ProductVariant)
+                .Where(o => pagedOrderIds.Contains(o.Id))
+                .ToListAsync())
+                .ToDictionary(
+                    o => o.Id,
+                    o => (
+                        CustomerName: o.Customer?.FullName ?? "عميل متجر",
+                        CustomerPhone: o.Customer?.Phone ?? "",
+                        Items: (object)o.Items.Select(i => new {
+                            sku = i.Product?.SKU ?? "",
+                            productName = i.Product?.NameAr ?? "",
+                            size = i.ProductVariant?.Size ?? "",
+                            color = i.ProductVariant?.ColorAr ?? i.ProductVariant?.Color ?? "",
+                            quantity = i.Quantity,
+                            unitPrice = i.UnitPrice,
+                            costPrice = i.Product?.CostPrice ?? 0,
+                            lineTotal = i.TotalPrice
+                        }).ToList()
+                    ));
 
         // 2. Financial Aggregations
         decimal grossProductSales = 0;
@@ -5017,12 +5074,12 @@ public class OperationalReportsController : ControllerBase
 
         foreach (var o in allOrders)
         {
-            decimal orderItemsGross = o.SubTotal > 0 ? o.SubTotal : o.Items.Sum(i => i.TotalPrice);
+            decimal orderItemsGross = o.SubTotal > 0 ? o.SubTotal : o.ItemsSumTotal;
             decimal orderDisc = o.DiscountAmount + o.TemporalDiscount;
             decimal orderDeliveryFee = o.DeliveryFee;
             decimal orderActualCost = o.ActualDeliveryCost;
             
-            decimal orderCogs = o.Items.Sum(i => (i.Product?.CostPrice ?? 0) * (i.Quantity > 0 ? i.Quantity : 1));
+            decimal orderCogs = o.OrderCogs;
 
             // Determine if this order actually has pending COD funds with a shipping courier
             bool isPickupOrBranch = o.FulfillmentType == FulfillmentType.Pickup || 
@@ -5107,9 +5164,9 @@ public class OperationalReportsController : ControllerBase
             {
                 carrierKey = "استلام من الفرع";
             }
-            else if (o.ShippingCompany != null && !string.IsNullOrEmpty(o.ShippingCompany.NameAr))
+            else if (!string.IsNullOrEmpty(o.ShippingCompanyNameAr))
             {
-                carrierKey = o.ShippingCompany.NameAr;
+                carrierKey = o.ShippingCompanyNameAr;
             }
             else if (o.ShippingType == "Bosta" || !string.IsNullOrEmpty(o.BostaDeliveryId) || !string.IsNullOrEmpty(o.BostaTrackingNumber) || (o.ShippingCarrierName != null && (o.ShippingCarrierName.Contains("بوسطة") || o.ShippingCarrierName.Contains("Bosta"))))
             {
@@ -5163,47 +5220,41 @@ public class OperationalReportsController : ControllerBase
             pStats.Amount += o.TotalAmount;
             pmMap[pmKey] = pStats;
 
-            // Row Item Profit
-            decimal rowGrossRevenue = orderItemsGross + orderDeliveryFee - orderDisc;
-            decimal rowCost = orderCogs + orderActualCost;
-            decimal rowNetProfit = o.Status == OrderStatus.Delivered 
-                ? (rowGrossRevenue - rowCost) 
-                : (o.Status == OrderStatus.Returned ? -orderActualCost : 0);
+            // Row Item Profit (only allocate and hydrate full row details for the requested page!)
+            if (pagedOrderDetails.TryGetValue(o.Id, out var detail))
+            {
+                decimal rowGrossRevenue = orderItemsGross + orderDeliveryFee - orderDisc;
+                decimal rowCost = orderCogs + orderActualCost;
+                decimal rowNetProfit = o.Status == OrderStatus.Delivered 
+                    ? (rowGrossRevenue - rowCost) 
+                    : (o.Status == OrderStatus.Returned ? -orderActualCost : 0);
 
-            orderRows.Add(new {
-                id = o.Id,
-                orderNumber = o.OrderNumber,
-                createdAt = o.CreatedAt,
-                customerName = o.Customer?.FullName ?? "عميل متجر",
-                customerPhone = o.Customer?.Phone ?? "",
-                status = o.Status.ToString(),
-                paymentMethod = o.PaymentMethod.ToString(),
-                paymentStatus = o.PaymentStatus.ToString(),
-                fulfillmentType = o.FulfillmentType.ToString(),
-                shippingCarrierName = carrierKey,
-                shippingTrackingNumber = o.ShippingTrackingNumber ?? o.BostaTrackingNumber ?? "",
-                subTotal = orderItemsGross,
-                discountAmount = orderDisc,
-                deliveryFee = orderDeliveryFee,
-                actualDeliveryCost = orderActualCost,
-                totalAmount = o.TotalAmount,
-                cogs = orderCogs,
-                netProfit = rowNetProfit,
-                isSettledWithCourier = o.IsSettledWithCourier,
-                courierSettlementDate = o.CourierSettlementDate,
-                courierSettlementReference = o.CourierSettlementReference,
-                itemsCount = o.Items.Count,
-                items = o.Items.Select(i => new {
-                    sku = i.Product?.SKU ?? "",
-                    productName = i.Product?.NameAr ?? "",
-                    size = i.ProductVariant?.Size ?? "",
-                    color = i.ProductVariant?.ColorAr ?? i.ProductVariant?.Color ?? "",
-                    quantity = i.Quantity,
-                    unitPrice = i.UnitPrice,
-                    costPrice = i.Product?.CostPrice ?? 0,
-                    lineTotal = i.TotalPrice
-                }).ToList()
-            });
+                orderRows.Add(new {
+                    id = o.Id,
+                    orderNumber = o.OrderNumber,
+                    createdAt = o.CreatedAt,
+                    customerName = detail.CustomerName,
+                    customerPhone = detail.CustomerPhone,
+                    status = o.Status.ToString(),
+                    paymentMethod = o.PaymentMethod.ToString(),
+                    paymentStatus = o.PaymentStatus.ToString(),
+                    fulfillmentType = o.FulfillmentType.ToString(),
+                    shippingCarrierName = carrierKey,
+                    shippingTrackingNumber = o.ShippingTrackingNumber ?? o.BostaTrackingNumber ?? "",
+                    subTotal = orderItemsGross,
+                    discountAmount = orderDisc,
+                    deliveryFee = orderDeliveryFee,
+                    actualDeliveryCost = orderActualCost,
+                    totalAmount = o.TotalAmount,
+                    cogs = orderCogs,
+                    netProfit = rowNetProfit,
+                    isSettledWithCourier = o.IsSettledWithCourier,
+                    courierSettlementDate = o.CourierSettlementDate,
+                    courierSettlementReference = o.CourierSettlementReference,
+                    itemsCount = o.ItemsCount,
+                    items = detail.Items
+                });
+            }
         }
 
         // 3. Shipping Costs from Account 5220706 (حساب مصروف خدمة التوصيل)
@@ -5458,8 +5509,8 @@ public class OperationalReportsController : ControllerBase
         decimal finalNetProfitWithDelivery = (netSales + deliveryRevenue) - totalOutflowCosts;
         decimal netMarginPct = netSales > 0 ? Math.Round((finalNetProfit / netSales) * 100m, 2) : 0;
 
-        // 8. Final Payload with Pagination
-        var paginatedRows = excel ? orderRows : orderRows.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+        // 8. Final Payload with Pagination (orderRows already contains only the paginated slice)
+        var paginatedRows = orderRows;
 
         var courierBreakdownList = courierMap.Select(kvp => new {
             carrierName = kvp.Key,

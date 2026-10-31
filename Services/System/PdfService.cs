@@ -34,24 +34,32 @@ public class PdfService : IPdfService
 
     private static string _activeFont = "DejaVu Sans";
     private static bool _fontRegistered = false;
+    private static readonly object _fontLock = new();
+    private static readonly HttpClient _pdfHttpClient = new(new SocketsHttpHandler
+    {
+        PooledConnectionLifetime = TimeSpan.FromMinutes(10)
+    })
+    {
+        Timeout = TimeSpan.FromSeconds(15)
+    };
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte[]> _logoCache = new();
 
     private void EnsureFontLoaded()
     {
         if (_fontRegistered) return;
+        lock (_fontLock)
+        {
+            if (_fontRegistered) return;
         
-        try {
-            string fontDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Fonts");
-            if (!Directory.Exists(fontDir))
-            {
-                Directory.CreateDirectory(fontDir);
-            }
-            
-            string regPath = Path.Combine(fontDir, "Cairo-Regular.ttf");
-            string boldPath = Path.Combine(fontDir, "Cairo-Bold.ttf");
-            
-            using (var client = new HttpClient())
-            {
-                client.Timeout = TimeSpan.FromSeconds(15);
+            try {
+                string fontDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Fonts");
+                if (!Directory.Exists(fontDir))
+                {
+                    Directory.CreateDirectory(fontDir);
+                }
+                
+                string regPath = Path.Combine(fontDir, "Cairo-Regular.ttf");
+                string boldPath = Path.Combine(fontDir, "Cairo-Bold.ttf");
                 
                 // 1. Download Regular if it doesn't exist or if it's the wrong size (indicating it's the variable font ~600KB or corrupted)
                 bool needReg = !File.Exists(regPath);
@@ -66,7 +74,7 @@ public class PdfService : IPdfService
                 }
                 if (needReg)
                 {
-                    var bytes = client.GetByteArrayAsync("https://cdn.jsdelivr.net/fontsource/fonts/cairo@latest/arabic-400-normal.ttf").GetAwaiter().GetResult();
+                    var bytes = _pdfHttpClient.GetByteArrayAsync("https://cdn.jsdelivr.net/fontsource/fonts/cairo@latest/arabic-400-normal.ttf").GetAwaiter().GetResult();
                     File.WriteAllBytes(regPath, bytes);
                 }
 
@@ -83,10 +91,9 @@ public class PdfService : IPdfService
                 }
                 if (needBold)
                 {
-                    var bytes = client.GetByteArrayAsync("https://cdn.jsdelivr.net/fontsource/fonts/cairo@latest/arabic-700-normal.ttf").GetAwaiter().GetResult();
+                    var bytes = _pdfHttpClient.GetByteArrayAsync("https://cdn.jsdelivr.net/fontsource/fonts/cairo@latest/arabic-700-normal.ttf").GetAwaiter().GetResult();
                     File.WriteAllBytes(boldPath, bytes);
                 }
-            }
 
             bool regRegistered = false;
             if (File.Exists(regPath))
@@ -119,6 +126,7 @@ public class PdfService : IPdfService
             Console.WriteLine($"[PdfService] Error loading custom Cairo font: {ex.Message}");
             _activeFont = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows) ? "Arial" : "DejaVu Sans";
             _fontRegistered = true;
+        }
         }
     }
 
@@ -218,8 +226,7 @@ public class PdfService : IPdfService
                                     {
                                         try
                                         {
-                                            using var client = new HttpClient();
-                                            var logoBytes = client.GetByteArrayAsync(settings.LogoUrl).GetAwaiter().GetResult();
+                                            var logoBytes = _logoCache.GetOrAdd(settings.LogoUrl, url => _pdfHttpClient.GetByteArrayAsync(url).GetAwaiter().GetResult());
                                             float logoWidthMm = paperWidth * (settings.ReceiptLogoWidth / 100f);
                                             hCol.Item().AlignCenter().Width(logoWidthMm, Unit.Millimetre).Image(logoBytes);
                                         }

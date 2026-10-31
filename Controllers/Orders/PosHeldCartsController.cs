@@ -25,7 +25,9 @@ namespace Sportive.API.Controllers
         public async Task<IActionResult> GetAll()
         {
             var carts = await _context.PosHeldCarts
+                .AsNoTracking()
                 .OrderByDescending(c => c.CreatedAt)
+                .Take(100)
                 .Select(c => new PosHeldCartDto
                 {
                     Id = c.Id,

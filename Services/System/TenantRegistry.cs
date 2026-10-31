@@ -12,7 +12,7 @@ public class TenantRegistry : ITenantRegistry
 {
     private readonly MasterDbContext _dbContext;
     private readonly IMemoryCache _cache;
-    private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan NegCacheDuration = TimeSpan.FromMinutes(5); // Cache negative results to prevent DB spamming
 
     public TenantRegistry(MasterDbContext dbContext, IMemoryCache cache)

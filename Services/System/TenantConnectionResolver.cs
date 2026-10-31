@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Configuration;
 using MySqlConnector;
 using Sportive.API.Interfaces;
@@ -8,30 +9,37 @@ namespace Sportive.API.Services;
 public class TenantConnectionResolver : ITenantConnectionResolver
 {
     private readonly ITenantContext _tenantContext;
+    private static string? _cachedBaseConnectionString;
+    private static readonly ConcurrentDictionary<string, string> _tenantConnCache = new();
     private readonly string _baseConnectionString;
 
     public TenantConnectionResolver(ITenantContext tenantContext, IConfiguration configuration)
     {
         _tenantContext = tenantContext;
-        
-        var rawConnStr = Environment.GetEnvironmentVariable("DATABASE_URL")
-            ?? configuration.GetConnectionString("DefaultConnection")
-            ?? throw new InvalidOperationException("Baseline DefaultConnection connection string is missing.");
 
-        var builder = new MySqlConnectionStringBuilder(rawConnStr)
+        if (_cachedBaseConnectionString == null)
         {
-            Pooling = true,
-            MinimumPoolSize = 3,
-            MaximumPoolSize = 15,
-            ConnectionIdleTimeout = 3600,
-            ConnectionLifeTime = 0,
-            Keepalive = 30,
-            ConnectionReset = false,
-            AllowUserVariables = true,
-            ConvertZeroDateTime = true
-        };
+            var rawConnStr = Environment.GetEnvironmentVariable("DATABASE_URL")
+                ?? configuration.GetConnectionString("DefaultConnection")
+                ?? throw new InvalidOperationException("Baseline DefaultConnection connection string is missing.");
 
-        _baseConnectionString = builder.ConnectionString;
+            var builder = new MySqlConnectionStringBuilder(rawConnStr)
+            {
+                Pooling = true,
+                MinimumPoolSize = 3,
+                MaximumPoolSize = 15,
+                ConnectionIdleTimeout = 3600,
+                ConnectionLifeTime = 0,
+                Keepalive = 30,
+                ConnectionReset = false,
+                AllowUserVariables = true,
+                ConvertZeroDateTime = true
+            };
+
+            _cachedBaseConnectionString = builder.ConnectionString;
+        }
+
+        _baseConnectionString = _cachedBaseConnectionString;
     }
 
     public string GetConnectionString()
@@ -56,22 +64,26 @@ public class TenantConnectionResolver : ITenantConnectionResolver
             throw new InvalidOperationException($"Cannot resolve tenant connection string: DatabaseName is empty for tenant '{tenant.Slug}'.");
         }
 
-        var builder = new MySqlConnectionStringBuilder(_baseConnectionString)
+        var cacheKey = $"{tenant.DatabaseName}|{tenant.DatabaseUser}|{tenant.DatabasePassword}";
+        return _tenantConnCache.GetOrAdd(cacheKey, _ =>
         {
-            Database = tenant.DatabaseName,
-            UserID = tenant.DatabaseUser,
-            Password = tenant.DatabasePassword,
-            Pooling = true,
-            MinimumPoolSize = 3,
-            MaximumPoolSize = 15,
-            ConnectionIdleTimeout = 3600,
-            ConnectionLifeTime = 0,
-            Keepalive = 30,
-            ConnectionReset = false,
-            AllowUserVariables = true,
-            ConvertZeroDateTime = true
-        };
+            var builder = new MySqlConnectionStringBuilder(_baseConnectionString)
+            {
+                Database = tenant.DatabaseName,
+                UserID = tenant.DatabaseUser,
+                Password = tenant.DatabasePassword,
+                Pooling = true,
+                MinimumPoolSize = 3,
+                MaximumPoolSize = 15,
+                ConnectionIdleTimeout = 3600,
+                ConnectionLifeTime = 0,
+                Keepalive = 30,
+                ConnectionReset = false,
+                AllowUserVariables = true,
+                ConvertZeroDateTime = true
+            };
 
-        return builder.ConnectionString;
+            return builder.ConnectionString;
+        });
     }
 }

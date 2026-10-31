@@ -31,6 +31,13 @@ public class DashboardService : IDashboardService
 
     public async Task<DashboardStatsDto> GetStatsAsync(OrderSource? source = null, DateTime? fromDate = null, DateTime? toDate = null, int? branchId = null)
     {
+        var cacheKey = $"{CacheKeys.DashboardStats}_{source?.ToString() ?? "all"}_{branchId?.ToString() ?? "all"}_{fromDate?.ToString("yyyyMMdd") ?? "today"}_{toDate?.ToString("yyyyMMdd") ?? "today"}";
+        var cachedStats = await _cache.GetAsync<DashboardStatsDto>(cacheKey);
+        if (cachedStats != null)
+        {
+            return cachedStats;
+        }
+
         var now        = TimeHelper.GetEgyptTime();
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
         var todayStart = (now.Hour < TimeHelper.GetBusinessDayEndHour()) ? now.Date.AddDays(-1).AddHours(TimeHelper.GetBusinessDayEndHour()) : now.Date.AddHours(TimeHelper.GetBusinessDayEndHour());
@@ -45,9 +52,10 @@ public class DashboardService : IDashboardService
 
         var monthStart = new DateTime(now.Year, now.Month, 1);
         var lastMonthStart = monthStart.AddMonths(-1);
+        var yesterdayStartDate = todayStart.AddDays(-1);
 
-        // --- Base Query for Orders ---
-        var query = _db.Orders.Where(o => o.Status != OrderStatus.Cancelled && !o.OrderNumber.EndsWith("-RTN"));
+        // --- Base Query for Orders (Consolidated into 1 SQL round-trip instead of 11) ---
+        var query = _db.Orders.AsNoTracking().Where(o => o.Status != OrderStatus.Cancelled && !o.OrderNumber.EndsWith("-RTN"));
         if (source.HasValue)
         {
             query = query.Where(o => o.Source == source.Value);
@@ -57,58 +65,49 @@ public class DashboardService : IDashboardService
             query = query.Where(o => o.BranchId == branchId.Value);
         }
 
-        // --- Target Period Stats (Displays as 'Today Sales' in UI) ---
-        var periodSalesRaw = await query
-            .Where(o => o.CreatedAt >= targetStart && o.CreatedAt < targetEnd)
-            .SumAsync(o => (decimal?)o.TotalAmount) ?? 0;
+        var orderAgg = await query
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                PeriodSalesRaw = g.Sum(o => o.CreatedAt >= targetStart && o.CreatedAt < targetEnd ? o.TotalAmount : 0m),
+                PeriodDiscountRaw = g.Sum(o => o.CreatedAt >= targetStart && o.CreatedAt < targetEnd ? (o.DiscountAmount + o.TemporalDiscount) : 0m),
+                PeriodTax = g.Sum(o => o.CreatedAt >= targetStart && o.CreatedAt < targetEnd ? o.TotalVatAmount : 0m),
+                TotalDiscountRaw = g.Sum(o => o.DiscountAmount + o.TemporalDiscount),
+                TotalTaxes = g.Sum(o => o.TotalVatAmount),
+                MonthSales = g.Sum(o => o.CreatedAt >= monthStart ? o.TotalAmount : 0m),
+                TotalOrders = g.Count(),
+                YesterdaySales = g.Sum(o => o.CreatedAt >= yesterdayStartDate && o.CreatedAt < todayStart ? o.TotalAmount : 0m),
+                LastMonthSales = g.Sum(o => o.CreatedAt >= lastMonthStart && o.CreatedAt < monthStart ? o.TotalAmount : 0m),
+                PrevMonthOrders = g.Sum(o => o.CreatedAt >= lastMonthStart && o.CreatedAt < monthStart ? 1 : 0),
+                UncollectedAmount = g.Sum(o => o.Status != OrderStatus.Returned && o.CreatedAt >= targetStart && o.CreatedAt < targetEnd ? (o.TotalAmount - o.PaidAmount) : 0m),
+                TotalRevenue = g.Sum(o => o.TotalAmount),
+                PendingOrders = g.Sum(o => (o.Status == OrderStatus.Pending || o.Status == OrderStatus.Confirmed) ? 1 : 0),
+                TodayOrders = g.Sum(o => o.CreatedAt >= targetStart && o.CreatedAt < targetEnd ? 1 : 0)
+            })
+            .FirstOrDefaultAsync();
 
-        var periodDiscountRaw = await query
-            .Where(o => o.CreatedAt >= targetStart && o.CreatedAt < targetEnd)
-            .SumAsync(o => (decimal?)(o.DiscountAmount + o.TemporalDiscount)) ?? 0;
+        var periodSalesRaw = orderAgg?.PeriodSalesRaw ?? 0m;
+        var periodDiscountRaw = orderAgg?.PeriodDiscountRaw ?? 0m;
+        var periodTax = orderAgg?.PeriodTax ?? 0m;
+        var totalDiscountRaw = orderAgg?.TotalDiscountRaw ?? 0m;
+        var totalTaxes = orderAgg?.TotalTaxes ?? 0m;
+        var monthSales = orderAgg?.MonthSales ?? 0m;
+        var totalOrders = orderAgg?.TotalOrders ?? 0;
+        var yesterdaySales = orderAgg?.YesterdaySales ?? 0m;
+        var lastMonthSales = orderAgg?.LastMonthSales ?? 0m;
+        var prevMonthOrders = orderAgg?.PrevMonthOrders ?? 0;
+        var uncollectedAmount = orderAgg?.UncollectedAmount ?? 0m;
+        var totalRevenueAll = orderAgg?.TotalRevenue ?? 0m;
+        var pendingOrdersCount = orderAgg?.PendingOrders ?? 0;
+        var todayOrdersCount = orderAgg?.TodayOrders ?? 0;
 
         // Calculate Discount Returns from Journal Entries to accurately reflect net discounts
-        var discountReturnMapping = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "410101");
+        var discountReturnMapping = await _db.Accounts.AsNoTracking().FirstOrDefaultAsync(a => a.Code == "410101");
         decimal periodDiscountReturned = 0;
-        if (discountReturnMapping != null)
-        {
-            var discountReturnsQuery = _db.JournalEntries
-                .Where(e => e.Type == JournalEntryType.SalesReturn && e.EntryDate >= targetStart && e.EntryDate < targetEnd);
-
-            if (source.HasValue)
-            {
-                discountReturnsQuery = discountReturnsQuery.Where(e => e.CostCenter == source.Value);
-            }
-            if (branchId.HasValue)
-            {
-                discountReturnsQuery = discountReturnsQuery.Where(e => e.Lines.Any(l => l.BranchId == branchId.Value));
-            }
-
-            periodDiscountReturned = await discountReturnsQuery
-                .SelectMany(e => e.Lines)
-                .Where(l => l.Credit > 0 && l.AccountId == discountReturnMapping.Id)
-                .SumAsync(l => (decimal?)l.Credit) ?? 0;
-        }
-
-        // ✅ صافي الخصم = الخصم الخام - الخصومات المُعادة (المرتجعات)
-        var periodDiscount = periodDiscountRaw - periodDiscountReturned;
-        // ✅ المبيعات = TotalAmount فقط (بدون إضافة discountReturned)
-        var periodSales = periodSalesRaw;
-
-        var periodTax = await query
-            .Where(o => o.CreatedAt >= targetStart && o.CreatedAt < targetEnd)
-            .SumAsync(o => (decimal?)o.TotalVatAmount) ?? 0;
-
-        // ✅ المبيعات قبل الخصم = صافي المبيعات + صافي الخصم
-        var periodGross = periodSales + periodDiscount;
-
-        // --- All Time Discounts ---
-        var totalDiscountRaw = await query
-            .SumAsync(o => (decimal?)(o.DiscountAmount + o.TemporalDiscount)) ?? 0;
-
         decimal totalDiscountReturned = 0;
         if (discountReturnMapping != null)
         {
-            var discountReturnsQuery = _db.JournalEntries
+            var discountReturnsQuery = _db.JournalEntries.AsNoTracking()
                 .Where(e => e.Type == JournalEntryType.SalesReturn);
 
             if (source.HasValue)
@@ -120,49 +119,47 @@ public class DashboardService : IDashboardService
                 discountReturnsQuery = discountReturnsQuery.Where(e => e.Lines.Any(l => l.BranchId == branchId.Value));
             }
 
-            totalDiscountReturned = await discountReturnsQuery
-                .SelectMany(e => e.Lines)
+            var discRetAgg = await discountReturnsQuery
+                .SelectMany(e => e.Lines.Select(l => new { e.EntryDate, l.Credit, l.AccountId }))
                 .Where(l => l.Credit > 0 && l.AccountId == discountReturnMapping.Id)
-                .SumAsync(l => (decimal?)l.Credit) ?? 0;
+                .GroupBy(_ => 1)
+                .Select(g => new
+                {
+                    PeriodReturned = g.Sum(l => l.EntryDate >= targetStart && l.EntryDate < targetEnd ? l.Credit : 0m),
+                    TotalReturned = g.Sum(l => l.Credit)
+                })
+                .FirstOrDefaultAsync();
+
+            periodDiscountReturned = discRetAgg?.PeriodReturned ?? 0m;
+            totalDiscountReturned = discRetAgg?.TotalReturned ?? 0m;
         }
+
+        // ✅ صافي الخصم = الخصم الخام - الخصومات المُعادة (المرتجعات)
+        var periodDiscount = periodDiscountRaw - periodDiscountReturned;
+        // ✅ المبيعات = TotalAmount فقط (بدون إضافة discountReturned)
+        var periodSales = periodSalesRaw;
+
+        // ✅ المبيعات قبل الخصم = صافي المبيعات + صافي الخصم
+        var periodGross = periodSales + periodDiscount;
 
         var totalDiscount = totalDiscountRaw - totalDiscountReturned;
 
-        var totalTaxes = await query.SumAsync(o => (decimal?)o.TotalVatAmount) ?? 0;
-
-        // --- Monthly & Global Stats ---
-        var monthSales = await query
-            .Where(o => o.CreatedAt >= monthStart)
-            .SumAsync(o => (decimal?)o.TotalAmount) ?? 0;
-
-        var totalOrders = await query.CountAsync();
-        
-        var customersQuery = _db.Customers.AsQueryable();
+        var customersQuery = _db.Customers.AsNoTracking().AsQueryable();
         if (source.HasValue) 
         {
             customersQuery = customersQuery.Where(c => c.Orders.Any(o => o.Source == source.Value));
         }
-        var totalCustomers = await customersQuery.CountAsync();
+        var custAgg = await customersQuery
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                Total = g.Count(),
+                PrevCount = g.Sum(c => c.CreatedAt < monthStart ? 1 : 0)
+            })
+            .FirstOrDefaultAsync();
 
-        // --- Growth Calculation (Standard Today vs Yesterday) ---
-        var yesterdayStartDate = todayStart.AddDays(-1);
-        var yesterdaySales = await query
-            .Where(o => o.CreatedAt >= yesterdayStartDate && o.CreatedAt < todayStart)
-            .SumAsync(o => (decimal?)o.TotalAmount) ?? 0;
-
-        var lastMonthSales = await query
-            .Where(o => o.CreatedAt >= lastMonthStart && o.CreatedAt < monthStart)
-            .SumAsync(o => (decimal?)o.TotalAmount) ?? 0;
-
-        var prevMonthOrders = await query
-            .CountAsync(o => o.CreatedAt >= lastMonthStart && o.CreatedAt < monthStart);
-            
-        var prevCustomersQuery = _db.Customers.Where(c => c.CreatedAt < monthStart);
-        if (source.HasValue) 
-        {
-            prevCustomersQuery = prevCustomersQuery.Where(c => c.Orders.Any(o => o.Source == source.Value));
-        }
-        var prevCustomersCount = await prevCustomersQuery.CountAsync();
+        var totalCustomers = custAgg?.Total ?? 0;
+        var prevCustomersCount = custAgg?.PrevCount ?? 0;
 
         decimal CalculateGrowth(decimal current, decimal previous) => 
             previous == 0 ? (current > 0 ? 100 : 0) : Math.Round(((current - previous) / previous) * 100, 1);
@@ -172,92 +169,41 @@ public class DashboardService : IDashboardService
         var orderGrowth = CalculateGrowth(totalOrders, prevMonthOrders);
         var customerGrowth = CalculateGrowth(totalCustomers, prevCustomersCount);
 
-        // --- Debt & Uncollected ---
-        // Uncollected logic: Only orders NOT fully returned/cancelled. Subtract paid from total.
-        var debtQuery = query.Where(o => o.Status != OrderStatus.Returned && o.Status != OrderStatus.Cancelled);
-        
-        // If filtering by date, we focus debt on THAT period's orders? 
-        // Usually "Uncollected" in Orders page means of ALL shown orders.
-        var uncollectedAmount = await debtQuery
-            .Where(o => o.CreatedAt >= targetStart && o.CreatedAt < targetEnd)
-            .SumAsync(o => (decimal?)(o.TotalAmount - o.PaidAmount)) ?? 0;
+        var mappings = await _db.AccountSystemMappings.AsNoTracking()
+            .Where(m => m.Key == "salesReturnAccountID" || m.Key == "salesDiscountAccountID")
+            .ToListAsync();
+        var salesReturnMapping = mappings.FirstOrDefault(m => m.Key == "salesReturnAccountID")?.AccountId ?? 0;
+        var salesDiscountMapping = mappings.FirstOrDefault(m => m.Key == "salesDiscountAccountID")?.AccountId ?? 0;
 
-        // --- Returns Calculation ---
-        // ✅ حتي لو الـ ReturnedQuantity مش مسجل (حالات قديمة للموقع)، نعتمد علي حالة الطلب
-        var returnAmountQuery = _db.OrderItems
-            .Where(i => i.Order!.Status != OrderStatus.Cancelled && 
-                        (i.ReturnedQuantity > 0 || i.Order!.Status == OrderStatus.Returned || i.Order!.Status == OrderStatus.PartiallyReturned));
-
-        if (source.HasValue)
-        {
-            returnAmountQuery = returnAmountQuery.Where(i => i.Order!.Source == source.Value);
-        }
-        if (branchId.HasValue)
-        {
-            returnAmountQuery = returnAmountQuery.Where(i => i.Order!.BranchId == branchId.Value);
-        }
-
-        var salesReturnMapping = await _db.AccountSystemMappings
-            .Where(m => m.Key == "salesReturnAccountID")
-            .Select(m => m.AccountId)
-            .FirstOrDefaultAsync();
-
-        var salesDiscountMapping = await _db.AccountSystemMappings
-            .Where(m => m.Key == "salesDiscountAccountID")
-            .Select(m => m.AccountId)
-            .FirstOrDefaultAsync();
-
-        var returnsQuery = _db.JournalEntries
-            .Where(e => e.Type == JournalEntryType.SalesReturn && e.EntryDate >= targetStart && e.EntryDate < targetEnd);
-
-        if (source.HasValue)
-        {
-            returnsQuery = returnsQuery.Where(e => e.CostCenter == source.Value);
-        }
-        if (branchId.HasValue)
-        {
-            returnsQuery = returnsQuery.Where(e => e.Lines.Any(l => l.BranchId == branchId.Value));
-        }
-
-        var periodReturnDebit = await returnsQuery
-            .SelectMany(e => e.Lines)
-            .Where(l => l.Debit > 0 && (l.AccountId == salesReturnMapping || l.Account.Code.StartsWith("4103")))
-            .SumAsync(l => (decimal?)l.Debit) ?? 0;
-
-        var periodReturnDiscountCredit = await returnsQuery
-            .SelectMany(e => e.Lines)
-            .Where(l => l.Credit > 0 && (l.AccountId == salesDiscountMapping || l.Account.Code.StartsWith("4102")))
-            .SumAsync(l => (decimal?)l.Credit) ?? 0;
-
-        var periodReturnAmount = periodReturnDebit - periodReturnDiscountCredit;
-
-        // --- All Time Returns ---
-        var totalReturnsQuery = _db.JournalEntries
+        var allReturnsQuery = _db.JournalEntries.AsNoTracking()
             .Where(e => e.Type == JournalEntryType.SalesReturn);
 
         if (source.HasValue)
         {
-            totalReturnsQuery = totalReturnsQuery.Where(e => e.CostCenter == source.Value);
+            allReturnsQuery = allReturnsQuery.Where(e => e.CostCenter == source.Value);
         }
         if (branchId.HasValue)
         {
-            totalReturnsQuery = totalReturnsQuery.Where(e => e.Lines.Any(l => l.BranchId == branchId.Value));
+            allReturnsQuery = allReturnsQuery.Where(e => e.Lines.Any(l => l.BranchId == branchId.Value));
         }
 
-        var totalReturnDebit = await totalReturnsQuery
-            .SelectMany(e => e.Lines)
-            .Where(l => l.Debit > 0 && (l.AccountId == salesReturnMapping || l.Account.Code.StartsWith("4103")))
-            .SumAsync(l => (decimal?)l.Debit) ?? 0;
+        var returnsAgg = await allReturnsQuery
+            .SelectMany(e => e.Lines.Select(l => new { e.EntryDate, l.Debit, l.Credit, l.AccountId, AccountCode = l.Account.Code }))
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                PeriodReturnDebit = g.Sum(l => l.EntryDate >= targetStart && l.EntryDate < targetEnd && l.Debit > 0 && (l.AccountId == salesReturnMapping || l.AccountCode.StartsWith("4103")) ? l.Debit : 0m),
+                PeriodReturnDiscountCredit = g.Sum(l => l.EntryDate >= targetStart && l.EntryDate < targetEnd && l.Credit > 0 && (l.AccountId == salesDiscountMapping || l.AccountCode.StartsWith("4102")) ? l.Credit : 0m),
+                TotalReturnDebit = g.Sum(l => l.Debit > 0 && (l.AccountId == salesReturnMapping || l.AccountCode.StartsWith("4103")) ? l.Debit : 0m),
+                TotalReturnDiscountCredit = g.Sum(l => l.Credit > 0 && (l.AccountId == salesDiscountMapping || l.AccountCode.StartsWith("4102")) ? l.Credit : 0m)
+            })
+            .FirstOrDefaultAsync();
 
-        var totalReturnDiscountCredit = await totalReturnsQuery
-            .SelectMany(e => e.Lines)
-            .Where(l => l.Credit > 0 && (l.AccountId == salesDiscountMapping || l.Account.Code.StartsWith("4102")))
-            .SumAsync(l => (decimal?)l.Credit) ?? 0;
-
-        var totalReturnAmount = totalReturnDebit - totalReturnDiscountCredit;
+        var periodReturnAmount = (returnsAgg?.PeriodReturnDebit ?? 0m) - (returnsAgg?.PeriodReturnDiscountCredit ?? 0m);
+        var totalReturnAmount = (returnsAgg?.TotalReturnDebit ?? 0m) - (returnsAgg?.TotalReturnDiscountCredit ?? 0m);
 
         // التحصيلات (سندات القبض)
-        var collectionQuery = _db.ReceiptVouchers
+        var collectionQuery = _db.ReceiptVouchers.AsNoTracking()
             .Where(v => v.VoucherDate >= targetStart && v.VoucherDate < targetEnd);
 
         if (source.HasValue)
@@ -272,13 +218,13 @@ public class DashboardService : IDashboardService
         var todayCollections = await collectionQuery
             .SumAsync(v => (decimal?)v.Amount) ?? 0;
 
-        var newCustomersToday = await _db.Customers
+        var newCustomersToday = await _db.Customers.AsNoTracking()
             .CountAsync(c => c.CreatedAt >= targetStart && c.CreatedAt < targetEnd);
 
         var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
         int lowStockThreshold = store?.LowStockThreshold ?? 5;
 
-        // --- Expenses Calculation (From Posted General Ledger Expense Accounts) ---
+        // --- Expenses Calculation (Consolidated into 1 SQL query instead of 2) ---
         var expenseQuery = _db.JournalLines.AsNoTracking()
             .Where(l => l.JournalEntry.Status != JournalEntryStatus.Draft
                      && (l.Account.Type == AccountType.Expense || l.Account.Code.StartsWith("5")));
@@ -292,27 +238,43 @@ public class DashboardService : IDashboardService
             expenseQuery = expenseQuery.Where(l => l.BranchId == branchId.Value);
         }
 
-        var totalExpenses = await expenseQuery.SumAsync(l => (decimal?)(l.Debit - l.Credit)) ?? 0;
-        
-        var periodExpenses = await expenseQuery
-            .Where(l => l.JournalEntry.EntryDate >= targetStart && l.JournalEntry.EntryDate < targetEnd)
-            .SumAsync(l => (decimal?)(l.Debit - l.Credit)) ?? 0;
+        var expAgg = await expenseQuery
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                TotalExpenses = g.Sum(l => l.Debit - l.Credit),
+                PeriodExpenses = g.Sum(l => l.JournalEntry.EntryDate >= targetStart && l.JournalEntry.EntryDate < targetEnd ? (l.Debit - l.Credit) : 0m)
+            })
+            .FirstOrDefaultAsync();
 
-        return new DashboardStatsDto(
+        var totalExpenses = expAgg?.TotalExpenses ?? 0m;
+        var periodExpenses = expAgg?.PeriodExpenses ?? 0m;
+
+        var totalProducts = await _db.Products.AsNoTracking().CountAsync();
+        var variantAgg = await _db.ProductVariants.AsNoTracking()
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                LowStock = g.Sum(v => v.StockQuantity <= lowStockThreshold && v.StockQuantity > 0 ? 1 : 0),
+                OutOfStock = g.Sum(v => v.StockQuantity == 0 ? 1 : 0)
+            })
+            .FirstOrDefaultAsync();
+
+        var result = new DashboardStatsDto(
             TodaySales: periodSales,
             TodaySalesGrowth: todayGrowth,
             ThisMonthSales: monthSales,
             ThisMonthSalesGrowth: monthSalesGrowth,
-            TotalRevenue: await query.SumAsync(o => (decimal?)o.TotalAmount) ?? 0,
+            TotalRevenue: totalRevenueAll,
             TotalOrders: totalOrders,
             TotalOrdersGrowth: (int)orderGrowth,
-            PendingOrders: await query.CountAsync(o => o.Status == OrderStatus.Pending || o.Status == OrderStatus.Confirmed),
-            TodayOrders: await query.CountAsync(o => o.CreatedAt >= targetStart && o.CreatedAt < targetEnd),
+            PendingOrders: pendingOrdersCount,
+            TodayOrders: todayOrdersCount,
             TotalCustomers: totalCustomers,
             TotalCustomersGrowth: (int)customerGrowth,
-            TotalProducts: await _db.Products.CountAsync(),
-            LowStockProducts: await _db.ProductVariants.CountAsync(v => v.StockQuantity <= lowStockThreshold && v.StockQuantity > 0),
-            OutOfStockProducts: await _db.ProductVariants.CountAsync(v => v.StockQuantity == 0),
+            TotalProducts: totalProducts,
+            LowStockProducts: variantAgg?.LowStock ?? 0,
+            OutOfStockProducts: variantAgg?.OutOfStock ?? 0,
             UncollectedAmount: uncollectedAmount,
             DebtAmount: uncollectedAmount, // Simplified consistency
             ReturnAmount: periodReturnAmount,
@@ -328,6 +290,9 @@ public class DashboardService : IDashboardService
             TotalDiscount: totalDiscount,
             TotalTaxes: totalTaxes
         );
+
+        await _cache.SetAsync(cacheKey, result, TimeSpan.FromSeconds(45));
+        return result;
     }
 
     public async Task<AnalyticsSummaryDto> GetAnalyticsSummaryAsync(int? branchId = null, OrderSource? source = null)

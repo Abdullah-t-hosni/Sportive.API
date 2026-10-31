@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Sportive.API.Data;
 using Sportive.API.Models;
 
@@ -17,10 +18,13 @@ namespace Sportive.API.Controllers;
 public class WhatsAppChatController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly IMemoryCache _cache;
+    private static readonly Regex _nonDigitsRegex = new(@"\D", RegexOptions.Compiled);
 
-    public WhatsAppChatController(AppDbContext db)
+    public WhatsAppChatController(AppDbContext db, IMemoryCache cache)
     {
         _db = db;
+        _cache = cache;
     }
 
     private static (List<string> phoneHashes, List<string> emailHashes, string localPhone, string intlPhone) GenerateSearchHashes(string? phone)
@@ -30,7 +34,7 @@ public class WhatsAppChatController : ControllerBase
         if (string.IsNullOrWhiteSpace(phone))
             return (phoneHashes, emailHashes, "", "");
 
-        var digits = Regex.Replace(phone, @"\D", "").Trim();
+        var digits = _nonDigitsRegex.Replace(phone, "").Trim();
         if (string.IsNullOrEmpty(digits))
             return (phoneHashes, emailHashes, phone.Trim(), phone.Trim());
 
@@ -65,6 +69,13 @@ public class WhatsAppChatController : ControllerBase
 
     private async Task<(Dictionary<string, string> lidToPhone, Dictionary<string, string> phoneToLid)> GetLidMapsAsync()
     {
+        var dbName = _db.Database.GetDbConnection().Database ?? "default";
+        var cacheKey = $"wa_lid_maps_{dbName}";
+        if (_cache.TryGetValue(cacheKey, out (Dictionary<string, string> lidToPhone, Dictionary<string, string> phoneToLid) cachedMaps))
+        {
+            return cachedMaps;
+        }
+
         var lidToPhone = new Dictionary<string, string>();
         var phoneToLid = new Dictionary<string, string>();
         try
@@ -100,7 +111,10 @@ public class WhatsAppChatController : ControllerBase
             }
         }
         catch {}
-        return (lidToPhone, phoneToLid);
+
+        var maps = (lidToPhone, phoneToLid);
+        _cache.Set(cacheKey, maps, TimeSpan.FromMinutes(3));
+        return maps;
     }
 
     [HttpGet]
@@ -110,25 +124,25 @@ public class WhatsAppChatController : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(search))
         {
-            var s = search.Trim().ToLower();
-            messagesQuery = messagesQuery.Where(m => m.Phone.Contains(s) || (m.CustomerName != null && m.CustomerName.ToLower().Contains(s)) || (m.Text != null && m.Text.ToLower().Contains(s)));
+            var s = search.Trim();
+            messagesQuery = messagesQuery.Where(m => m.Phone.Contains(s) || (m.CustomerName != null && m.CustomerName.Contains(s)) || (m.Text != null && m.Text.Contains(s)));
         }
 
         var recentMsgs = await messagesQuery
             .OrderByDescending(m => m.Timestamp)
-            .Take(3000)
+            .Take(2000)
             .ToListAsync();
 
-        var (lidToPhone, phoneToLid) = await GetLidMapsAsync();
+        var (lidToPhone, _) = await GetLidMapsAsync();
 
         var grouped = recentMsgs
             .GroupBy(m => {
-                var p = Regex.Replace(m.Phone ?? "", @"\D", "").Trim();
+                var p = _nonDigitsRegex.Replace(m.Phone ?? "", "").Trim();
                 // LIDs are typically > 12 digits and don't start with 0 or 20
                 if (p.Length > 12 && lidToPhone.TryGetValue(p, out var mappedPhone))
-                    p = Regex.Replace(mappedPhone ?? "", @"\D", "").Trim();
+                    p = _nonDigitsRegex.Replace(mappedPhone ?? "", "").Trim();
                 else if (lidToPhone.TryGetValue(p, out var mp))
-                    p = Regex.Replace(mp ?? "", @"\D", "").Trim();
+                    p = _nonDigitsRegex.Replace(mp ?? "", "").Trim();
                 if (p.StartsWith("0020") && p.Length == 14) return "0" + p.Substring(4);
                 if (p.StartsWith("20") && p.Length == 12) return "0" + p.Substring(2);
                 if (!p.StartsWith("0") && p.Length == 10) return "0" + p;
@@ -169,31 +183,65 @@ public class WhatsAppChatController : ControllerBase
             .OrderByDescending(x => x.lastActivity)
             .ToList();
 
-        // Collect all candidate hashes for all phones in batch
-        var allHashes = new List<string>();
-        var allEmailHashes = new List<string>();
+        // Collect all candidate hashes for all phones ONCE in batch
+        var allHashesSet = new HashSet<string>();
+        var allEmailHashesSet = new HashSet<string>();
+        var hashesByPhone = new Dictionary<string, (List<string> pHashes, List<string> eHashes)>(grouped.Count);
         foreach (var item in grouped)
         {
             var (pHashes, eHashes, _, _) = GenerateSearchHashes(item.phone);
-            allHashes.AddRange(pHashes);
-            allEmailHashes.AddRange(eHashes);
+            hashesByPhone[item.phone] = (pHashes, eHashes);
+            foreach (var h in pHashes) allHashesSet.Add(h);
+            foreach (var eh in eHashes) allEmailHashesSet.Add(eh);
         }
-        allHashes = allHashes.Distinct().ToList();
-        allEmailHashes = allEmailHashes.Distinct().ToList();
+        var allHashes = allHashesSet.ToList();
+        var allEmailHashes = allEmailHashesSet.ToList();
 
+        // Project ONLY lightweight customer summary fields instead of loading all Orders & Addresses!
         var matchedCustomers = await _db.Customers
             .AsNoTracking()
-            .Include(c => c.Orders)
-            .Include(c => c.Addresses)
-            .Where(c => allHashes.Contains(c.PhoneHash) || allEmailHashes.Contains(c.EmailHash))
+            .Where(c => (allHashes.Count > 0 || allEmailHashes.Count > 0) && ((c.PhoneHash != null && allHashes.Contains(c.PhoneHash)) || (c.EmailHash != null && allEmailHashes.Contains(c.EmailHash))))
+            .Select(c => new
+            {
+                c.Id,
+                c.FullName,
+                c.PhoneHash,
+                c.EmailHash,
+                OrdersCount = c.Orders.Count(),
+                TotalSpent = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => (decimal?)o.TotalAmount) ?? 0m,
+                City = c.Addresses.Select(a => a.City).FirstOrDefault()
+            })
             .ToListAsync();
 
-        var result = grouped.Select(g => {
-            var (pHashes, eHashes, _, _) = GenerateSearchHashes(g.phone);
-            var cust = matchedCustomers.FirstOrDefault(c => pHashes.Contains(c.PhoneHash) || eHashes.Contains(c.EmailHash));
+        var custByPhoneHash = new Dictionary<string, int>();
+        var custByEmailHash = new Dictionary<string, int>();
+        for (int idx = 0; idx < matchedCustomers.Count; idx++)
+        {
+            var mc = matchedCustomers[idx];
+            if (!string.IsNullOrEmpty(mc.PhoneHash) && !custByPhoneHash.ContainsKey(mc.PhoneHash))
+                custByPhoneHash[mc.PhoneHash] = idx;
+            if (!string.IsNullOrEmpty(mc.EmailHash) && !custByEmailHash.ContainsKey(mc.EmailHash))
+                custByEmailHash[mc.EmailHash] = idx;
+        }
 
-            int ordersCount = cust?.Orders?.Count ?? 0;
-            decimal totalSpent = cust?.Orders?.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount) ?? 0;
+        var result = grouped.Select(g => {
+            var (pHashes, eHashes) = hashesByPhone[g.phone];
+            int matchedIdx = -1;
+            foreach (var ph in pHashes)
+            {
+                if (custByPhoneHash.TryGetValue(ph, out matchedIdx)) break;
+            }
+            if (matchedIdx < 0)
+            {
+                foreach (var eh in eHashes)
+                {
+                    if (custByEmailHash.TryGetValue(eh, out matchedIdx)) break;
+                }
+            }
+
+            var cust = matchedIdx >= 0 ? matchedCustomers[matchedIdx] : null;
+            int ordersCount = cust?.OrdersCount ?? 0;
+            decimal totalSpent = cust?.TotalSpent ?? 0m;
 
             // Prefer customer's real name from DB, then from messages, then phone
             var displayName = !string.IsNullOrWhiteSpace(cust?.FullName)
@@ -213,7 +261,7 @@ public class WhatsAppChatController : ControllerBase
                 unreadCount = g.unreadCount,
                 totalMessages = g.totalMessages,
                 lastActivity = g.lastActivity,
-                city = cust?.Addresses?.FirstOrDefault()?.City
+                city = cust?.City
             };
         }).ToList();
 
@@ -347,20 +395,23 @@ public class WhatsAppChatController : ControllerBase
         if (phoneToLid.TryGetValue(raw, out var mlRaw)) candidatePhones.Add(mlRaw);
 
         var messages = await _db.WhatsAppMessages
+            .AsNoTracking()
             .Where(m => candidatePhones.Contains(m.Phone) || (last9.Length >= 9 && m.Phone.EndsWith(last9) && m.Phone.Length <= 13))
             .OrderByDescending(m => m.Timestamp)
             .Take(250)
             .ToListAsync();
 
-        // Automatically mark any unread incoming messages as read upon viewing
-        var unread = messages.Where(m => !m.FromMe && !m.IsRead).ToList();
-        if (unread.Any())
+        // Automatically mark any unread incoming messages as read via single direct SQL UPDATE (no tracker / audit overhead)
+        var unreadIds = messages.Where(m => !m.FromMe && !m.IsRead).Select(m => m.Id).ToList();
+        if (unreadIds.Count > 0)
         {
-            foreach (var u in unread)
+            await _db.WhatsAppMessages
+                .Where(m => unreadIds.Contains(m.Id))
+                .ExecuteUpdateAsync(s => s.SetProperty(u => u.IsRead, true));
+            foreach (var u in messages.Where(m => !m.FromMe && !m.IsRead))
             {
                 u.IsRead = true;
             }
-            await _db.SaveChangesAsync();
         }
 
         var distinctMessages = messages

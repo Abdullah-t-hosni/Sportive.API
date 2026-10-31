@@ -680,6 +680,7 @@ public class ReturnExchangeRequestsController : ControllerBase
     {
         var query = _db.ReturnExchangeRequests
             .AsNoTracking()
+            .AsSplitQuery()
             .Include(r => r.Order)
                 .ThenInclude(o => o.Customer)
             .Include(r => r.Customer)

@@ -30,6 +30,7 @@ public class NotificationsController : ControllerBase
     {
         var userId = GetUserId();
         var notifications = await _db.Set<Notification>()
+            .AsNoTracking()
             .Where(n => n.UserId == userId)
             .OrderByDescending(n => n.CreatedAt)
             .Take(50)
@@ -56,6 +57,7 @@ public class NotificationsController : ControllerBase
     {
         var userId = GetUserId();
         var count = await _db.Set<Notification>()
+            .AsNoTracking()
             .CountAsync(n => n.UserId == userId && !n.IsRead);
         return Ok(count);
     }

@@ -100,6 +100,7 @@ public class OrdersController : ControllerBase
         [FromQuery] string? search = null)
     {
         var query = _db.Orders
+            .AsSplitQuery()
             .Include(o => o.Customer)
             .Include(o => o.Branch)
             .Include(o => o.Items)
@@ -1833,6 +1834,7 @@ public class OrdersController : ControllerBase
         var accounting = HttpContext.RequestServices.GetRequiredService<IAccountingService>();
         
         var query = _db.Orders
+            .AsSplitQuery()
             .Include(o => o.Customer)
             .Include(o => o.Payments)
             .Where(o => o.Status == OrderStatus.Delivered && !o.IsSettledWithCourier && o.Source != OrderSource.POS);

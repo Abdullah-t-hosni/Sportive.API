@@ -296,40 +296,49 @@ public class InventoryAuditsController : ControllerBase
                         .Where(m => m.Reference != null && refs.Contains(m.Reference))
                         .ToListAsync();
 
-                    // 2. Revert the stock level of each movement
+                    // 2. Revert the stock level of each movement (batch-loaded to avoid N+1 queries)
+                    var mvVariantIds = movements.Where(m => m.ProductVariantId.HasValue).Select(m => m.ProductVariantId!.Value).Distinct().ToList();
+                    var mvProductIds = movements.Where(m => !m.ProductVariantId.HasValue && m.ProductId.HasValue).Select(m => m.ProductId!.Value).Distinct().ToList();
+                    var mvWarehouseIds = movements.Where(m => m.WarehouseId.HasValue).Select(m => m.WarehouseId!.Value).Distinct().ToList();
+
+                    var variantsMap = mvVariantIds.Count == 0
+                        ? new Dictionary<int, ProductVariant>()
+                        : await _db.ProductVariants.Include(v => v.Product).Where(v => mvVariantIds.Contains(v.Id)).ToDictionaryAsync(v => v.Id);
+
+                    var whStocksMap = (mvVariantIds.Count == 0 || mvWarehouseIds.Count == 0)
+                        ? new Dictionary<(int VariantId, int WarehouseId), ProductWarehouseStock>()
+                        : await _db.ProductWarehouseStocks
+                            .Where(s => mvVariantIds.Contains(s.ProductVariantId) && mvWarehouseIds.Contains(s.WarehouseId))
+                            .ToDictionaryAsync(s => (s.ProductVariantId, s.WarehouseId));
+
+                    var productsMap = mvProductIds.Count == 0
+                        ? new Dictionary<int, Product>()
+                        : await _db.Products.Where(p => mvProductIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id);
+
+                    var nowEgypt = TimeHelper.GetEgyptTime();
                     foreach (var mv in movements)
                     {
                         if (mv.ProductVariantId.HasValue)
                         {
-                            var variant = await _db.ProductVariants.Include(v => v.Product).FirstOrDefaultAsync(v => v.Id == mv.ProductVariantId.Value);
-                            if (variant != null)
+                            if (variantsMap.TryGetValue(mv.ProductVariantId.Value, out var variant))
                             {
                                 variant.StockQuantity -= mv.Quantity;
                                 variant.Product.TotalStock -= mv.Quantity;
-                                variant.UpdatedAt = TimeHelper.GetEgyptTime();
-                                variant.Product.UpdatedAt = TimeHelper.GetEgyptTime();
+                                variant.UpdatedAt = nowEgypt;
+                                variant.Product.UpdatedAt = nowEgypt;
 
                                 // Fix: Also revert warehouse-specific stock
-                                if (mv.WarehouseId.HasValue)
+                                if (mv.WarehouseId.HasValue && whStocksMap.TryGetValue((mv.ProductVariantId.Value, mv.WarehouseId.Value), out var warehouseStock))
                                 {
-                                    var warehouseStock = await _db.ProductWarehouseStocks
-                                        .FirstOrDefaultAsync(s => s.ProductVariantId == mv.ProductVariantId.Value && s.WarehouseId == mv.WarehouseId.Value);
-                                    if (warehouseStock != null)
-                                    {
-                                        warehouseStock.Quantity -= mv.Quantity;
-                                        warehouseStock.UpdatedAt = TimeHelper.GetEgyptTime();
-                                    }
+                                    warehouseStock.Quantity -= mv.Quantity;
+                                    warehouseStock.UpdatedAt = nowEgypt;
                                 }
                             }
                         }
-                        else if (mv.ProductId.HasValue)
+                        else if (mv.ProductId.HasValue && productsMap.TryGetValue(mv.ProductId.Value, out var product))
                         {
-                            var product = await _db.Products.FirstOrDefaultAsync(p => p.Id == mv.ProductId.Value);
-                            if (product != null)
-                            {
-                                product.TotalStock -= mv.Quantity;
-                                product.UpdatedAt = TimeHelper.GetEgyptTime();
-                            }
+                            product.TotalStock -= mv.Quantity;
+                            product.UpdatedAt = nowEgypt;
                         }
                     }
 
@@ -569,40 +578,49 @@ public class InventoryAuditsController : ControllerBase
                         .Where(m => m.Reference != null && refs.Contains(m.Reference))
                         .ToListAsync();
 
-                    // 2. Revert the stock level of each movement
+                    // 2. Revert the stock level of each movement (batch-loaded to avoid N+1 queries)
+                    var mvVariantIds = movements.Where(m => m.ProductVariantId.HasValue).Select(m => m.ProductVariantId!.Value).Distinct().ToList();
+                    var mvProductIds = movements.Where(m => !m.ProductVariantId.HasValue && m.ProductId.HasValue).Select(m => m.ProductId!.Value).Distinct().ToList();
+                    var mvWarehouseIds = movements.Where(m => m.WarehouseId.HasValue).Select(m => m.WarehouseId!.Value).Distinct().ToList();
+
+                    var variantsMap = mvVariantIds.Count == 0
+                        ? new Dictionary<int, ProductVariant>()
+                        : await _db.ProductVariants.Include(v => v.Product).Where(v => mvVariantIds.Contains(v.Id)).ToDictionaryAsync(v => v.Id);
+
+                    var whStocksMap = (mvVariantIds.Count == 0 || mvWarehouseIds.Count == 0)
+                        ? new Dictionary<(int VariantId, int WarehouseId), ProductWarehouseStock>()
+                        : await _db.ProductWarehouseStocks
+                            .Where(s => mvVariantIds.Contains(s.ProductVariantId) && mvWarehouseIds.Contains(s.WarehouseId))
+                            .ToDictionaryAsync(s => (s.ProductVariantId, s.WarehouseId));
+
+                    var productsMap = mvProductIds.Count == 0
+                        ? new Dictionary<int, Product>()
+                        : await _db.Products.Where(p => mvProductIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id);
+
+                    var nowEgypt = TimeHelper.GetEgyptTime();
                     foreach (var mv in movements)
                     {
                         if (mv.ProductVariantId.HasValue)
                         {
-                            var variant = await _db.ProductVariants.Include(v => v.Product).FirstOrDefaultAsync(v => v.Id == mv.ProductVariantId.Value);
-                            if (variant != null)
+                            if (variantsMap.TryGetValue(mv.ProductVariantId.Value, out var variant))
                             {
                                 variant.StockQuantity -= mv.Quantity;
                                 variant.Product.TotalStock -= mv.Quantity;
-                                variant.UpdatedAt = TimeHelper.GetEgyptTime();
-                                variant.Product.UpdatedAt = TimeHelper.GetEgyptTime();
+                                variant.UpdatedAt = nowEgypt;
+                                variant.Product.UpdatedAt = nowEgypt;
 
                                 // Fix: Also revert warehouse-specific stock
-                                if (mv.WarehouseId.HasValue)
+                                if (mv.WarehouseId.HasValue && whStocksMap.TryGetValue((mv.ProductVariantId.Value, mv.WarehouseId.Value), out var warehouseStock))
                                 {
-                                    var warehouseStock = await _db.ProductWarehouseStocks
-                                        .FirstOrDefaultAsync(s => s.ProductVariantId == mv.ProductVariantId.Value && s.WarehouseId == mv.WarehouseId.Value);
-                                    if (warehouseStock != null)
-                                    {
-                                        warehouseStock.Quantity -= mv.Quantity;
-                                        warehouseStock.UpdatedAt = TimeHelper.GetEgyptTime();
-                                    }
+                                    warehouseStock.Quantity -= mv.Quantity;
+                                    warehouseStock.UpdatedAt = nowEgypt;
                                 }
                             }
                         }
-                        else if (mv.ProductId.HasValue)
+                        else if (mv.ProductId.HasValue && productsMap.TryGetValue(mv.ProductId.Value, out var product))
                         {
-                            var product = await _db.Products.FirstOrDefaultAsync(p => p.Id == mv.ProductId.Value);
-                            if (product != null)
-                            {
-                                product.TotalStock -= mv.Quantity;
-                                product.UpdatedAt = TimeHelper.GetEgyptTime();
-                            }
+                            product.TotalStock -= mv.Quantity;
+                            product.UpdatedAt = nowEgypt;
                         }
                     }
 

@@ -103,7 +103,7 @@ public class ProductService : IProductService
 
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
-            var s = filter.Search.Trim().ToLower();
+            var s = filter.Search.Trim();
             bool isDecimal = decimal.TryParse(s, out decimal searchPrice);
             
             if (filter.ByPrice == true)
@@ -115,18 +115,18 @@ public class ProductService : IProductService
             {
                 bool isId = int.TryParse(s, out int searchId);
                 query = query.Where(p =>
-                    p.NameAr.ToLower().Contains(s) ||
-                    p.NameEn.ToLower().Contains(s) ||
-                    p.SKU.ToLower().Contains(s) ||
-                    (p.EgyptianProductCode != null && p.EgyptianProductCode.ToLower().Contains(s)) ||
-                    (p.SaudiProductCode != null && p.SaudiProductCode.ToLower().Contains(s)) ||
+                    p.NameAr.Contains(s) ||
+                    p.NameEn.Contains(s) ||
+                    p.SKU.Contains(s) ||
+                    (p.EgyptianProductCode != null && p.EgyptianProductCode.Contains(s)) ||
+                    (p.SaudiProductCode != null && p.SaudiProductCode.Contains(s)) ||
                     (isId && p.Id == searchId) ||
-                    (p.Brand != null && (p.Brand.NameAr.ToLower().Contains(s) || p.Brand.NameEn.ToLower().Contains(s))) ||
+                    (p.Brand != null && (p.Brand.NameAr.Contains(s) || p.Brand.NameEn.Contains(s))) ||
                     p.Variants.Any(v => 
-                        (v.Size != null && v.Size.ToLower().Contains(s)) || 
-                        (v.Color != null && v.Color.ToLower().Contains(s)) || 
-                        (v.ColorAr != null && v.ColorAr.ToLower().Contains(s)) ||
-                        (p.SKU + "-" + v.Size + "-" + v.Color).ToLower().Contains(s)
+                        (v.Size != null && v.Size.Contains(s)) || 
+                        (v.Color != null && v.Color.Contains(s)) || 
+                        (v.ColorAr != null && v.ColorAr.Contains(s)) ||
+                        (p.SKU + "-" + v.Size + "-" + v.Color).Contains(s)
                     )
                 );
             }

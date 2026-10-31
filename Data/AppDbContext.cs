@@ -41,8 +41,10 @@ public class AppDbContext : IdentityDbContext<AppUser>
     public DbSet<ProductSecondaryCategory> ProductSecondaryCategories => Set<ProductSecondaryCategory>();
     public DbSet<Review> Reviews                 => Set<Review>();
     public DbSet<ReviewToken> ReviewTokens       => Set<ReviewToken>();
-    public DbSet<Customer> Customers             => Set<Customer>();
-    public DbSet<LoyaltyProgramSettings> LoyaltyProgramSettings => Set<LoyaltyProgramSettings>();
+    public DbSet<Customer> Customers             => Set<Customer>();
+
+    public DbSet<LoyaltyProgramSettings> LoyaltyProgramSettings => Set<LoyaltyProgramSettings>();
+
     public DbSet<LoyaltyPointTransaction> LoyaltyPointTransactions => Set<LoyaltyPointTransaction>();
     public DbSet<CustomerCategory> CustomerCategories => Set<CustomerCategory>();
     public DbSet<Address> Addresses              => Set<Address>();
@@ -336,6 +338,8 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.HasIndex(x => new { x.CustomerId, x.CreatedAt });
             // ⚡ Performance: covering index for dashboard/KPI (Status + Date + Amount)
             e.HasIndex(x => new { x.CreatedAt, x.Status, x.TotalAmount });
+            e.HasIndex(x => new { x.Source, x.CreatedAt });
+            e.HasIndex(x => new { x.Source, x.Status, x.CreatedAt });
             e.HasIndex(x => x.SalesPersonId);
             e.HasIndex(x => x.IsArchived);
             e.HasOne(x => x.Branch).WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.SetNull);
@@ -826,6 +830,30 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
         builder.Entity<POSShiftClosure>(e => {
             e.HasOne(x => x.Branch).WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        // ⚡ Performance indexes for high-frequency polling & dashboard endpoints
+        builder.Entity<OrderStatusHistory>(e => {
+            e.HasIndex(x => new { x.OrderId, x.CreatedAt });
+        });
+        builder.Entity<PosHeldCart>(e => {
+            e.HasIndex(x => x.CreatedAt);
+        });
+        builder.Entity<WhatsAppMessage>(e => {
+            e.HasIndex(x => x.Timestamp);
+            e.HasIndex(x => new { x.FromMe, x.IsRead });
+        });
+        builder.Entity<InternalChatMember>(e => {
+            e.HasIndex(x => new { x.UserId, x.ChannelId });
+        });
+        builder.Entity<InternalChatMessage>(e => {
+            e.HasIndex(x => new { x.ChannelId, x.IsDeleted, x.SentAt });
+        });
+        builder.Entity<Notification>(e => {
+            e.HasIndex(x => new { x.UserId, x.IsRead, x.CreatedAt });
+        });
+        builder.Entity<ReturnExchangeRequest>(e => {
+            e.HasIndex(x => new { x.Status, x.CreatedAt });
         });
     }
 
