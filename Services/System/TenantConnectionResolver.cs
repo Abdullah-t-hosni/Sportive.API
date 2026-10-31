@@ -26,12 +26,14 @@ public class TenantConnectionResolver : ITenantConnectionResolver
             var builder = new MySqlConnectionStringBuilder(rawConnStr)
             {
                 Pooling = true,
-                MinimumPoolSize = 3,
+                MinimumPoolSize = 0,
                 MaximumPoolSize = 15,
-                ConnectionIdleTimeout = 3600,
-                ConnectionLifeTime = 0,
+                ConnectionIdleTimeout = 180,
+                ConnectionLifeTime = 600,
                 Keepalive = 30,
-                ConnectionReset = false,
+                ConnectionReset = true,
+                ConnectionTimeout = 30,
+                DefaultCommandTimeout = 90,
                 AllowUserVariables = true,
                 ConvertZeroDateTime = true
             };
@@ -73,12 +75,14 @@ public class TenantConnectionResolver : ITenantConnectionResolver
                 UserID = tenant.DatabaseUser,
                 Password = tenant.DatabasePassword,
                 Pooling = true,
-                MinimumPoolSize = 3,
+                MinimumPoolSize = 0,
                 MaximumPoolSize = 15,
-                ConnectionIdleTimeout = 3600,
-                ConnectionLifeTime = 0,
+                ConnectionIdleTimeout = 180,
+                ConnectionLifeTime = 600,
                 Keepalive = 30,
-                ConnectionReset = false,
+                ConnectionReset = true,
+                ConnectionTimeout = 30,
+                DefaultCommandTimeout = 90,
                 AllowUserVariables = true,
                 ConvertZeroDateTime = true
             };

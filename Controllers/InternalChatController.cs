@@ -86,47 +86,46 @@ public class InternalChatController : ControllerBase
 
             var channelIds = channels.Select(c => c.Id).ToList();
 
-            // 3. Fetch latest messages per channel cleanly (one fast query, grouped in memory)
-            var latestMessages = await _db.InternalChatMessages
+            // 3. Fetch ONLY the 1 latest message ID per channel in SQL (avoids loading entire chat history into RAM)
+            var latestMsgIds = await _db.InternalChatMessages
                 .AsNoTracking()
                 .Where(m => channelIds.Contains(m.ChannelId) && !m.IsDeleted)
-                .OrderByDescending(m => m.SentAt)
-                .Select(m => new
-                {
-                    m.Id,
-                    m.ChannelId,
-                    m.Text,
-                    m.SenderName,
-                    m.SenderId,
-                    m.SentAt,
-                    m.MediaType
-                })
+                .GroupBy(m => m.ChannelId)
+                .Select(g => g.Max(m => m.Id))
                 .ToListAsync();
+
+            var latestMessages = latestMsgIds.Count == 0
+                ? new List<LatestChannelMsgDto>()
+                : await _db.InternalChatMessages
+                    .AsNoTracking()
+                    .Where(m => latestMsgIds.Contains(m.Id))
+                    .Select(m => new LatestChannelMsgDto
+                    {
+                        Id = m.Id,
+                        ChannelId = m.ChannelId,
+                        Text = m.Text,
+                        SenderName = m.SenderName,
+                        SenderId = m.SenderId,
+                        SentAt = m.SentAt,
+                        MediaType = m.MediaType
+                    })
+                    .ToListAsync();
 
             var latestMsgByChannel = latestMessages
                 .GroupBy(m => m.ChannelId)
-                .ToDictionary(g => g.Key, g => g.First());
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.SentAt).First());
 
-            // 4. Fetch last read time for this user per channel
-            var memberLastRead = await _db.InternalChatMembers
-                .AsNoTracking()
-                .Where(m => m.UserId == userId && channelIds.Contains(m.ChannelId))
-                .ToDictionaryAsync(m => m.ChannelId, m => m.LastReadAt);
-
-            // 5. Fetch unread counts accurately per channel without un-translatable EF LINQ
-            var unreadMessages = await _db.InternalChatMessages
-                .AsNoTracking()
-                .Where(m => channelIds.Contains(m.ChannelId) && m.SenderId != userId && !m.IsDeleted)
-                .Select(m => new { m.ChannelId, m.SentAt })
-                .ToListAsync();
-
-            var unreadMap = new Dictionary<int, int>();
-            foreach (var group in unreadMessages.GroupBy(m => m.ChannelId))
-            {
-                var lastRead = memberLastRead.TryGetValue(group.Key, out var lr) ? lr : null;
-                var unread = group.Count(m => lastRead == null || m.SentAt > lastRead);
-                unreadMap[group.Key] = unread;
-            }
+            // 4. Compute unread counts per channel directly in SQL without loading message rows into memory
+            var unreadMap = await (
+                from mem in _db.InternalChatMembers.AsNoTracking()
+                where mem.UserId == userId && channelIds.Contains(mem.ChannelId)
+                join msg in _db.InternalChatMessages.AsNoTracking()
+                    on mem.ChannelId equals msg.ChannelId
+                where !msg.IsDeleted && msg.SenderId != userId
+                      && (mem.LastReadAt == null || msg.SentAt > mem.LastReadAt.Value)
+                group msg by mem.ChannelId into g
+                select new { ChannelId = g.Key, Count = g.Count() }
+            ).ToDictionaryAsync(x => x.ChannelId, x => x.Count);
 
             // 6. Sort channels: latest active message or creation date first
             var orderedChannels = channels
@@ -190,19 +189,34 @@ public class InternalChatController : ControllerBase
         }
     }
 
+    private sealed class LatestChannelMsgDto
+    {
+        public int Id { get; set; }
+        public int ChannelId { get; set; }
+        public string? Text { get; set; }
+        public string? SenderName { get; set; }
+        public string? SenderId { get; set; }
+        public DateTime SentAt { get; set; }
+        public string? MediaType { get; set; }
+    }
+
     // ── GET /api/internal-chat/channels/{id}/messages ─────────────────────────
     [HttpGet("channels/{channelId}/messages")]
     public async Task<IActionResult> GetMessages(int channelId, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
     {
         var userId = UserId;
         var isMember = await _db.InternalChatMembers
+            .AsNoTracking()
             .AnyAsync(m => m.ChannelId == channelId && m.UserId == userId);
         if (!isMember) return Forbid();
 
-        var total = await _db.InternalChatMessages.CountAsync(m => m.ChannelId == channelId);
+        var total = await _db.InternalChatMessages
+            .AsNoTracking()
+            .CountAsync(m => m.ChannelId == channelId);
 
         var messages = await _db.InternalChatMessages
             .AsNoTracking()
+            .AsSplitQuery()
             .Include(m => m.ReplyToMessage)
             .Include(m => m.ReadReceipts)
             .Include(m => m.Reactions)
@@ -214,14 +228,10 @@ public class InternalChatController : ControllerBase
 
         messages.Reverse(); // Ascending for display
 
-        // Mark channel as read for this user
-        var membership = await _db.InternalChatMembers
-            .FirstOrDefaultAsync(m => m.ChannelId == channelId && m.UserId == userId);
-        if (membership != null)
-        {
-            membership.LastReadAt = DateTime.UtcNow;
-            await _db.SaveChangesAsync();
-        }
+        // Mark channel as read for this user via lightweight SQL UPDATE without entity tracking
+        await _db.InternalChatMembers
+            .Where(m => m.ChannelId == channelId && m.UserId == userId)
+            .ExecuteUpdateAsync(s => s.SetProperty(m => m.LastReadAt, DateTime.UtcNow));
 
         var otherMembers = await _db.InternalChatMembers
             .AsNoTracking()

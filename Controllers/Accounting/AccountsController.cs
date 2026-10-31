@@ -36,7 +36,7 @@ public class AccountsController : ControllerBase
         [FromQuery] bool? isLeaf      = null,
         [FromQuery] bool? allowPosting = null)
     {
-        var q = _db.Accounts.AsQueryable();
+        var q = _db.Accounts.AsNoTracking().AsQueryable();
 
         bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
         if (!canViewAll)

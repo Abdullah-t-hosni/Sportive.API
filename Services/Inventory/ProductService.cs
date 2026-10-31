@@ -25,6 +25,50 @@ public class ProductService : IProductService
     }
 
 
+    private async Task<bool> GetHideOutOfStockAsync()
+    {
+        var cached = await _cache.GetAsync<bool?>("StoreFlags_HideOutOfStock");
+        if (cached.HasValue) return cached.Value;
+
+        var hideOutOfStock = await _db.StoreInfo
+            .AsNoTracking()
+            .Where(s => s.StoreConfigId == 1)
+            .Select(s => s.HideOutOfStock)
+            .FirstOrDefaultAsync();
+
+        await _cache.SetAsync<bool?>("StoreFlags_HideOutOfStock", hideOutOfStock, TimeSpan.FromMinutes(5));
+        return hideOutOfStock;
+    }
+
+    private async Task<bool> HasWarehouseRecordsCachedAsync(int warehouseId)
+    {
+        var key = $"WarehouseHasRecords_{warehouseId}";
+        var cached = await _cache.GetAsync<bool?>(key);
+        if (cached.HasValue) return cached.Value;
+
+        var hasRecords = await _db.ProductWarehouseStocks
+            .AsNoTracking()
+            .AnyAsync(w => w.WarehouseId == warehouseId);
+
+        await _cache.SetAsync<bool?>(key, hasRecords, TimeSpan.FromMinutes(5));
+        return hasRecords;
+    }
+
+    private async Task<List<ProductDiscount>> GetActiveDiscountsCachedAsync()
+    {
+        var cached = await _cache.GetAsync<List<ProductDiscount>>("ActiveProductDiscounts");
+        if (cached != null) return cached;
+
+        var now = TimeHelper.GetEgyptTime();
+        var discounts = await _db.ProductDiscounts
+            .AsNoTracking()
+            .Where(d => d.IsActive && d.ValidFrom <= now && d.ValidTo >= now)
+            .ToListAsync();
+
+        await _cache.SetAsync("ActiveProductDiscounts", discounts, TimeSpan.FromMinutes(2));
+        return discounts;
+    }
+
     public async Task<PaginatedResult<ProductSummaryDto>> GetProductsAsync(ProductFilterDto filter)
     {
         var query = _db.Products
@@ -38,8 +82,8 @@ public class ProductService : IProductService
             .Include(p => p.Unit)
             .AsQueryable();
         
-        var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
-        if (store != null && store.HideOutOfStock && filter.OnlyPublic == true && !filter.Status.HasValue && string.IsNullOrWhiteSpace(filter.Search))
+        var hideOutOfStock = await GetHideOutOfStockAsync();
+        if (hideOutOfStock && filter.OnlyPublic == true && !filter.Status.HasValue && string.IsNullOrWhiteSpace(filter.Search))
         {
             if (filter.WarehouseId.HasValue)
             {
@@ -196,7 +240,7 @@ public class ProductService : IProductService
         if (filter.OnlyPublic == true)
         {
             // Only show sellable Active products on the store front (and OutOfStock if not hidden in settings)
-            if (store != null && store.HideOutOfStock)
+            if (hideOutOfStock)
             {
                 query = query.Where(p => p.Status == ProductStatus.Active);
             }
@@ -295,10 +339,11 @@ public class ProductService : IProductService
         if (warehouseId.HasValue)
         {
             var warehouseStocks = await _db.ProductWarehouseStocks
+                .AsNoTracking()
                 .Where(w => w.ProductVariant.ProductId == p.Id && w.WarehouseId == warehouseId.Value)
                 .ToDictionaryAsync(w => w.ProductVariantId, w => w.Quantity);
 
-            bool hasWarehouseRecords = await _db.ProductWarehouseStocks.AnyAsync(w => w.WarehouseId == warehouseId.Value);
+            bool hasWarehouseRecords = await HasWarehouseRecordsCachedAsync(warehouseId.Value);
 
             foreach (var v in p.Variants)
             {
@@ -387,10 +432,11 @@ public class ProductService : IProductService
         if (warehouseId.HasValue)
         {
             var warehouseStocks = await _db.ProductWarehouseStocks
+                .AsNoTracking()
                 .Where(w => w.ProductVariant.ProductId == p.Id && w.WarehouseId == warehouseId.Value)
                 .ToDictionaryAsync(w => w.ProductVariantId, w => w.Quantity);
 
-            bool hasWarehouseRecords = await _db.ProductWarehouseStocks.AnyAsync(w => w.WarehouseId == warehouseId.Value);
+            bool hasWarehouseRecords = await HasWarehouseRecordsCachedAsync(warehouseId.Value);
 
             foreach (var v in p.Variants)
             {
@@ -561,6 +607,8 @@ public class ProductService : IProductService
         await _cache.RemoveAsync("Categories_All");
         await _cache.RemoveAsync("Categories_Tree");
         await _cache.RemoveAsync("CategoryTree");
+        await _cache.RemoveAsync("CategoryTreeFull");
+        await _cache.RemoveByPrefixAsync("FeaturedProducts_");
 
         return await GetProductByIdAsync(product.Id)
             ?? throw new InvalidOperationException($"Product {product.Id} not found after creation");
@@ -628,6 +676,8 @@ public class ProductService : IProductService
         await _cache.RemoveAsync("Categories_All");
         await _cache.RemoveAsync("Categories_Tree");
         await _cache.RemoveAsync("CategoryTree");
+        await _cache.RemoveAsync("CategoryTreeFull");
+        await _cache.RemoveByPrefixAsync("FeaturedProducts_");
 
         return await GetProductByIdAsync(id) ?? throw new KeyNotFoundException($"Product {id} not found after update");
     }
@@ -646,6 +696,8 @@ public class ProductService : IProductService
         await _cache.RemoveAsync("Categories_All");
         await _cache.RemoveAsync("Categories_Tree");
         await _cache.RemoveAsync("CategoryTree");
+        await _cache.RemoveAsync("CategoryTreeFull");
+        await _cache.RemoveByPrefixAsync("FeaturedProducts_");
     }
 
     public async Task<bool> UpdateStockAsync(int variantId, int quantity)
@@ -939,7 +991,11 @@ public class ProductService : IProductService
     }
     public async Task<List<ProductSummaryDto>> GetFeaturedProductsAsync(int count = 8, int? warehouseId = null)
     {
-        var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
+        var cacheKey = $"FeaturedProducts_{count}_{warehouseId ?? 0}";
+        var cached = await _cache.GetAsync<List<ProductSummaryDto>>(cacheKey);
+        if (cached != null) return cached;
+
+        var hideOutOfStock = await GetHideOutOfStockAsync();
         var query = _db.Products
             .AsNoTracking()
             .AsSplitQuery()
@@ -950,7 +1006,7 @@ public class ProductService : IProductService
             .Include(p => p.Unit)
             .Where(p => p.IsFeatured && (p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock));
 
-        if (store != null && store.HideOutOfStock)
+        if (hideOutOfStock)
         {
             if (warehouseId.HasValue)
             {
@@ -969,7 +1025,9 @@ public class ProductService : IProductService
             .Take(count)
             .ToListAsync();
 
-        return await MapToSummaryListAsync(rawProducts, DiscountApplyTo.Store, warehouseId);
+        var result = await MapToSummaryListAsync(rawProducts, DiscountApplyTo.Store, warehouseId);
+        await _cache.SetAsync(cacheKey, result, TimeSpan.FromMinutes(3));
+        return result;
     }
 
     public async Task<List<ProductSummaryDto>> GetRelatedProductsAsync(int productId, int count = 4, int? warehouseId = null)
@@ -977,7 +1035,7 @@ public class ProductService : IProductService
         var product = await _db.Products.AsNoTracking().Include(p => p.Category).FirstOrDefaultAsync(p => p.Id == productId);
         if (product == null) return new List<ProductSummaryDto>();
 
-        var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
+        var hideOutOfStock = await GetHideOutOfStockAsync();
         
         IQueryable<Product> query;
         
@@ -1047,7 +1105,7 @@ public class ProductService : IProductService
                 .Where(p => p.CategoryId == product.CategoryId && p.Id != productId && (p.Status == ProductStatus.Active || p.Status == ProductStatus.OutOfStock));
         }
 
-        if (store != null && store.HideOutOfStock)
+        if (hideOutOfStock)
         {
             if (warehouseId.HasValue)
             {
@@ -1463,17 +1521,16 @@ public class ProductService : IProductService
             }
         }
 
-        var now = TimeHelper.GetEgyptTime();
-        var discounts = await _db.ProductDiscounts
-            .Where(d => d.IsActive && d.ValidFrom <= now && d.ValidTo >= now)
-            .Where(d => source.HasValue ? (d.ApplyTo == DiscountApplyTo.All || d.ApplyTo == source.Value) : true)
-            .Where(d => 
+        var activeDiscounts = await GetActiveDiscountsCachedAsync();
+        var discounts = activeDiscounts
+            .Where(d => !source.HasValue || d.ApplyTo == DiscountApplyTo.All || d.ApplyTo == source.Value)
+            .Where(d =>
                 (d.ProductId != null && productIds.Contains(d.ProductId.Value)) ||
                 (d.CategoryId != null && allRelevantCategoryIds.Contains(d.CategoryId.Value)) ||
                 (d.BrandId != null && brandIds.Contains(d.BrandId.Value)) ||
                 (d.ProductId == null && d.CategoryId == null && d.BrandId == null)
             )
-            .ToListAsync();
+            .ToList();
 
         Dictionary<int, int> variantStocks = new Dictionary<int, int>();
         Dictionary<int, int> productStocks = new Dictionary<int, int>();
@@ -1482,13 +1539,14 @@ public class ProductService : IProductService
         if (warehouseId.HasValue)
         {
             var stocks = await _db.ProductWarehouseStocks
+                .AsNoTracking()
                 .Where(w => productIds.Contains(w.ProductVariant.ProductId) && w.WarehouseId == warehouseId.Value)
                 .Select(w => new { w.ProductVariantId, w.ProductVariant.ProductId, w.Quantity })
                 .ToListAsync();
 
             variantStocks = stocks.ToDictionary(s => s.ProductVariantId, s => s.Quantity);
             productStocks = stocks.GroupBy(s => s.ProductId).ToDictionary(g => g.Key, g => g.Sum(s => s.Quantity));
-            hasWarehouseRecords = await _db.ProductWarehouseStocks.AnyAsync(w => w.WarehouseId == warehouseId.Value);
+            hasWarehouseRecords = await HasWarehouseRecordsCachedAsync(warehouseId.Value);
         }
         else
         {

@@ -25,16 +25,27 @@ namespace Sportive.API.Controllers.Shipping
         public async Task<IActionResult> GetAll()
         {
             var companies = await _db.ShippingCompanies
+                .AsNoTracking()
                 .Include(c => c.Account)
                 .OrderBy(c => c.NameAr)
                 .ToListAsync();
 
-            // Auto-heal/link accounts for legacy companies missing account association
+            if (!companies.Any(c => c.AccountId == null || c.Account == null))
+            {
+                return Ok(companies);
+            }
+
+            // Auto-heal/link accounts only when legacy companies are missing account association
+            var trackedCompanies = await _db.ShippingCompanies
+                .Include(c => c.Account)
+                .OrderBy(c => c.NameAr)
+                .ToListAsync();
+
             var parentAccount = await _db.Accounts.FirstOrDefaultAsync(a => a.Code == "1108");
-            if (parentAccount != null && companies.Any(c => c.AccountId == null || c.Account == null))
+            if (parentAccount != null && trackedCompanies.Any(c => c.AccountId == null || c.Account == null))
             {
                 int nextSeq = 1;
-                foreach (var c in companies.Where(c => c.AccountId == null || c.Account == null))
+                foreach (var c in trackedCompanies.Where(c => c.AccountId == null || c.Account == null))
                 {
                     string candidateCode = $"{parentAccount.Code}{nextSeq:D2}";
                     while (await _db.Accounts.AnyAsync(a => a.Code == candidateCode))
@@ -62,7 +73,7 @@ namespace Sportive.API.Controllers.Shipping
                 await _db.SaveChangesAsync();
             }
 
-            return Ok(companies);
+            return Ok(trackedCompanies);
         }
 
         [HttpGet("{id}")]

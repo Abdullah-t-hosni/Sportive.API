@@ -1,9 +1,10 @@
-﻿using Sportive.API.Attributes;
+using Sportive.API.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.Models;
+using Sportive.API.Services;
 using Sportive.API.Utils;
 
 namespace Sportive.API.Controllers;
@@ -13,18 +14,26 @@ namespace Sportive.API.Controllers;
 public class ShippingZonesController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly ICacheService _cache;
+    private const string CacheKey = "ShippingZones_All";
 
-    public ShippingZonesController(AppDbContext db)
+    public ShippingZonesController(AppDbContext db, ICacheService cache)
     {
         _db = db;
+        _cache = cache;
     }
 
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
+        var cached = await _cache.GetAsync<List<ShippingZone>>(CacheKey);
+        if (cached != null) return Ok(cached);
+
         var zones = await _db.ShippingZones
+            .AsNoTracking()
             .OrderBy(z => z.Id)
             .ToListAsync();
+        await _cache.SetAsync(CacheKey, zones, TimeSpan.FromMinutes(10));
         return Ok(zones);
     }
 
@@ -35,6 +44,7 @@ public class ShippingZonesController : ControllerBase
         zone.CreatedAt = TimeHelper.GetEgyptTime();
         _db.ShippingZones.Add(zone);
         await _db.SaveChangesAsync();
+        await _cache.RemoveAsync(CacheKey);
         return CreatedAtAction(nameof(GetAll), new { id = zone.Id }, zone);
     }
 
@@ -55,6 +65,7 @@ public class ShippingZonesController : ControllerBase
         zone.UpdatedAt = TimeHelper.GetEgyptTime();
 
         await _db.SaveChangesAsync();
+        await _cache.RemoveAsync(CacheKey);
         return Ok(zone);
     }
 
@@ -67,6 +78,7 @@ public class ShippingZonesController : ControllerBase
 
         _db.ShippingZones.Remove(zone);
         await _db.SaveChangesAsync();
+        await _cache.RemoveAsync(CacheKey);
         return NoContent();
     }
 
@@ -81,6 +93,7 @@ public class ShippingZonesController : ControllerBase
         zone.UpdatedAt = TimeHelper.GetEgyptTime();
         
         await _db.SaveChangesAsync();
+        await _cache.RemoveAsync(CacheKey);
         return Ok(new { zone.IsActive });
     }
 }

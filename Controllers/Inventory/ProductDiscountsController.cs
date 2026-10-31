@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Sportive.API.Data;
 using Sportive.API.Models;
+using Sportive.API.Services;
 using Sportive.API.Utils;
 
 namespace Sportive.API.Controllers;
@@ -16,10 +17,18 @@ public class ProductDiscountsController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly ITranslator _t;
-    public ProductDiscountsController(AppDbContext db, ITranslator t)
+    private readonly ICacheService _cache;
+    public ProductDiscountsController(AppDbContext db, ITranslator t, ICacheService cache)
     {
         _db = db;
         _t = t;
+        _cache = cache;
+    }
+
+    private async Task InvalidateDiscountCachesAsync()
+    {
+        await _cache.RemoveAsync("ActiveProductDiscounts");
+        await _cache.RemoveByPrefixAsync("FeaturedProducts_");
     }
 
     [HttpGet]
@@ -133,6 +142,7 @@ public class ProductDiscountsController : ControllerBase
 
         _db.ProductDiscounts.Add(discount);
         await _db.SaveChangesAsync();
+        await InvalidateDiscountCachesAsync();
         return CreatedAtAction(nameof(GetAll), new { productId = discount.ProductId }, discount);
     }
 
@@ -160,6 +170,7 @@ public class ProductDiscountsController : ControllerBase
         discount.UpdatedAt           = TimeHelper.GetEgyptTime();
 
         await _db.SaveChangesAsync();
+        await InvalidateDiscountCachesAsync();
         return Ok(discount);
     }
 
@@ -174,6 +185,7 @@ public class ProductDiscountsController : ControllerBase
         discount.UpdatedAt = TimeHelper.GetEgyptTime();
 
         await _db.SaveChangesAsync();
+        await InvalidateDiscountCachesAsync();
         return Ok(new { id = discount.Id, isActive = discount.IsActive });
     }
 
@@ -185,6 +197,7 @@ public class ProductDiscountsController : ControllerBase
         if (discount == null) return NotFound();
         _db.ProductDiscounts.Remove(discount);
         await _db.SaveChangesAsync();
+        await InvalidateDiscountCachesAsync();
         return NoContent();
     }
 }

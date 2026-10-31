@@ -24,14 +24,25 @@ public class BrandService : IBrandService
         var cached = await _cache.GetAsync<List<BrandDto>>(CacheKeyAll);
         if (cached != null) return cached;
 
-        var brands = await _db.Set<Brand>()
+        var result = await _db.Set<Brand>()
             .AsNoTracking()
-            .Include(b => b.Products)
-            .Include(b => b.Parent)
             .OrderBy(b => b.NameAr)
+            .Select(b => new BrandDto(
+                b.Id,
+                b.NameAr,
+                b.NameEn,
+                b.DescriptionAr,
+                b.DescriptionEn,
+                b.ImageUrl,
+                b.IsActive,
+                b.ParentId,
+                b.Parent != null ? b.Parent.NameAr : null,
+                b.Parent != null ? b.Parent.NameEn : null,
+                b.Products.Count(),
+                b.CreatedAt
+            ))
             .ToListAsync();
 
-        var result = brands.Select(MapToDto).ToList();
         await _cache.SetAsync(CacheKeyAll, result, TimeSpan.FromHours(1));
         return result;
     }

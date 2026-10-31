@@ -21,8 +21,10 @@ public class SettingsController : ControllerBase
     private readonly IAuditService _audit;
     private readonly MasterDbContext _masterDb;
     private readonly ITenantContext _tenantContext;
+    private readonly ICacheService _cache;
+    public const string SettingsCacheKey = "StoreSettings_Info";
 
-    public SettingsController(AppDbContext db, ILogger<SettingsController> logger, TimeService timeService, IAuditService audit, MasterDbContext masterDb, ITenantContext tenantContext)
+    public SettingsController(AppDbContext db, ILogger<SettingsController> logger, TimeService timeService, IAuditService audit, MasterDbContext masterDb, ITenantContext tenantContext, ICacheService cache)
     {
         _db = db;
         _logger = logger;
@@ -30,6 +32,7 @@ public class SettingsController : ControllerBase
         _audit = audit;
         _masterDb = masterDb;
         _tenantContext = tenantContext;
+        _cache = cache;
     }
 
     
@@ -100,8 +103,14 @@ public class SettingsController : ControllerBase
     {
         try
         {
+            var cached = await _cache.GetAsync<StoreInfo>(SettingsCacheKey);
+            if (cached != null)
+            {
+                return Ok(cached);
+            }
+
             await EnsureBostaColumnsExistAsync();
-            var info = await _db.StoreInfo.FirstOrDefaultAsync(x => x.StoreConfigId == 1);
+            var info = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(x => x.StoreConfigId == 1);
             if (info == null)
             {
                 info = new StoreInfo { StoreConfigId = 1 };
@@ -161,6 +170,7 @@ public class SettingsController : ControllerBase
                 _logger.LogWarning(subEx, "Could not fetch subscription details in SettingsController.Get");
             }
 
+            await _cache.SetAsync(SettingsCacheKey, info, TimeSpan.FromMinutes(5));
             return Ok(info);
         }
         catch (Exception ex)
@@ -443,6 +453,9 @@ public class SettingsController : ControllerBase
 
             // cache 
             _timeService.InvalidateCache();
+            await _cache.RemoveAsync(SettingsCacheKey);
+            await _cache.RemoveByPrefixAsync("StoreFlags");
+            await _cache.RemoveByPrefixAsync("FeaturedProducts_");
             
             try { await _audit.LogAsync("UpdateSettings", "StoreInfo", "1", $"Updated store settings", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 

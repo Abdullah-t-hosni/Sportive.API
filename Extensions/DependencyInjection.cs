@@ -31,6 +31,9 @@ namespace Sportive.API.Extensions;
 
 public static class DependencyInjection
 {
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DbContextOptions<AppDbContext>> _tenantDbOptionsCache = new();
+    private static readonly MySqlServerVersion _serverVersion = new(new Version(8, 0, 0));
+
     public static IServiceCollection AddDatabaseAndIdentityServices(this IServiceCollection services, string connStr, string masterConnStr)
     {
         if (!connStr.Contains("Allow User Variables=true", StringComparison.OrdinalIgnoreCase))
@@ -40,20 +43,24 @@ public static class DependencyInjection
             masterConnStr = masterConnStr.TrimEnd(';') + ";Allow User Variables=true;";
 
         services.AddDbContextPool<MasterDbContext>(options =>
-            options.UseMySql(masterConnStr, new MySqlServerVersion(new Version(8, 0, 0)),
-                mySqlOptions => mySqlOptions.EnableRetryOnFailure()));
+            options.UseMySql(masterConnStr, _serverVersion,
+                mySqlOptions => mySqlOptions.EnableRetryOnFailure(maxRetryCount: 3, maxRetryDelay: TimeSpan.FromSeconds(3), errorNumbersToAdd: null)));
 
         services.AddScoped<AppDbContext>(serviceProvider =>
         {
             var resolver = serviceProvider.GetRequiredService<ITenantConnectionResolver>();
             var tenantConnStr = resolver.GetConnectionString();
 
-            var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
-            optionsBuilder.UseMySql(tenantConnStr, new MySqlServerVersion(new Version(8, 0, 0)),
-                mySqlOptions => mySqlOptions.EnableRetryOnFailure());
+            var dbOptions = _tenantDbOptionsCache.GetOrAdd(tenantConnStr, cs =>
+            {
+                var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
+                optionsBuilder.UseMySql(cs, _serverVersion,
+                    mySqlOptions => mySqlOptions.EnableRetryOnFailure(maxRetryCount: 3, maxRetryDelay: TimeSpan.FromSeconds(3), errorNumbersToAdd: null));
+                return optionsBuilder.Options;
+            });
 
             return new AppDbContext(
-                optionsBuilder.Options,
+                dbOptions,
                 serviceProvider.GetService<IHttpContextAccessor>(),
                 serviceProvider.GetService<IServiceScopeFactory>(),
                 serviceProvider.GetService<ITenantContext>()
@@ -226,37 +233,70 @@ public static class DependencyInjection
         // Rate Limiting
         services.AddRateLimiter(options =>
         {
+            static string ResolveClientKey(HttpContext httpContext)
+            {
+                var userId = httpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                             ?? httpContext.User.Identity?.Name;
+                if (!string.IsNullOrEmpty(userId))
+                    return $"user:{userId}";
+
+                var ip = httpContext.Connection.RemoteIpAddress?.ToString();
+                if (!string.IsNullOrEmpty(ip))
+                    return $"ip:{ip}";
+
+                return "ip:unknown";
+            }
+
             options.AddPolicy("auth", httpContext =>
-                RateLimitPartition.GetSlidingWindowLimiter(
-                    partitionKey: httpContext.User.Identity?.Name ?? httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            {
+                if (HttpMethods.IsOptions(httpContext.Request.Method))
+                    return RateLimitPartition.GetNoLimiter("options");
+
+                var ipKey = httpContext.Connection.RemoteIpAddress?.ToString() ?? ResolveClientKey(httpContext);
+                return RateLimitPartition.GetSlidingWindowLimiter(
+                    partitionKey: $"auth:{ipKey}",
                     factory: _ => new SlidingWindowRateLimiterOptions
                     {
-                        PermitLimit = 10, Window = TimeSpan.FromMinutes(1),
+                        PermitLimit = 30, Window = TimeSpan.FromMinutes(1),
                         SegmentsPerWindow = 3,
                         QueueProcessingOrder = QueueProcessingOrder.OldestFirst, QueueLimit = 0
-                    }));
+                    });
+            });
 
             options.AddPolicy("api", httpContext =>
-                RateLimitPartition.GetSlidingWindowLimiter(
-                    partitionKey: httpContext.User.Identity?.Name ?? httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            {
+                if (HttpMethods.IsOptions(httpContext.Request.Method))
+                    return RateLimitPartition.GetNoLimiter("options");
+
+                return RateLimitPartition.GetSlidingWindowLimiter(
+                    partitionKey: $"api:{ResolveClientKey(httpContext)}",
                     factory: _ => new SlidingWindowRateLimiterOptions
                     {
-                        PermitLimit = 60, Window = TimeSpan.FromMinutes(1),
+                        PermitLimit = 240, Window = TimeSpan.FromMinutes(1),
                         SegmentsPerWindow = 6,
                         QueueProcessingOrder = QueueProcessingOrder.OldestFirst, QueueLimit = 0
-                    }));
+                    });
+            });
 
             options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
-                RateLimitPartition.GetSlidingWindowLimiter(
-                    partitionKey: httpContext.User.Identity?.IsAuthenticated == true
-                        ? $"user:{httpContext.User.Identity.Name}"
-                        : $"ip:{httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown"}",
+            {
+                if (HttpMethods.IsOptions(httpContext.Request.Method) ||
+                    httpContext.Request.Path.StartsWithSegments("/health") ||
+                    httpContext.Request.Path.StartsWithSegments("/uploads") ||
+                    httpContext.Request.Path.StartsWithSegments("/notifications-hub"))
+                {
+                    return RateLimitPartition.GetNoLimiter("exempt");
+                }
+
+                return RateLimitPartition.GetSlidingWindowLimiter(
+                    partitionKey: ResolveClientKey(httpContext),
                     factory: _ => new SlidingWindowRateLimiterOptions
                     {
-                        PermitLimit = 300, Window = TimeSpan.FromMinutes(1),
-                        SegmentsPerWindow = 10,
+                        PermitLimit = 600, Window = TimeSpan.FromMinutes(1),
+                        SegmentsPerWindow = 6,
                         QueueProcessingOrder = QueueProcessingOrder.OldestFirst, QueueLimit = 0
-                    }));
+                    });
+            });
 
             options.RejectionStatusCode = 429;
             options.OnRejected = async (context, _) =>
@@ -265,28 +305,12 @@ public static class DependencyInjection
                 await context.HttpContext.Response.WriteAsync(
                     """{"message":"Too many requests. Please wait a minute and try again."}""");
 
-                try
-                {
-                    var securityEngine = context.HttpContext.RequestServices.GetRequiredService<ISecurityEventsEngine>();
-                    var userId = context.HttpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-                    var ip = context.HttpContext.Connection.RemoteIpAddress?.ToString() ?? "Unknown";
-                    var userAgent = context.HttpContext.Request.Headers["User-Agent"].ToString() ?? "Unknown";
-                    var correlationId = context.HttpContext.TraceIdentifier;
-
-                    await securityEngine.TrackEventAsync(
-                        userId,
-                        ip,
-                        userAgent,
-                        SecurityEventType.RateLimitViolation,
-                        SecuritySeverity.Medium,
-                        20,
-                        correlationId
-                    );
-                }
-                catch
-                {
-                    // Fail silently
-                }
+                var loggerFactory = context.HttpContext.RequestServices.GetService<Microsoft.Extensions.Logging.ILoggerFactory>();
+                loggerFactory?.CreateLogger("RateLimiter").LogWarning(
+                    "Rate limit exceeded for {Key} on {Method} {Path}",
+                    ResolveClientKey(context.HttpContext),
+                    context.HttpContext.Request.Method,
+                    context.HttpContext.Request.Path);
             };
         });
 

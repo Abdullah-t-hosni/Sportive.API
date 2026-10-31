@@ -33,7 +33,7 @@ public class MemoryCacheService : ICacheService
     private readonly IMemoryCache _cache;
     private readonly ILogger<MemoryCacheService> _logger;
     private readonly Sportive.API.Interfaces.ITenantContext _tenantContext;
-    private readonly HashSet<string> _keys = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _keys = new();
 
     private static readonly MemoryCacheEntryOptions DefaultOptions = new()
     {
@@ -69,7 +69,7 @@ public class MemoryCacheService : ICacheService
             : DefaultOptions;
 
         _cache.Set(tenantKey, value, options);
-        _keys.Add(tenantKey);
+        _keys.TryAdd(tenantKey, 0);
         _logger.LogDebug("Cache SET: {Key} (expires: {Expiry})", tenantKey, expiry ?? TimeSpan.FromMinutes(10));
         return Task.CompletedTask;
     }
@@ -78,7 +78,7 @@ public class MemoryCacheService : ICacheService
     {
         var tenantKey = GetTenantKey(key);
         _cache.Remove(tenantKey);
-        _keys.Remove(tenantKey);
+        _keys.TryRemove(tenantKey, out _);
         _logger.LogDebug("Cache REMOVED: {Key}", tenantKey);
         return Task.CompletedTask;
     }
@@ -86,11 +86,11 @@ public class MemoryCacheService : ICacheService
     public Task RemoveByPrefixAsync(string prefix)
     {
         var tenantPrefix = GetTenantKey(prefix);
-        var toRemove = _keys.Where(k => k.StartsWith(tenantPrefix)).ToList();
+        var toRemove = _keys.Keys.Where(k => k.StartsWith(tenantPrefix, StringComparison.Ordinal)).ToList();
         foreach (var k in toRemove)
         {
             _cache.Remove(k);
-            _keys.Remove(k);
+            _keys.TryRemove(k, out _);
         }
         _logger.LogDebug("Cache REMOVED by prefix '{Prefix}': {Count} keys", tenantPrefix, toRemove.Count);
         return Task.CompletedTask;

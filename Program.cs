@@ -62,14 +62,14 @@ try
     connBuilder.Pooling = true;
     connBuilder.AllowUserVariables = true;
     connBuilder.ConvertZeroDateTime = true;
-    connBuilder.ConnectionIdleTimeout = 3600; // keep connections alive in pool for 1 hour
-    connBuilder.ConnectionLifeTime = 0; // connections never expire based on age
-    connBuilder.Keepalive = 30; // send keepalive every 30s to prevent TCP drops
-    connBuilder.ConnectionReset = false;
-    connBuilder.ConnectionTimeout = 60;
-    connBuilder.DefaultCommandTimeout = 120;
+    connBuilder.ConnectionIdleTimeout = 180;
+    connBuilder.ConnectionLifeTime = 600;
+    connBuilder.Keepalive = 30;
+    connBuilder.ConnectionReset = true;
+    connBuilder.ConnectionTimeout = 30;
+    connBuilder.DefaultCommandTimeout = 90;
     connBuilder.MaximumPoolSize = 15;
-    connBuilder.MinimumPoolSize = 3;
+    connBuilder.MinimumPoolSize = 0;
 
     connStr = connBuilder.ConnectionString;
 }
@@ -84,14 +84,14 @@ try
     masterBuilder.Pooling = true;
     masterBuilder.AllowUserVariables = true;
     masterBuilder.ConvertZeroDateTime = true;
-    masterBuilder.ConnectionIdleTimeout = 3600;
-    masterBuilder.ConnectionLifeTime = 0;
+    masterBuilder.ConnectionIdleTimeout = 180;
+    masterBuilder.ConnectionLifeTime = 600;
     masterBuilder.Keepalive = 30;
-    masterBuilder.ConnectionReset = false;
+    masterBuilder.ConnectionReset = true;
     masterBuilder.ConnectionTimeout = 30;
     masterBuilder.DefaultCommandTimeout = 60;
-    masterBuilder.MaximumPoolSize = 10;
-    masterBuilder.MinimumPoolSize = 1;
+    masterBuilder.MaximumPoolSize = 5;
+    masterBuilder.MinimumPoolSize = 0;
     masterConnStr = masterBuilder.ConnectionString;
 }
 catch (Exception ex)
@@ -283,6 +283,15 @@ if (app.Environment.IsDevelopment())
         c.DocumentTitle = "Sportive API";
     });
 }
+var forwardedHeadersOptions = new Microsoft.AspNetCore.Builder.ForwardedHeadersOptions
+{
+    ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor |
+                       Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto
+};
+forwardedHeadersOptions.KnownNetworks.Clear();
+forwardedHeadersOptions.KnownProxies.Clear();
+app.UseForwardedHeaders(forwardedHeadersOptions);
+
 app.UseResponseCompression(); // ✅ single call — was duplicated previously
 app.UseCors("AllowReactApp");
 app.UseSerilogRequestLogging(options =>
@@ -359,9 +368,9 @@ app.UseStaticFiles(new StaticFileOptions
     ServeUnknownFileTypes = true
 });
 
-app.UseRateLimiter();
 app.UseMiddleware<Sportive.API.Middleware.TenantValidationMiddleware>();
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
 app.UseMiddleware<Sportive.API.Middleware.SessionLastSeenMiddleware>();
 
