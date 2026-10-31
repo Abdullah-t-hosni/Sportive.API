@@ -51,100 +51,105 @@ public class InternalChatController : ControllerBase
     [HttpGet("channels")]
     public async Task<IActionResult> GetMyChannels()
     {
-        var userId = UserId;
-        var userName = UserName;
-
-        // Auto-enroll Admin/Manager to the Partners channel if not already enrolled
         try
         {
-            if (User.IsInRole(AppRoles.SuperAdmin) || User.IsInRole(AppRoles.Admin) || User.IsInRole(AppRoles.Manager))
+            var userId = UserId;
+            var userName = UserName;
+            if (string.IsNullOrEmpty(userId))
             {
-                var partnerChan = await _db.InternalChatChannels
-                    .FirstOrDefaultAsync(c => c.DirectKey == InternalChatBotService.ChannelKeyPartners);
-
-                if (partnerChan == null)
-                {
-                    await _chatBot.EnsureSystemChannelsExistAsync();
-                    partnerChan = await _db.InternalChatChannels
-                        .FirstOrDefaultAsync(c => c.DirectKey == InternalChatBotService.ChannelKeyPartners);
-                }
-
-                if (partnerChan != null)
-                {
-                    var isMember = await _db.InternalChatMembers
-                        .AnyAsync(m => m.ChannelId == partnerChan.Id && m.UserId == userId);
-                    if (!isMember)
-                    {
-                        _db.InternalChatMembers.Add(new InternalChatMember
-                        {
-                            ChannelId = partnerChan.Id,
-                            UserId = userId,
-                            UserName = userName,
-                            JoinedAt = DateTime.UtcNow
-                        });
-                        await _db.SaveChangesAsync();
-                    }
-                }
+                return Ok(new List<object>());
             }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to auto-enroll partner in GetMyChannels");
-        }
 
-        try
-        {
+            // 1. Fetch channel IDs this user belongs to
             var myMemberships = await _db.InternalChatMembers
                 .AsNoTracking()
                 .Where(m => m.UserId == userId)
                 .Select(m => m.ChannelId)
                 .ToListAsync();
 
+            if (myMemberships.Count == 0)
+            {
+                return Ok(new List<object>());
+            }
+
+            // 2. Fetch channels with their members
             var channels = await _db.InternalChatChannels
                 .AsNoTracking()
                 .Include(c => c.Members)
-                .Include(c => c.Messages.OrderByDescending(msg => msg.SentAt).Take(1))
                 .Where(c => myMemberships.Contains(c.Id) && !c.IsArchived && (c.Type == InternalChatChannelType.Direct || c.Type == InternalChatChannelType.Group))
-                .OrderByDescending(c => c.Messages.Max(m => (DateTime?)m.SentAt) ?? c.CreatedAt)
                 .ToListAsync();
 
-            // Get unread counts accurately per channel
-            var memberLastRead = await _db.InternalChatMembers
-                .AsNoTracking()
-                .Where(m => m.UserId == userId && myMemberships.Contains(m.ChannelId))
-                .ToDictionaryAsync(m => m.ChannelId, m => m.LastReadAt);
+            if (channels.Count == 0)
+            {
+                return Ok(new List<object>());
+            }
 
-            // Fetch unread count grouped by channel for all messages sent by others
-            var unreadCounts = await _db.InternalChatMessages
+            var channelIds = channels.Select(c => c.Id).ToList();
+
+            // 3. Fetch latest messages per channel cleanly (one fast query, grouped in memory)
+            var latestMessages = await _db.InternalChatMessages
                 .AsNoTracking()
-                .Where(m => myMemberships.Contains(m.ChannelId) && m.SenderId != userId && !m.IsDeleted)
-                .GroupBy(m => m.ChannelId)
-                .Select(g => new
+                .Where(m => channelIds.Contains(m.ChannelId) && !m.IsDeleted)
+                .OrderByDescending(m => m.SentAt)
+                .Select(m => new
                 {
-                    ChannelId = g.Key,
-                    Messages = g.Select(x => new { x.SentAt })
+                    m.Id,
+                    m.ChannelId,
+                    m.Text,
+                    m.SenderName,
+                    m.SenderId,
+                    m.SentAt,
+                    m.MediaType
                 })
                 .ToListAsync();
 
+            var latestMsgByChannel = latestMessages
+                .GroupBy(m => m.ChannelId)
+                .ToDictionary(g => g.Key, g => g.First());
+
+            // 4. Fetch last read time for this user per channel
+            var memberLastRead = await _db.InternalChatMembers
+                .AsNoTracking()
+                .Where(m => m.UserId == userId && channelIds.Contains(m.ChannelId))
+                .ToDictionaryAsync(m => m.ChannelId, m => m.LastReadAt);
+
+            // 5. Fetch unread counts accurately per channel without un-translatable EF LINQ
+            var unreadMessages = await _db.InternalChatMessages
+                .AsNoTracking()
+                .Where(m => channelIds.Contains(m.ChannelId) && m.SenderId != userId && !m.IsDeleted)
+                .Select(m => new { m.ChannelId, m.SentAt })
+                .ToListAsync();
+
             var unreadMap = new Dictionary<int, int>();
-            foreach (var ug in unreadCounts)
+            foreach (var group in unreadMessages.GroupBy(m => m.ChannelId))
             {
-                var lastRead = memberLastRead.TryGetValue(ug.ChannelId, out var lr) ? lr : null;
-                var unread = ug.Messages.Count(m => lastRead == null || m.SentAt > lastRead);
-                unreadMap[ug.ChannelId] = unread;
+                var lastRead = memberLastRead.TryGetValue(group.Key, out var lr) ? lr : null;
+                var unread = group.Count(m => lastRead == null || m.SentAt > lastRead);
+                unreadMap[group.Key] = unread;
             }
 
-            var result = channels.Select(c =>
+            // 6. Sort channels: latest active message or creation date first
+            var orderedChannels = channels
+                .OrderByDescending(c =>
+                {
+                    if (latestMsgByChannel.TryGetValue(c.Id, out var lm))
+                        return lm.SentAt;
+                    return c.CreatedAt;
+                })
+                .ToList();
+
+            var result = orderedChannels.Select(c =>
             {
-                var lastMsg = c.Messages.OrderByDescending(m => m.SentAt).FirstOrDefault();
+                latestMsgByChannel.TryGetValue(c.Id, out var lastMsg);
                 var unread = unreadMap.TryGetValue(c.Id, out var u) ? u : 0;
 
-                // For Direct channels, get the other user's name
                 string displayName = c.Name;
                 string? otherUserId = null;
+                var membersList = c.Members ?? new List<InternalChatMember>();
+
                 if (c.Type == InternalChatChannelType.Direct)
                 {
-                    var other = c.Members.FirstOrDefault(m => m.UserId != userId);
+                    var other = membersList.FirstOrDefault(m => m.UserId != userId);
                     displayName = other?.UserName ?? c.Name;
                     otherUserId = other?.UserId;
                 }
@@ -160,14 +165,14 @@ public class InternalChatController : ControllerBase
                     type = c.Type.ToString(),
                     icon = c.Icon ?? (c.Type == InternalChatChannelType.Group ? "👥" : null),
                     unreadCount = unread,
-                    membersCount = c.Members.Count,
+                    membersCount = membersList.Count,
                     createdByUserId = c.CreatedByUserId,
-                    members = c.Members.Select(m => new { userId = m.UserId, userName = m.UserName, isAdmin = m.IsAdmin }).ToList(),
+                    members = membersList.Select(m => new { userId = m.UserId, userName = m.UserName, isAdmin = m.IsAdmin }).ToList(),
                     otherUserId = otherUserId,
                     lastMessage = lastMsg == null ? null : new
                     {
                         id = lastMsg.Id,
-                        text = lastMsg.IsDeleted ? "🗑️ تم حذف هذه الرسالة" : lastMsg.Text,
+                        text = lastMsg.Text,
                         senderName = lastMsg.SenderName,
                         senderId = lastMsg.SenderId,
                         sentAt = lastMsg.SentAt,
@@ -180,7 +185,7 @@ public class InternalChatController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Error retrieving chat channels for user {UserId}. Returning empty list.", userId);
+            _logger.LogError(ex, "Error retrieving chat channels for user {UserId}. Returning empty list.", UserId);
             return Ok(new List<object>());
         }
     }
