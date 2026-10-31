@@ -229,17 +229,25 @@ public class WhatsAppChatController : ControllerBase
             int matchedIdx = -1;
             foreach (var ph in pHashes)
             {
-                if (custByPhoneHash.TryGetValue(ph, out matchedIdx)) break;
+                if (custByPhoneHash.TryGetValue(ph, out var idx))
+                {
+                    matchedIdx = idx;
+                    break;
+                }
             }
             if (matchedIdx < 0)
             {
                 foreach (var eh in eHashes)
                 {
-                    if (custByEmailHash.TryGetValue(eh, out matchedIdx)) break;
+                    if (custByEmailHash.TryGetValue(eh, out var idx))
+                    {
+                        matchedIdx = idx;
+                        break;
+                    }
                 }
             }
 
-            var cust = matchedIdx >= 0 ? matchedCustomers[matchedIdx] : null;
+            var cust = (matchedIdx >= 0 && matchedIdx < matchedCustomers.Count) ? matchedCustomers[matchedIdx] : null;
             int ordersCount = cust?.OrdersCount ?? 0;
             decimal totalSpent = cust?.TotalSpent ?? 0m;
 
@@ -279,10 +287,13 @@ public class WhatsAppChatController : ControllerBase
         // 1. Primary lookup by indexed hashes in MySQL (Fast & 100% reliable)
         var cust = await _db.Customers
             .AsNoTracking()
+            .AsSplitQuery()
             .Include(c => c.Addresses)
             .Include(c => c.Orders)
                 .ThenInclude(o => o.Items)
-            .FirstOrDefaultAsync(c => phoneHashes.Contains(c.PhoneHash) || emailHashes.Contains(c.EmailHash));
+            .FirstOrDefaultAsync(c =>
+                (c.PhoneHash != null && phoneHashes.Contains(c.PhoneHash)) ||
+                (c.EmailHash != null && emailHashes.Contains(c.EmailHash)));
 
         // 2. Fallback: Search Orders by customer notes or matching recent orders
         if (cust == null)
