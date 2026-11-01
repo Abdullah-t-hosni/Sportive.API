@@ -138,7 +138,7 @@ public record EmployeeDto(
     int?           BranchId        = null
 );
 
-public record EmployeeBasicDto(int Id, string EmployeeNumber, string Name, string? JobTitle, int? DepartmentId, string? DepartmentName, decimal BaseSalary, decimal TransportationAllowance, decimal CommunicationAllowance, decimal BonusAmount, decimal FixedAllowance, decimal PendingAdvancesAmount, decimal PendingBonusesAmount, decimal PendingDeductionsAmount, int Status, decimal WorkHoursPerDay, decimal OvertimeMultiplier, int DaysPerMonth, AttendanceMode AttendanceMode = AttendanceMode.Fixed, bool IsFlexible = false, bool EnableDelayRules = true);
+public record EmployeeBasicDto(int Id, string EmployeeNumber, string Name, string? JobTitle, int? DepartmentId, string? DepartmentName, decimal BaseSalary, decimal TransportationAllowance, decimal CommunicationAllowance, decimal BonusAmount, decimal FixedAllowance, decimal PendingAdvancesAmount, decimal PendingBonusesAmount, decimal PendingDeductionsAmount, int Status, decimal WorkHoursPerDay, decimal OvertimeMultiplier, int DaysPerMonth, AttendanceMode AttendanceMode = AttendanceMode.Fixed, bool IsFlexible = false, bool EnableDelayRules = true, DateTime HireDate = default, DateTime? TerminationDate = null);
 
 // ══════════════════════════════════════════════════════
 // PAYROLL RUN DTOs

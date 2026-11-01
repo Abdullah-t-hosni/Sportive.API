@@ -35,6 +35,50 @@ public class PayrollController : ControllerBase
     private static bool IsStoreGroup(CommissionGroup g)
         => g.Members.Any(m => m.BranchId == 5 || m.CostCenter == OrderSource.Website);
 
+    private static bool IsEmployeeEligibleForPayrollPeriod(Employee e, DateTime startOfPeriod, DateTime endOfPeriod)
+    {
+        if (e.HireDate != default && e.HireDate.Date > endOfPeriod.Date)
+            return false;
+
+        if (e.Status == EmployeeStatus.Active)
+            return true;
+
+        if (e.TerminationDate.HasValue && e.TerminationDate.Value.Date >= startOfPeriod.Date)
+            return true;
+
+        return false;
+    }
+
+    private static List<Order> FilterEmployeeOrdersForServiceWindow(
+        IEnumerable<Order> orders,
+        Employee emp,
+        DateTime periodStart,
+        DateTime periodEndExclusive,
+        bool isStoreComm)
+    {
+        var pStart = periodStart.Date;
+        var pEnd = periodEndExclusive.AddDays(-1).Date;
+        var effStart = emp.HireDate != default && emp.HireDate.Date > pStart ? emp.HireDate.Date : pStart;
+        var effEnd = emp.Status != EmployeeStatus.Active && emp.TerminationDate.HasValue && emp.TerminationDate.Value.Date < pEnd
+            ? emp.TerminationDate.Value.Date
+            : pEnd;
+        var effEndExclusive = effEnd.AddDays(1);
+
+        if (isStoreComm)
+        {
+            return orders.Where(o =>
+                (o.Source == OrderSource.Website || o.BranchId == 5) &&
+                (o.Status == OrderStatus.Delivered || o.Status == OrderStatus.PartiallyReturned) &&
+                ((o.ActualDeliveryDate ?? o.CreatedAt) >= effStart && (o.ActualDeliveryDate ?? o.CreatedAt) < effEndExclusive)
+            ).ToList();
+        }
+
+        return orders.Where(o =>
+            (o.SalesPersonId == emp.AppUserId || o.SalesPersonId == emp.Id.ToString()) &&
+            o.CreatedAt >= effStart && o.CreatedAt < effEndExclusive
+        ).ToList();
+    }
+
     private static decimal CalculateStoreNetSales(IEnumerable<Order> orders)
     {
         return orders
@@ -93,7 +137,9 @@ public class PayrollController : ControllerBase
             .Skip((page - 1) * pageSize).Take(pageSize)
             .Select(p => new PayrollRunSummaryDto(
                 p.Id, p.PayrollNumber, p.PeriodYear, p.PeriodMonth,
-                p.TotalNetPayable, p.Items.Count, (int)p.Status, p.JournalEntryId, p.PaymentJournalEntryId, p.CreatedAt,
+                p.TotalNetPayable, p.Items.Count,
+                p.Status == PayrollStatus.Paid ? 3 : p.Status == PayrollStatus.Posted ? 2 : 1,
+                p.JournalEntryId, p.PaymentJournalEntryId, p.CreatedAt,
                 p.Items.Count(i => i.IsPaid),
                 p.Items.Sum(i => i.PaidAmount),
                 p.PeriodType, p.FromDate, p.ToDate))
@@ -152,13 +198,18 @@ public class PayrollController : ControllerBase
         var quarterLimit = settings?.DelayQuarterDayLimitMinutes ?? 30;
         var halfLimit = settings?.DelayHalfDayLimitMinutes ?? 60;
 
+        var periodStartDate = startOfPeriod.Date;
+        var periodEndDate = endOfPeriod.Date;
+
         var empQuery = _db.Employees
             .Include(e => e.Advances)
             .Include(e => e.Bonuses)
             .Include(e => e.Deductions)
             .Include(e => e.CommissionSetting)
             .ThenInclude(s => s != null ? s.Tiers : null)
-            .Where(e => e.Status == EmployeeStatus.Active);
+            .Where(e => e.HireDate <= endOfPeriod &&
+                        (e.Status == EmployeeStatus.Active ||
+                         (e.TerminationDate != null && e.TerminationDate >= periodStartDate)));
 
         bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
         if (!canViewAll)
@@ -170,7 +221,9 @@ public class PayrollController : ControllerBase
             }
         }
 
-        var activeEmployees = await empQuery.ToListAsync();
+        var activeEmployees = (await empQuery.ToListAsync())
+            .Where(e => IsEmployeeEligibleForPayrollPeriod(e, periodStartDate, periodEndDate))
+            .ToList();
 
         var attendances = await _db.EmployeeAttendances
             .Where(a => a.Date >= startOfPeriod.Date && a.Date <= endOfPeriod.Date)
@@ -330,10 +383,13 @@ public class PayrollController : ControllerBase
                 }
             }
 
-            if (g.Members.Any())
+            var activeMembers = g.Members
+                .Where(m => IsEmployeeEligibleForPayrollPeriod(m, startOfPeriod, endOfPeriod))
+                .ToList();
+            if (activeMembers.Any())
             {
-                var share = earnedGroupCommission / g.Members.Count;
-                foreach (var m in g.Members)
+                var share = earnedGroupCommission / activeMembers.Count;
+                foreach (var m in activeMembers)
                 {
                     employeeGroupCommissions[m.Id] = share;
                 }
@@ -344,7 +400,18 @@ public class PayrollController : ControllerBase
 
         foreach (var emp in activeEmployees)
         {
-            var empAttendances = attendances.Where(a => a.EmployeeId == emp.Id).ToList();
+            var empEffectiveStart = emp.HireDate != default && emp.HireDate.Date > periodStartDate
+                ? emp.HireDate.Date
+                : periodStartDate;
+            var empEffectiveEnd = emp.Status != EmployeeStatus.Active && emp.TerminationDate.HasValue && emp.TerminationDate.Value.Date < periodEndDate
+                ? emp.TerminationDate.Value.Date
+                : periodEndDate;
+            var empEndExclusive = empEffectiveEnd.AddDays(1);
+            bool isPartialServicePeriod = empEffectiveStart > periodStartDate || empEffectiveEnd < periodEndDate;
+
+            var empAttendances = attendances
+                .Where(a => a.EmployeeId == emp.Id && a.Date.Date >= empEffectiveStart && a.Date.Date <= empEffectiveEnd)
+                .ToList();
 
             decimal overtimeHours;
             decimal absenceDays;
@@ -390,7 +457,9 @@ public class PayrollController : ControllerBase
                     if (!isWeekend) 
                     {
                         totalWorkingDaysInMonth++;
-                        if (date < globalToday) passedWorkingDays++; // تجاهل اليوم الحالي
+                        bool inServiceWindow = date >= empEffectiveStart && date <= empEffectiveEnd;
+                        bool isCountableDay = (year == globalToday.Year && month == globalToday.Month) ? date < globalToday : true;
+                        if (inServiceWindow && isCountableDay) passedWorkingDays++;
                     }
                 }
 
@@ -404,7 +473,7 @@ public class PayrollController : ControllerBase
                 else
                 {
                     var effWorkDays = (decimal)workDays;
-                    if (year == globalToday.Year && month == globalToday.Month && totalWorkingDaysInMonth > 0)
+                    if (((year == globalToday.Year && month == globalToday.Month) || isPartialServicePeriod) && totalWorkingDaysInMonth > 0)
                     {
                         var targetRatio = (decimal)passedWorkingDays / totalWorkingDaysInMonth;
                         effWorkDays = workDays * targetRatio;
@@ -455,6 +524,7 @@ public class PayrollController : ControllerBase
                     for (int day = 1; day <= daysInPeriod; day++)
                     {
                         var date = new DateTime(year, month, day);
+                        if (date < empEffectiveStart || date > empEffectiveEnd) continue;
                         if (date >= today) continue; // تجاهل اليوم الحالي (قد لا يكون سجل بعد)
 
                         var dayNameAr = date.ToString("dddd", new System.Globalization.CultureInfo("ar-EG")).ToLower();
@@ -537,6 +607,13 @@ public class PayrollController : ControllerBase
                 var daysPerMonth = emp.DaysPerMonth > 0 ? emp.DaysPerMonth : 26;
                 var workHoursPerDay = emp.WorkHoursPerDay > 0 ? (decimal)emp.WorkHoursPerDay : 9m;
 
+                if (isPartialServicePeriod)
+                {
+                    var totalPeriodDays = Math.Max(1, (periodEndDate - periodStartDate).Days + 1);
+                    var activeServiceDays = Math.Max(0, (empEffectiveEnd - empEffectiveStart).Days + 1);
+                    overrideBasicSalary = Math.Round(baseSalary * activeServiceDays / totalPeriodDays, 2);
+                }
+
                 absenceDeduction = Math.Round(absenceDays * (baseSalary / daysPerMonth), 2);
                 overtimeAmount = Math.Round(overtimeHours * (baseSalary / daysPerMonth / workHoursPerDay) * emp.OvertimeMultiplier, 2);
 
@@ -592,6 +669,20 @@ public class PayrollController : ControllerBase
             var totalDeduction = pendingDeductions + delayDeduction;
 
             var notesList = new List<string>();
+            if (isPartialServicePeriod && emp.AttendanceMode != AttendanceMode.Daily)
+            {
+                var totalPeriodDays = Math.Max(1, (periodEndDate - periodStartDate).Days + 1);
+                var activeServiceDays = Math.Max(0, (empEffectiveEnd - empEffectiveStart).Days + 1);
+                if (empEffectiveEnd < periodEndDate && emp.Status != EmployeeStatus.Active)
+                {
+                    var reasonLabel = emp.Status == EmployeeStatus.Terminated ? "إنهاء الخدمة" : "الإيقاف";
+                    notesList.Add($"احتساب نسبي ({activeServiceDays}/{totalPeriodDays} يوم) حتى تاريخ {reasonLabel} {empEffectiveEnd:yyyy-MM-dd}");
+                }
+                else if (empEffectiveStart > periodStartDate)
+                {
+                    notesList.Add($"احتساب نسبي ({activeServiceDays}/{totalPeriodDays} يوم) من تاريخ التعيين {empEffectiveStart:yyyy-MM-dd}");
+                }
+            }
             if (emp.AttendanceMode == AttendanceMode.Daily)
             {
                 var dailyWage = emp.BaseSalary;
@@ -662,11 +753,13 @@ public class PayrollController : ControllerBase
                 decimal relevantSales = 0;
                 if (isStoreComm)
                 {
+                    empOrders = FilterEmployeeOrdersForServiceWindow(orders, emp, startOfPeriod, endOfPeriodExclusive, true);
                     relevantSales = CalculateStoreNetSales(empOrders);
                     storeNetSales = relevantSales;
                 }
                 else
                 {
+                    empOrders = FilterEmployeeOrdersForServiceWindow(orders, emp, startOfPeriod, endOfPeriodExclusive, false);
                     var returnsAmount = empOrders.Sum(o => o.Status == OrderStatus.Returned ? o.TotalAmount : o.Items.Sum(i => i.Quantity > 0 ? (i.TotalPrice / i.Quantity) * i.ReturnedQuantity : 0));
                     relevantSales = basis == CommissionBasis.NetSales 
                         ? empOrders.Sum(o => o.TotalAmount) - returnsAmount
@@ -986,10 +1079,13 @@ public class PayrollController : ControllerBase
                     }
                 }
 
-                if (g.Members.Any())
+                var activeMembers = g.Members
+                    .Where(m => IsEmployeeEligibleForPayrollPeriod(m, startOfPeriod, endOfPeriodExclusive.AddDays(-1)))
+                    .ToList();
+                if (activeMembers.Any())
                 {
-                    var share = earnedGroupCommission / g.Members.Count;
-                    foreach (var m in g.Members)
+                    var share = earnedGroupCommission / activeMembers.Count;
+                    foreach (var m in activeMembers)
                     {
                         employeeGroupCommissions[m.Id] = share;
                     }
@@ -1052,6 +1148,7 @@ public class PayrollController : ControllerBase
                             : emp.CommissionSetting.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList();
 
                         bool isStoreComm = isStoreEmployee || basis == CommissionBasis.OnlineStoreDeliveredNetSales;
+
                         if (isStoreComm)
                         {
                             empOrders = orders.Where(o => 
@@ -1061,14 +1158,17 @@ public class PayrollController : ControllerBase
                             ).ToList();
                         }
 
+                        empOrders = FilterEmployeeOrdersForServiceWindow(orders, emp, startOfPeriod, endOfPeriodExclusive, isStoreComm);
                         decimal relevantSales = 0;
                         if (isStoreComm)
                         {
-                            relevantSales = CalculateStoreNetSales(empOrders);
+                            empOrders = FilterEmployeeOrdersForServiceWindow(orders, emp, startOfPeriod, endOfPeriodExclusive, true);
+                    relevantSales = CalculateStoreNetSales(empOrders);
                         }
                         else
                         {
-                            var returnsAmount = empOrders.Sum(o => o.Status == OrderStatus.Returned ? o.TotalAmount : o.Items.Sum(i => i.Quantity > 0 ? (i.TotalPrice / i.Quantity) * i.ReturnedQuantity : 0));
+                            empOrders = FilterEmployeeOrdersForServiceWindow(orders, emp, startOfPeriod, endOfPeriodExclusive, false);
+                    var returnsAmount = empOrders.Sum(o => o.Status == OrderStatus.Returned ? o.TotalAmount : o.Items.Sum(i => i.Quantity > 0 ? (i.TotalPrice / i.Quantity) * i.ReturnedQuantity : 0));
                             relevantSales = basis == CommissionBasis.NetSales 
                                 ? empOrders.Sum(o => o.TotalAmount) - returnsAmount
                                 : empOrders.Sum(o => o.SubTotal) - returnsAmount;
@@ -1399,10 +1499,13 @@ public class PayrollController : ControllerBase
                     }
                 }
 
-                if (g.Members.Any())
+                var activeMembers = g.Members
+                    .Where(m => IsEmployeeEligibleForPayrollPeriod(m, startOfPeriod, endOfPeriodExclusive.AddDays(-1)))
+                    .ToList();
+                if (activeMembers.Any())
                 {
-                    var share = earnedGroupCommission / g.Members.Count;
-                    foreach (var m in g.Members)
+                    var share = earnedGroupCommission / activeMembers.Count;
+                    foreach (var m in activeMembers)
                     {
                         employeeGroupCommissions[m.Id] = share;
                     }
@@ -1465,6 +1568,7 @@ public class PayrollController : ControllerBase
                             : emp.CommissionSetting.Tiers.Select(t => new { t.MinAmount, t.MaxAmount, t.Rate }).ToList();
 
                         bool isStoreComm = isStoreEmployee || basis == CommissionBasis.OnlineStoreDeliveredNetSales;
+
                         if (isStoreComm)
                         {
                             empOrders = orders.Where(o => 
@@ -1474,14 +1578,17 @@ public class PayrollController : ControllerBase
                             ).ToList();
                         }
 
+                        empOrders = FilterEmployeeOrdersForServiceWindow(orders, emp, startOfPeriod, endOfPeriodExclusive, isStoreComm);
                         decimal relevantSales = 0;
                         if (isStoreComm)
                         {
-                            relevantSales = CalculateStoreNetSales(empOrders);
+                            empOrders = FilterEmployeeOrdersForServiceWindow(orders, emp, startOfPeriod, endOfPeriodExclusive, true);
+                    relevantSales = CalculateStoreNetSales(empOrders);
                         }
                         else
                         {
-                            var returnsAmount = empOrders.Sum(o => o.Status == OrderStatus.Returned ? o.TotalAmount : o.Items.Sum(i => i.Quantity > 0 ? (i.TotalPrice / i.Quantity) * i.ReturnedQuantity : 0));
+                            empOrders = FilterEmployeeOrdersForServiceWindow(orders, emp, startOfPeriod, endOfPeriodExclusive, false);
+                    var returnsAmount = empOrders.Sum(o => o.Status == OrderStatus.Returned ? o.TotalAmount : o.Items.Sum(i => i.Quantity > 0 ? (i.TotalPrice / i.Quantity) * i.ReturnedQuantity : 0));
                             relevantSales = basis == CommissionBasis.NetSales 
                                 ? empOrders.Sum(o => o.TotalAmount) - returnsAmount
                                 : empOrders.Sum(o => o.SubTotal) - returnsAmount;

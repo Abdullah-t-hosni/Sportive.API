@@ -345,6 +345,7 @@ public class StaffController : ControllerBase
             if (linkedEmployee != null)
             {
                 linkedEmployee.Status = EmployeeStatus.Inactive;
+                linkedEmployee.TerminationDate ??= TimeHelper.GetEgyptTime().Date;
                 linkedEmployee.UpdatedAt = TimeHelper.GetEgyptTime();
             }
 

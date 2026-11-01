@@ -57,10 +57,7 @@ public class EmployeesController : ControllerBase
 
         if (status.HasValue)
         {
-            if (status.Value == EmployeeStatus.Active)
-                q = q.Where(e => e.Status == EmployeeStatus.Active || (int)e.Status == 0);
-            else
-                q = q.Where(e => e.Status == status.Value);
+            q = q.Where(e => e.Status == status.Value);
         }
         if (departmentId.HasValue)       q = q.Where(e => e.DepartmentId == departmentId.Value);
         if (!string.IsNullOrWhiteSpace(search))
@@ -75,7 +72,7 @@ public class EmployeesController : ControllerBase
                 e.JobTitle, e.DepartmentId, e.Department != null ? e.Department.Name : null,
                 e.HireDate, e.TerminationDate,
                 e.BaseSalary, e.TransportationAllowance, e.CommunicationAllowance, e.BonusAmount, e.FixedAllowance,
-                e.BankAccount, (int)e.Status, e.Notes,
+                e.BankAccount, e.Status == EmployeeStatus.Terminated ? 3 : e.Status == EmployeeStatus.Inactive ? 2 : 1, e.Notes,
                 e.AttachmentUrl, e.AttachmentPublicId,
                 e.CreatedAt,
                 e.AppUserId, e.AppUser != null ? e.AppUser.FullName : null,
@@ -132,9 +129,10 @@ public class EmployeesController : ControllerBase
                 e.Advances.Where(a => a.Status != AdvanceStatus.FullyDeducted && (!endOfPeriod.HasValue || a.AdvanceDate <= endOfPeriod.Value)).Sum(a => a.Amount - a.DeductedAmount),
                 e.Bonuses.Where(b => b.PayrollRunId == null && b.CashAccountId == null && (!endOfPeriod.HasValue || b.BonusDate <= endOfPeriod.Value)).Sum(b => b.Amount),
                 e.Deductions.Where(d => d.PayrollRunId == null && d.CashAccountId == null && (!endOfPeriod.HasValue || d.DeductionDate <= endOfPeriod.Value)).Sum(d => d.Amount),
-                (int)e.Status,
+                e.Status == EmployeeStatus.Terminated ? 3 : e.Status == EmployeeStatus.Inactive ? 2 : 1,
                 e.WorkHoursPerDay, e.OvertimeMultiplier, e.DaysPerMonth,
-                e.AttendanceMode, e.IsFlexible, e.EnableDelayRules))
+                e.AttendanceMode, e.IsFlexible, e.EnableDelayRules,
+                e.HireDate, e.TerminationDate))
             .ToListAsync());
     }
 
@@ -303,6 +301,11 @@ public class EmployeesController : ControllerBase
         var emp = await _db.Employees.FindAsync(id);
         if (emp == null) return NotFound();
 
+        if (dto.Status != EmployeeStatus.Active && !dto.TerminationDate.HasValue)
+        {
+            return BadRequest(new { message = "يرجى تحديد تاريخ الإيقاف أو إنهاء الخدمة لتحديد استحقاق الموظف في مسير الرواتب." });
+        }
+
         emp.Name              = dto.Name.Trim();
         emp.Phone             = dto.Phone?.Trim();
         emp.Email             = dto.Email?.Trim().ToLower();
@@ -310,7 +313,7 @@ public class EmployeesController : ControllerBase
         emp.JobTitle          = dto.JobTitle?.Trim();
         emp.DepartmentId      = dto.DepartmentId;
         emp.HireDate          = dto.HireDate;
-        emp.TerminationDate   = dto.TerminationDate;
+        emp.TerminationDate   = dto.Status == EmployeeStatus.Active ? null : dto.TerminationDate?.Date;
         emp.BaseSalary        = dto.BaseSalary;
         emp.TransportationAllowance = dto.TransportationAllowance;
         emp.CommunicationAllowance  = dto.CommunicationAllowance;
