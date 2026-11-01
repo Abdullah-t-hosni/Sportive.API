@@ -31,7 +31,8 @@ public class ProfitabilityController : ControllerBase
         [FromQuery] string?   size       = null,
         [FromQuery] int?      productId  = null,
         [FromQuery] string?   sortBy     = "revenue",
-        [FromQuery] bool      hasCost    = false,
+        [FromQuery] bool      hasCost     = false,
+        [FromQuery] bool      missingCost = false,
         [FromQuery] bool      excel      = false,
         [FromQuery] int?      branchId   = null)
     {
@@ -127,7 +128,9 @@ public class ProfitabilityController : ControllerBase
             itemsQ = itemsQ.Where(i => i.ProductId == productId.Value);
             
         if (hasCost)
-            itemsQ = itemsQ.Where(i => i.Product != null && i.Product.CostPrice.HasValue);
+            itemsQ = itemsQ.Where(i => i.Product != null && i.Product.CostPrice.HasValue && i.Product.CostPrice > 0);
+        if (missingCost)
+            itemsQ = itemsQ.Where(i => i.Product == null || !i.Product.CostPrice.HasValue || i.Product.CostPrice <= 0);
 
         var items = await itemsQ.ToListAsync();
 
@@ -218,20 +221,34 @@ public class ProfitabilityController : ControllerBase
         }
 
         // 3. Precompute Order-Level Accounting Financials for exact item attribution
-        var orderItemsGrouped = items.GroupBy(i => i.OrderId).ToDictionary(g => g.Key, g => g.ToList());
+        var allOrderItemsForOrders = await _db.OrderItems.AsNoTracking()
+            .Where(x => orderIds.Contains(x.OrderId))
+            .Select(x => new {
+                x.OrderId,
+                OrderNumber = x.Order.OrderNumber,
+                x.Order.DiscountAmount,
+                x.Order.LoyaltyDiscountAmount,
+                x.Quantity,
+                x.OriginalUnitPrice,
+                x.UnitPrice,
+                x.TotalPrice,
+                CostPrice = x.Product != null ? (x.Product.CostPrice ?? 0m) : 0m
+            })
+            .ToListAsync();
+        var orderItemsGrouped = allOrderItemsForOrders.GroupBy(i => i.OrderId).ToDictionary(g => g.Key, g => g.ToList());
         var orderSummaryMap = new Dictionary<int, (decimal OrderGross, decimal OrderBaseCost, decimal PostedSales, decimal PostedDisc, decimal PostedCogs)>();
 
         foreach (var (oId, oItems) in orderItemsGrouped)
         {
             var first = oItems[0];
-            string refNum = first.Order.OrderNumber;
+            string refNum = first.OrderNumber;
 
             decimal orderGross = oItems.Sum(x => x.Quantity * (x.OriginalUnitPrice > 0 ? x.OriginalUnitPrice : x.UnitPrice));
             decimal orderActual = oItems.Sum(x => x.TotalPrice);
-            decimal orderBaseCost = oItems.Sum(x => x.Quantity * (x.Product?.CostPrice ?? 0m));
+            decimal orderBaseCost = oItems.Sum(x => x.Quantity * x.CostPrice);
 
             decimal lineDiff = Math.Max(0, orderGross - orderActual);
-            decimal unallocDisc = Math.Max(0, (first.Order.DiscountAmount + first.Order.LoyaltyDiscountAmount) - lineDiff);
+            decimal unallocDisc = Math.Max(0, (first.DiscountAmount + first.LoyaltyDiscountAmount) - lineDiff);
             decimal calcDisc = lineDiff + unallocDisc;
 
             decimal postedSales = salesMapByOrderId.TryGetValue(oId, out var sVal) || (!string.IsNullOrEmpty(refNum) && salesMapByRef.TryGetValue(refNum, out sVal)) ? sVal : orderGross;
@@ -276,10 +293,10 @@ public class ProfitabilityController : ControllerBase
                     decimal itemDisc = os.OrderGross > 0 ? (itemGross / os.OrderGross) * os.PostedDisc : 0;
                     totalDiscounts += itemDisc;
 
-                    decimal itemBaseCost = i.Quantity * (i.Product?.CostPrice ?? 0m);
-                    decimal itemCogs = (os.OrderBaseCost > 0 && os.PostedCogs > 0)
-                        ? (itemBaseCost / os.OrderBaseCost) * os.PostedCogs
-                        : itemBaseCost;
+                    decimal itemCogs = i.Quantity * (i.Product?.CostPrice ?? 0m);
+
+
+
 
                     int netUnitsLine = Math.Max(0, i.Quantity - i.ReturnedQuantity);
                     decimal qtyFactor = i.Quantity > 0 ? (decimal)netUnitsLine / i.Quantity : 0;
@@ -332,7 +349,7 @@ public class ProfitabilityController : ControllerBase
         };
 
         // --- Summary --------------------------------------------------------
-        bool isFiltered = categoryId.HasValue || brandId.HasValue || !string.IsNullOrEmpty(color) || !string.IsNullOrEmpty(size) || productId.HasValue || hasCost;
+        bool isFiltered = categoryId.HasValue || brandId.HasValue || !string.IsNullOrEmpty(color) || !string.IsNullOrEmpty(size) || productId.HasValue || hasCost || missingCost;
         var withCost = grouped.Where(r => (r.TotalCost ?? 0) > 0 || r.CostPrice.HasValue).ToList();
         var summary = new
         {
