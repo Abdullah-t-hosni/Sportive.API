@@ -178,6 +178,190 @@ public class OrdersController : ControllerBase
         return Ok(dtos);
     }
 
+    private static bool _returnedBarcodeTableEnsured = false;
+
+    private async Task EnsureReturnedBarcodeTableAsync()
+    {
+        if (_returnedBarcodeTableEnsured) return;
+        try
+        {
+            await _db.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS ReturnedBarcodePrints (
+                    OrderItemId INT NOT NULL PRIMARY KEY,
+                    OrderId INT NOT NULL,
+                    PrintedAt DATETIME NOT NULL
+                );");
+            _returnedBarcodeTableEnsured = true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not ensure ReturnedBarcodePrints table.");
+        }
+    }
+
+    [HttpGet("returned-barcode-items")]
+    [RequirePermission(ModuleKeys.Orders + "," + ModuleKeys.OrdersMain + "," + ModuleKeys.OnlineStore + "," + ModuleKeys.OnlineOrders + "," + ModuleKeys.Barcode)]
+    [AllowPosAccess]
+    public async Task<IActionResult> GetReturnedBarcodeItems()
+    {
+        await EnsureReturnedBarcodeTableAsync();
+
+        var printedIds = new HashSet<int>();
+        try
+        {
+            var rawIds = await _db.Database
+                .SqlQueryRaw<int>("SELECT OrderItemId AS Value FROM ReturnedBarcodePrints")
+                .ToListAsync();
+            printedIds = rawIds.ToHashSet();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to read ReturnedBarcodePrints");
+        }
+
+        var orders = await _db.Orders
+            .AsSplitQuery()
+            .AsNoTracking()
+            .Include(o => o.Customer)
+            .Include(o => o.Items)
+                .ThenInclude(i => i.Product)
+                    .ThenInclude(p => p!.Images)
+            .Include(o => o.Items)
+                .ThenInclude(i => i.ProductVariant)
+            .Where(o => o.Source == OrderSource.Website &&
+                        !o.OrderNumber.StartsWith("POS") &&
+                        !o.OrderNumber.EndsWith("-RTN") &&
+                        (o.Status == OrderStatus.Returned || o.Status == OrderStatus.PartiallyReturned))
+            .OrderByDescending(o => o.UpdatedAt ?? o.CreatedAt)
+            .ToListAsync();
+
+        var result = new List<object>();
+
+        foreach (var o in orders)
+        {
+            if (o.Items == null || o.Items.Count == 0) continue;
+
+            bool hasExplicitPartialQty = o.Items.Any(x => x.ReturnedQuantity > 0);
+
+            foreach (var i in o.Items)
+            {
+                if (printedIds.Contains(i.Id)) continue;
+
+                int retQty = 0;
+                if (o.Status == OrderStatus.PartiallyReturned)
+                {
+                    if (hasExplicitPartialQty)
+                    {
+                        if (i.ReturnedQuantity <= 0) continue;
+                        retQty = i.ReturnedQuantity;
+                    }
+                    else
+                    {
+                        retQty = i.Quantity;
+                    }
+                }
+                else
+                {
+                    retQty = i.ReturnedQuantity > 0 ? i.ReturnedQuantity : i.Quantity;
+                }
+
+                if (retQty <= 0) continue;
+
+                var product = i.Product;
+                var variant = i.ProductVariant;
+                var sku = !string.IsNullOrWhiteSpace(product?.SKU) ? product!.SKU : (i.SKU ?? "");
+
+                decimal origBase = product != null ? product.Price : i.UnitPrice;
+                decimal itemBase = product != null
+                    ? ((product.DiscountPrice.HasValue && product.DiscountPrice.Value > 0) ? product.DiscountPrice.Value : product.Price)
+                    : i.UnitPrice;
+
+                decimal origOnline = product != null
+                    ? ((product.OnlinePrice.HasValue && product.OnlinePrice.Value > 0) ? product.OnlinePrice.Value : product.Price)
+                    : i.UnitPrice;
+                decimal itemOnline = product != null
+                    ? ((product.OnlineDiscountPrice.HasValue && product.OnlineDiscountPrice.Value > 0) ? product.OnlineDiscountPrice.Value : origOnline)
+                    : i.UnitPrice;
+
+                decimal adj = variant?.PriceAdjustment ?? 0m;
+                decimal onlineAdj = variant?.OnlinePriceAdjustment ?? adj;
+
+                var size = !string.IsNullOrWhiteSpace(i.Size) ? i.Size : variant?.Size;
+                var color = !string.IsNullOrWhiteSpace(i.Color) ? i.Color : (variant?.ColorAr ?? variant?.Color);
+
+                var productNameAr = !string.IsNullOrWhiteSpace(product?.NameAr)
+                    ? product!.NameAr
+                    : (!string.IsNullOrWhiteSpace(i.ProductNameAr) ? i.ProductNameAr : (i.ProductNameEn ?? "منتج"));
+                var productNameEn = !string.IsNullOrWhiteSpace(product?.NameEn)
+                    ? product!.NameEn
+                    : (!string.IsNullOrWhiteSpace(i.ProductNameEn) ? i.ProductNameEn : productNameAr);
+
+                var imageUrl = variant?.ImageUrl
+                    ?? product?.Images?.FirstOrDefault(img => img.IsMain)?.ImageUrl
+                    ?? product?.Images?.FirstOrDefault()?.ImageUrl;
+
+                result.Add(new
+                {
+                    orderItemId = i.Id,
+                    orderId = o.Id,
+                    orderNumber = o.OrderNumber,
+                    orderStatus = o.Status.ToString(),
+                    customerName = o.Customer != null ? o.Customer.FullName : "عميل موقع",
+                    customerPhone = o.Customer != null ? (o.Customer.Phone ?? "") : "",
+                    createdAt = o.CreatedAt,
+                    returnedAt = o.UpdatedAt ?? o.CreatedAt,
+                    productId = i.ProductId,
+                    productVariantId = i.ProductVariantId,
+                    productNameAr,
+                    productNameEn,
+                    sku,
+                    code = sku,
+                    size,
+                    color,
+                    returnedQuantity = retQty,
+                    orderQuantity = i.Quantity,
+                    unitPrice = i.UnitPrice,
+                    price = itemBase + adj,
+                    originalPrice = origBase + adj,
+                    onlinePrice = itemOnline + onlineAdj,
+                    originalOnlinePrice = origOnline + onlineAdj,
+                    imageUrl
+                });
+            }
+        }
+
+        return Ok(result);
+    }
+
+    [HttpPost("returned-barcode-items/mark-printed")]
+    [RequirePermission(ModuleKeys.Orders + "," + ModuleKeys.OrdersMain + "," + ModuleKeys.OnlineStore + "," + ModuleKeys.OnlineOrders + "," + ModuleKeys.Barcode)]
+    [AllowPosAccess]
+    public async Task<IActionResult> MarkReturnedBarcodeItemsPrinted([FromBody] MarkReturnedBarcodeItemsPrintedDto dto)
+    {
+        if (dto?.OrderItemIds == null || dto.OrderItemIds.Count == 0)
+            return Ok(new { success = true, count = 0 });
+
+        await EnsureReturnedBarcodeTableAsync();
+
+        var now = TimeHelper.GetEgyptTime();
+        int count = 0;
+        foreach (var itemId in dto.OrderItemIds.Where(id => id > 0).Distinct())
+        {
+            try
+            {
+                await _db.Database.ExecuteSqlInterpolatedAsync(
+                    $"INSERT IGNORE INTO ReturnedBarcodePrints (OrderItemId, OrderId, PrintedAt) VALUES ({itemId}, 0, {now})");
+                count++;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to mark OrderItemId {ItemId} as printed", itemId);
+            }
+        }
+
+        return Ok(new { success = true, count });
+    }
+
     [HttpGet("{id:int}")]
     public async Task<ActionResult<OrderDetailDto>> GetOrder(int id)
     {
@@ -2113,6 +2297,8 @@ public class OrdersController : ControllerBase
 }
 
 public record ArchiveBatchDto(int[] Ids, bool? Archive = true);
+
+public record MarkReturnedBarcodeItemsPrintedDto(List<int> OrderItemIds);
 
 public class RedistributePaymentsDto
 {
