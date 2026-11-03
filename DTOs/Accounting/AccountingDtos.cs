@@ -70,6 +70,44 @@ public record UpdateAccountDto(
     AccountNature? Nature = null
 );
 
+public record CheckBalanceRequestDto(
+    int? AccountId = null,
+    string? AccountCode = null,
+    decimal Amount = 0,
+    List<CheckBalanceLineDto>? Lines = null
+);
+
+public record CheckBalanceLineDto(
+    int? AccountId = null,
+    string? AccountCode = null,
+    decimal Amount = 0,
+    bool IsCredit = true
+);
+
+public record AccountBalanceResultDto(
+    int AccountId,
+    string AccountCode,
+    string AccountNameAr,
+    string? AccountNameEn,
+    string Type,
+    string Nature,
+    decimal OpeningBalance,
+    decimal TotalDebit,
+    decimal TotalCredit,
+    decimal CurrentBalance,
+    bool IsSufficient,
+    decimal RequiredAmount,
+    decimal ShortageAmount,
+    decimal ProjectedBalance
+);
+
+public record CheckBalanceResponseDto(
+    bool IsSufficient,
+    decimal TotalShortage,
+    List<AccountBalanceResultDto> Accounts,
+    string? WarningMessage = null
+);
+
 // ══════════════════════════════════════════════════════
 // JOURNAL ENTRIES
 // ══════════════════════════════════════════════════════

@@ -60,6 +60,206 @@ public class AccountsController : ControllerBase
         return Ok(accounts);
     }
 
+    [HttpGet("balances")]
+    public async Task<IActionResult> GetBalances(
+        [FromQuery] bool onlyPostable = true,
+        [FromQuery] bool? canReceivePayment = null)
+    {
+        var q = _db.Accounts.AsNoTracking().Where(a => a.IsActive);
+        if (onlyPostable) q = q.Where(a => a.AllowPosting);
+        if (canReceivePayment.HasValue) q = q.Where(a => a.CanReceivePayment == canReceivePayment.Value);
+
+        var accounts = await q.ToListAsync();
+        var accountIds = accounts.Select(a => a.Id).ToList();
+
+        var journalSums = await _db.JournalLines
+            .AsNoTracking()
+            .Where(l => accountIds.Contains(l.AccountId))
+            .GroupBy(l => l.AccountId)
+            .Select(g => new {
+                AccountId = g.Key,
+                TotalDebit = g.Sum(l => (decimal?)l.Debit) ?? 0,
+                TotalCredit = g.Sum(l => (decimal?)l.Credit) ?? 0
+            })
+            .ToDictionaryAsync(x => x.AccountId, x => x);
+
+        var results = accounts.Select(a => {
+            var sum = journalSums.TryGetValue(a.Id, out var s) ? s : null;
+            var totalDebit = sum?.TotalDebit ?? 0;
+            var totalCredit = sum?.TotalCredit ?? 0;
+            
+            decimal currentBal;
+            if (a.Nature == AccountNature.Debit)
+                currentBal = a.OpeningBalance + totalDebit - totalCredit;
+            else
+                currentBal = a.OpeningBalance + totalCredit - totalDebit;
+
+            return new {
+                AccountId = a.Id,
+                AccountCode = a.Code,
+                AccountNameAr = a.NameAr,
+                AccountNameEn = a.NameEn,
+                Type = a.Type.ToString(),
+                Nature = a.Nature.ToString(),
+                CanReceivePayment = a.CanReceivePayment,
+                OpeningBalance = a.OpeningBalance,
+                TotalDebit = totalDebit,
+                TotalCredit = totalCredit,
+                CurrentBalance = currentBal,
+                IsNegative = currentBal < 0
+            };
+        }).OrderBy(x => x.AccountCode).ToList();
+
+        return Ok(results);
+    }
+
+    [HttpGet("{id}/balance")]
+    public async Task<IActionResult> GetAccountBalance(int id)
+    {
+        var account = await _db.Accounts.AsNoTracking().FirstOrDefaultAsync(a => a.Id == id);
+        if (account == null) return NotFound();
+
+        var totals = await _db.JournalLines
+            .AsNoTracking()
+            .Where(l => l.AccountId == id)
+            .GroupBy(l => l.AccountId)
+            .Select(g => new {
+                TotalDebit = g.Sum(l => (decimal?)l.Debit) ?? 0,
+                TotalCredit = g.Sum(l => (decimal?)l.Credit) ?? 0
+            })
+            .FirstOrDefaultAsync();
+
+        var totalDebit = totals?.TotalDebit ?? 0;
+        var totalCredit = totals?.TotalCredit ?? 0;
+
+        decimal currentBal;
+        if (account.Nature == AccountNature.Debit)
+            currentBal = account.OpeningBalance + totalDebit - totalCredit;
+        else
+            currentBal = account.OpeningBalance + totalCredit - totalDebit;
+
+        return Ok(new {
+            AccountId = account.Id,
+            AccountCode = account.Code,
+            AccountNameAr = account.NameAr,
+            AccountNameEn = account.NameEn,
+            Type = account.Type.ToString(),
+            Nature = account.Nature.ToString(),
+            CanReceivePayment = account.CanReceivePayment,
+            OpeningBalance = account.OpeningBalance,
+            TotalDebit = totalDebit,
+            TotalCredit = totalCredit,
+            CurrentBalance = currentBal,
+            IsNegative = currentBal < 0
+        });
+    }
+
+    [HttpPost("check-balance")]
+    public async Task<IActionResult> CheckBalance([FromBody] CheckBalanceRequestDto request)
+    {
+        var linesToCheck = new List<CheckBalanceLineDto>();
+        if (request.Lines != null && request.Lines.Any())
+        {
+            linesToCheck.AddRange(request.Lines);
+        }
+        else if (request.AccountId.HasValue || !string.IsNullOrEmpty(request.AccountCode))
+        {
+            linesToCheck.Add(new CheckBalanceLineDto(request.AccountId, request.AccountCode, request.Amount, true));
+        }
+
+        if (!linesToCheck.Any())
+            return Ok(new CheckBalanceResponseDto(true, 0, new List<AccountBalanceResultDto>(), null));
+
+        var accountIds = linesToCheck.Where(l => l.AccountId.HasValue).Select(l => l.AccountId!.Value).Distinct().ToList();
+        var accountCodes = linesToCheck.Where(l => !string.IsNullOrEmpty(l.AccountCode)).Select(l => l.AccountCode!.Trim()).Distinct().ToList();
+
+        var accounts = await _db.Accounts.AsNoTracking()
+            .Where(a => accountIds.Contains(a.Id) || accountCodes.Contains(a.Code))
+            .ToListAsync();
+
+        var allFoundIds = accounts.Select(a => a.Id).ToList();
+
+        var journalSums = await _db.JournalLines
+            .AsNoTracking()
+            .Where(l => allFoundIds.Contains(l.AccountId))
+            .GroupBy(l => l.AccountId)
+            .Select(g => new {
+                AccountId = g.Key,
+                TotalDebit = g.Sum(l => (decimal?)l.Debit) ?? 0,
+                TotalCredit = g.Sum(l => (decimal?)l.Credit) ?? 0
+            })
+            .ToDictionaryAsync(x => x.AccountId, x => x);
+
+        var accountResults = new List<AccountBalanceResultDto>();
+        decimal totalShortage = 0;
+        bool allSufficient = true;
+
+        foreach (var reqLine in linesToCheck)
+        {
+            var acc = accounts.FirstOrDefault(a => 
+                (reqLine.AccountId.HasValue && a.Id == reqLine.AccountId.Value) ||
+                (!string.IsNullOrEmpty(reqLine.AccountCode) && a.Code == reqLine.AccountCode.Trim())
+            );
+
+            if (acc == null) continue;
+
+            var sum = journalSums.TryGetValue(acc.Id, out var s) ? s : null;
+            var totalDebit = sum?.TotalDebit ?? 0;
+            var totalCredit = sum?.TotalCredit ?? 0;
+
+            decimal currentBal;
+            if (acc.Nature == AccountNature.Debit)
+                currentBal = acc.OpeningBalance + totalDebit - totalCredit;
+            else
+                currentBal = acc.OpeningBalance + totalCredit - totalDebit;
+
+            var requiredAmt = reqLine.Amount;
+            var projectedBal = currentBal - requiredAmt;
+            bool isSufficient = currentBal >= requiredAmt;
+            decimal shortage = isSufficient ? 0 : (requiredAmt - currentBal);
+
+            if (!isSufficient)
+            {
+                allSufficient = false;
+                totalShortage += shortage;
+            }
+
+            accountResults.Add(new AccountBalanceResultDto(
+                acc.Id,
+                acc.Code,
+                acc.NameAr,
+                acc.NameEn,
+                acc.Type.ToString(),
+                acc.Nature.ToString(),
+                acc.OpeningBalance,
+                totalDebit,
+                totalCredit,
+                currentBal,
+                isSufficient,
+                requiredAmt,
+                shortage,
+                projectedBal
+            ));
+        }
+
+        string? warningMsg = null;
+        if (!allSufficient)
+        {
+            var insufficientAccs = accountResults.Where(a => !a.IsSufficient).ToList();
+            if (insufficientAccs.Count == 1)
+            {
+                var single = insufficientAccs.First();
+                warningMsg = $"?????? ?????? ?? ({single.AccountNameAr}) ?? {single.CurrentBalance:N2} ?.?? ??????? ??????? ?? {single.RequiredAmount:N2} ?.? (??? {single.ShortageAmount:N2} ?.?).";
+            }
+            else
+            {
+                warningMsg = $"???? {insufficientAccs.Count} ?????? ??? ??? ???? ?? ??????? ????????.";
+            }
+        }
+
+        return Ok(new CheckBalanceResponseDto(allSufficient, totalShortage, accountResults, warningMsg));
+    }
+
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
