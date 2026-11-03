@@ -57,12 +57,15 @@ public class ShippingSettlementsController : ControllerBase
 
         var company = await _db.ShippingCompanies.FindAsync(companyId);
         bool isAsCompany = company != null && (company.NameAr.Contains("AS") || company.NameAr.Contains("A&S") || (company.NameEn != null && (company.NameEn.Contains("AS") || company.NameEn.Contains("A&S"))));
+        bool isBostaCompany = company != null && (company.NameAr.Contains("بوسطة") || (company.NameEn != null && company.NameEn.Contains("Bosta")));
         
         var q = _db.Orders
             .Include(o => o.Customer)
             .Where(o => o.FulfillmentType != FulfillmentType.Pickup &&
                         o.ShippingType != "Pickup" &&
-                        (o.ShippingCompanyId == companyId || (isAsCompany && o.ShippingCompanyId == null && o.ShippingType != "Bosta" && o.BostaDeliveryId == null && o.BostaTrackingNumber == null && (o.ShippingCarrierName == null || (!o.ShippingCarrierName.Contains("الجوهري") && !o.ShippingCarrierName.Contains("بوسطة") && !o.ShippingCarrierName.Contains("Bosta") && !o.ShippingCarrierName.Contains("استلام") && !o.ShippingCarrierName.Contains("فرع"))))) && 
+                        (o.ShippingCompanyId == companyId || 
+                         (isBostaCompany && (o.ShippingCompanyId == null || o.ShippingCompanyId == companyId) && (o.ShippingType == "Bosta" || o.BostaTrackingNumber != null || o.BostaDeliveryId != null || (o.ShippingCarrierName != null && (o.ShippingCarrierName.Contains("بوسطة") || o.ShippingCarrierName.Contains("Bosta"))))) ||
+                         (isAsCompany && o.ShippingCompanyId == null && o.ShippingType != "Bosta" && o.BostaDeliveryId == null && o.BostaTrackingNumber == null && (o.ShippingCarrierName == null || (!o.ShippingCarrierName.Contains("الجوهري") && !o.ShippingCarrierName.Contains("بوسطة") && !o.ShippingCarrierName.Contains("Bosta") && !o.ShippingCarrierName.Contains("استلام") && !o.ShippingCarrierName.Contains("فرع"))))) && 
                         (validStatuses.Contains(o.Status) || (int)o.Status == 11) &&
                         o.Source != OrderSource.POS);
 
@@ -108,6 +111,157 @@ public class ShippingSettlementsController : ControllerBase
         return Ok(orders);
     }
 
+    [HttpPost("prepare-excel-reconciliation")]
+    public async Task<IActionResult> PrepareExcelReconciliation([FromBody] PrepareExcelReconciliationDto dto)
+    {
+        if (dto == null || dto.Rows == null || !dto.Rows.Any())
+            return Ok(new List<object>());
+
+        var company = await _db.ShippingCompanies.FindAsync(dto.ShippingCompanyId);
+        if (company == null)
+            return BadRequest("شركة الشحن غير موجودة.");
+
+        bool isBosta = company.NameAr.Contains("بوسطة") || (company.NameEn != null && company.NameEn.Contains("Bosta"));
+        bool isAs = company.NameAr.Contains("AS") || company.NameAr.Contains("A&S") || (company.NameEn != null && (company.NameEn.Contains("AS") || company.NameEn.Contains("A&S")));
+
+        var validRows = dto.Rows
+            .Where(r => !string.IsNullOrWhiteSpace(r.OrderRef) || !string.IsNullOrWhiteSpace(r.TrackingNumber))
+            .ToList();
+
+        var refList = validRows
+            .Where(r => !string.IsNullOrWhiteSpace(r.OrderRef))
+            .Select(r => r.OrderRef!.Trim().TrimStart('#'))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var trackList = validRows
+            .Where(r => !string.IsNullOrWhiteSpace(r.TrackingNumber))
+            .Select(r => r.TrackingNumber!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // 1. Query candidate orders from DB matching tracking numbers or exact order numbers
+        var candidateOrders = await _db.Orders
+            .Include(o => o.Customer)
+            .Where(o => o.Source != OrderSource.POS &&
+                        o.FulfillmentType != FulfillmentType.Pickup &&
+                        o.ShippingType != "Pickup")
+            .Where(o => (trackList.Contains(o.ShippingTrackingNumber) || trackList.Contains(o.BostaTrackingNumber) ||
+                         refList.Contains(o.OrderNumber)))
+            .ToListAsync();
+
+        // 2. Fallback: check recent / unsettled orders for suffix or contains matches
+        var existingIds = candidateOrders.Select(c => c.Id).ToHashSet();
+        var recentOrders = await _db.Orders
+            .Include(o => o.Customer)
+            .Where(o => !existingIds.Contains(o.Id) && o.Source != OrderSource.POS && o.FulfillmentType != FulfillmentType.Pickup && o.ShippingType != "Pickup")
+            .OrderByDescending(o => o.Id)
+            .Take(1000)
+            .ToListAsync();
+
+        foreach (var extra in recentOrders)
+        {
+            bool matched = false;
+            foreach (var row in validRows)
+            {
+                string refNo = row.OrderRef?.Trim().TrimStart('#') ?? "";
+                string trk = row.TrackingNumber?.Trim() ?? "";
+                if (!string.IsNullOrEmpty(refNo) && (extra.OrderNumber.Equals(refNo, StringComparison.OrdinalIgnoreCase) || 
+                                                    extra.OrderNumber.EndsWith($"-{refNo}", StringComparison.OrdinalIgnoreCase) ||
+                                                    refNo.EndsWith($"-{extra.OrderNumber}", StringComparison.OrdinalIgnoreCase)))
+                {
+                    matched = true;
+                    break;
+                }
+                if (!string.IsNullOrEmpty(trk) && ((!string.IsNullOrEmpty(extra.BostaTrackingNumber) && extra.BostaTrackingNumber.Equals(trk, StringComparison.OrdinalIgnoreCase)) ||
+                                                  (!string.IsNullOrEmpty(extra.ShippingTrackingNumber) && extra.ShippingTrackingNumber.Equals(trk, StringComparison.OrdinalIgnoreCase))))
+                {
+                    matched = true;
+                    break;
+                }
+            }
+            if (matched)
+            {
+                candidateOrders.Add(extra);
+            }
+        }
+
+        var egyptNow = TimeHelper.GetEgyptTime();
+        int preparedCount = 0;
+
+        foreach (var order in candidateOrders)
+        {
+            var matchingRow = validRows.FirstOrDefault(r => {
+                string refNo = r.OrderRef?.Trim().TrimStart('#') ?? "";
+                string trk = r.TrackingNumber?.Trim() ?? "";
+                if (!string.IsNullOrEmpty(refNo) && (order.OrderNumber.Equals(refNo, StringComparison.OrdinalIgnoreCase) || 
+                                                    order.OrderNumber.EndsWith($"-{refNo}", StringComparison.OrdinalIgnoreCase) ||
+                                                    refNo.EndsWith($"-{order.OrderNumber}", StringComparison.OrdinalIgnoreCase)))
+                    return true;
+                if (!string.IsNullOrEmpty(trk) && ((!string.IsNullOrEmpty(order.BostaTrackingNumber) && order.BostaTrackingNumber.Equals(trk, StringComparison.OrdinalIgnoreCase)) ||
+                                                  (!string.IsNullOrEmpty(order.ShippingTrackingNumber) && order.ShippingTrackingNumber.Equals(trk, StringComparison.OrdinalIgnoreCase))))
+                    return true;
+                return false;
+            });
+
+            if (matchingRow == null) continue;
+
+            // Link shipping company
+            order.ShippingCompanyId = company.Id;
+            order.ShippingCarrierName = company.NameAr;
+            order.FulfillmentType = FulfillmentType.Delivery;
+            if (isBosta) order.ShippingType = "Bosta";
+            else if (isAs) order.ShippingType = "AS";
+            else order.ShippingType = company.NameAr;
+
+            // Update tracking if provided
+            if (!string.IsNullOrWhiteSpace(matchingRow.TrackingNumber))
+            {
+                order.ShippingTrackingNumber = matchingRow.TrackingNumber.Trim();
+                if (isBosta) order.BostaTrackingNumber = matchingRow.TrackingNumber.Trim();
+            }
+
+            // Analyze sheet status
+            string st = (matchingRow.SheetStatus ?? "").ToLowerInvariant();
+            bool isReturnInSheet = st.Contains("return") || st.Contains("مرتجع") || st.Contains("reject") || st.Contains("رفض") || st.Contains("cancel") || st.Contains("ملغي");
+
+            if (isReturnInSheet)
+            {
+                if (order.Status != OrderStatus.Returned && order.Status != OrderStatus.PartiallyReturned && order.Status != OrderStatus.ReturnInShipping)
+                {
+                    order.Status = OrderStatus.Returned;
+                }
+                order.IsReturnSettledWithCourier = false;
+            }
+            else
+            {
+                if (order.Status != OrderStatus.Delivered && order.Status != OrderStatus.Returned && order.Status != OrderStatus.PartiallyReturned)
+                {
+                    order.Status = OrderStatus.Delivered;
+                    order.ActualDeliveryDate ??= egyptNow;
+                }
+                order.IsSettledWithCourier = false;
+            }
+
+            if (matchingRow.ShippingCost.HasValue && matchingRow.ShippingCost.Value > 0)
+            {
+                if (order.IsSettledWithCourier && !order.IsReturnSettledWithCourier)
+                    order.ReturnActualDeliveryCost = Math.Round(matchingRow.ShippingCost.Value, 2);
+                else
+                    order.ActualDeliveryCost = Math.Round(matchingRow.ShippingCost.Value, 2);
+            }
+
+            preparedCount++;
+        }
+
+        if (preparedCount > 0)
+        {
+            await _db.SaveChangesAsync();
+        }
+
+        return await FetchSettlementOrdersAsync(dto.ShippingCompanyId, "pending");
+    }
+
     [HttpPost("settle")]
     public async Task<IActionResult> SettleOrders([FromBody] SettleShippingRequest request)
     {
@@ -139,9 +293,9 @@ public class ShippingSettlementsController : ControllerBase
             .Where(o => orderIds.Contains(o.Id) && 
                         o.FulfillmentType != FulfillmentType.Pickup &&
                         o.ShippingType != "Pickup" &&
-                        (o.ShippingCompanyId == request.ShippingCompanyId || (isAsCompany && o.ShippingCompanyId == null)) &&
-                        (o.IsSettledWithCourier == false || 
-                         (o.IsSettledWithCourier == true && o.IsReturnSettledWithCourier == false && (returnStatuses.Contains(o.Status) || (int)o.Status == 11))))
+                        (o.ShippingCompanyId == request.ShippingCompanyId || o.ShippingCompanyId == null || (isAsCompany && o.ShippingCompanyId == null)))
+ 
+
             .ToListAsync();
 
         if (!orders.Any())
@@ -241,7 +395,7 @@ public class ShippingSettlementsController : ControllerBase
 
                 // إذا كان الطلب مرتجعاً كلياً من البداية (رفض استلام على الباب ولم يتم تسليمه أصلاً للعميل)، فتسويته الأولى هي تسوية مرتجعه الوحيدة
                 // أما لو كان قد سُلّم للعميل سابقاً (له تاريخ تسليم فعلي)، فيظل مرتجعه معلقاً ليتسوى كحركة مرتجع ثانية مستقلة
-                if (order.Status == OrderStatus.Returned && order.ActualDeliveryDate == null)
+                if (order.Status == OrderStatus.Returned && order.ActualDeliveryDate == null && (reqOrder == null || !reqOrder.CollectedAmount.HasValue || reqOrder.CollectedAmount.Value == 0))
                 {
                     order.IsReturnSettledWithCourier = true;
                     order.ReturnCourierSettlementDate = order.CourierSettlementDate;
@@ -1644,4 +1798,19 @@ public class SettleOrderDto
     public int OrderId { get; set; }
     public decimal ActualDeliveryCost { get; set; }
     public decimal? CollectedAmount { get; set; }
+}
+
+public class PrepareExcelReconciliationDto
+{
+    public int ShippingCompanyId { get; set; }
+    public List<ExcelRowReconcileDto> Rows { get; set; } = new();
+}
+
+public class ExcelRowReconcileDto
+{
+    public string? OrderRef { get; set; }
+    public string? TrackingNumber { get; set; }
+    public string? SheetStatus { get; set; }
+    public decimal? CodAmount { get; set; }
+    public decimal? ShippingCost { get; set; }
 }
