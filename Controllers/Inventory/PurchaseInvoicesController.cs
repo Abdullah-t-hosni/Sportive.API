@@ -114,6 +114,22 @@ public class PurchaseInvoicesController : ControllerBase
         var totalRemaining = await q.SumAsync(i => (decimal?)(i.TotalAmount - i.PaidAmount - i.ReturnedAmount)) ?? 0;
         var totalQuantity  = await q.SelectMany(i => i.Items).SumAsync(it => (decimal?)it.Quantity) ?? 0;
 
+        // Deduct unallocated supplier payments/advances that reduce overall accounts payable
+        var supplierIds = await q.Select(i => i.SupplierId).Distinct().ToListAsync();
+        if (supplierIds.Any())
+        {
+            var unlinkedSupplierPayments = await _db.SupplierPayments
+                .Where(p => supplierIds.Contains(p.SupplierId) && p.PurchaseInvoiceId == null)
+                .SumAsync(p => (decimal?)p.Amount) ?? 0;
+
+            var unlinkedPaymentVouchers = await _db.PaymentVouchers
+                .Where(pv => pv.SupplierId != null && supplierIds.Contains(pv.SupplierId.Value) && pv.PurchaseInvoiceId == null &&
+                             !_db.SupplierPayments.Any(sp => sp.PaymentNumber == pv.VoucherNumber))
+                .SumAsync(pv => (decimal?)pv.Amount) ?? 0;
+
+            totalRemaining = Math.Max(0, totalRemaining - unlinkedSupplierPayments - unlinkedPaymentVouchers);
+        }
+
         var items = await q.OrderByDescending(i => i.InvoiceDate)
             .Skip((page-1)*pageSize).Take(pageSize)
             .Select(i => new PurchaseInvoiceSummaryDto(

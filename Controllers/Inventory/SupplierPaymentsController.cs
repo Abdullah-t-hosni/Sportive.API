@@ -429,7 +429,27 @@ public class SupplierPaymentsController : ControllerBase
             var pv = await _db.PaymentVouchers.FirstOrDefaultAsync(v => v.JournalEntryId == l.JournalEntryId || (l.JournalEntry.Reference != null && v.VoucherNumber == l.JournalEntry.Reference));
             if (pv != null)
             {
+                if (pv.SupplierId.HasValue && pv.SupplierId.Value > 0)
+                {
+                    var supplier = await _db.Suppliers.FindAsync(pv.SupplierId.Value);
+                    if (supplier != null) supplier.TotalPaid -= pv.Amount;
+                }
+                if (pv.PurchaseInvoiceId.HasValue && pv.PurchaseInvoiceId.Value > 0)
+                {
+                    var inv = await _db.PurchaseInvoices.FindAsync(pv.PurchaseInvoiceId.Value);
+                    if (inv != null)
+                    {
+                        inv.PaidAmount -= pv.Amount;
+                        if (inv.PaidAmount <= 0) inv.Status = PurchaseInvoiceStatus.Received;
+                        else if (inv.PaidAmount < inv.TotalAmount) inv.Status = PurchaseInvoiceStatus.PartPaid;
+                    }
+                }
                 _db.PaymentVouchers.Remove(pv);
+            }
+            else if (l.SupplierId.HasValue && l.Debit > 0)
+            {
+                var supplier = await _db.Suppliers.FindAsync(l.SupplierId.Value);
+                if (supplier != null) supplier.TotalPaid -= l.Debit;
             }
 
             _db.JournalEntries.Remove(l.JournalEntry);

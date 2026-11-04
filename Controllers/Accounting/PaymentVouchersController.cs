@@ -199,6 +199,13 @@ public class PaymentVouchersController : ControllerBase
             }
         }
 
+        if (dto.SupplierId.HasValue && dto.SupplierId.Value > 0) {
+            var supplier = await _db.Suppliers.FindAsync(dto.SupplierId.Value);
+            if (supplier != null) {
+                supplier.TotalPaid += dto.Amount;
+            }
+        }
+
         _db.PaymentVouchers.Add(voucher);
         await _db.SaveChangesAsync();
 
@@ -350,6 +357,25 @@ public class PaymentVouchersController : ControllerBase
             var textToSearch = $"{entry.Reference} {entry.Description} {string.Join(" ", entry.Lines.Select(l => l.Description))}".ToLower();
             var payrollRuns = await _db.PayrollRuns.Where(r => r.Status != PayrollStatus.Draft).ToListAsync();
             runsToSync = payrollRuns.Where(r => textToSearch.Contains(r.PayrollNumber.ToLower())).ToList();
+        }
+
+        if (voucher.SupplierId.HasValue && voucher.SupplierId.Value > 0)
+        {
+            var supplier = await _db.Suppliers.FindAsync(voucher.SupplierId.Value);
+            if (supplier != null)
+            {
+                supplier.TotalPaid -= voucher.Amount;
+            }
+        }
+        if (voucher.PurchaseInvoiceId.HasValue && voucher.PurchaseInvoiceId.Value > 0)
+        {
+            var inv = await _db.PurchaseInvoices.FindAsync(voucher.PurchaseInvoiceId.Value);
+            if (inv != null)
+            {
+                inv.PaidAmount -= voucher.Amount;
+                if (inv.PaidAmount <= 0) inv.Status = PurchaseInvoiceStatus.Received;
+                else if (inv.PaidAmount < inv.TotalAmount) inv.Status = PurchaseInvoiceStatus.PartPaid;
+            }
         }
 
         _db.PaymentVouchers.Remove(voucher);
