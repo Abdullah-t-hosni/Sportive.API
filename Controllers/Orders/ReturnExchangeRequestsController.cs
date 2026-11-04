@@ -528,6 +528,24 @@ public class ReturnExchangeRequestsController : ControllerBase
         }
 
         // 3. EXCHANGE / RETURN REQUEST (يحتاج مراجعة الإدارة)
+        // 🛡️ DEDUPLICATION GUARD 1: Prevent returns if all items in this order are already returned
+        if (order.Items.All(i => i.ReturnedQuantity >= i.Quantity))
+        {
+            return BadRequest("جميع أصناف هذا الطلب تم استرجاعها وإعادتها للمخزن بالفعل مسبقاً.");
+        }
+
+        // 🛡️ DEDUPLICATION GUARD 2: Prevent concurrent duplicate requests for the same order
+        var activeRequests = await _db.ReturnExchangeRequests
+            .AsNoTracking()
+            .Where(r => r.OrderId == order.Id && (r.Status == ReturnExchangeStatus.Pending || r.Status == ReturnExchangeStatus.Approved))
+            .ToListAsync();
+
+        if (activeRequests.Any())
+        {
+            var activeIds = string.Join(", #", activeRequests.Select(r => r.Id));
+            return BadRequest($"يوجد طلب استرجاع/استبدال نشط بالفعل برقم (#{activeIds}) قيد المعالجة لهذا الطلب. لا يمكن تقديم طلب مكرر لنفس الفاتورة حتى يتم إنهاء أو إلغاء الطلب القائم.");
+        }
+
         var reqType = isExchange ? ReturnExchangeType.Exchange : ReturnExchangeType.Return;
         var request = new ReturnExchangeRequest
         {
@@ -550,8 +568,11 @@ public class ReturnExchangeRequestsController : ControllerBase
 
             if (orderItem != null)
             {
-                int maxAvailable = Math.Max(1, orderItem.Quantity - orderItem.ReturnedQuantity);
+                int maxAvailable = Math.Max(0, orderItem.Quantity - orderItem.ReturnedQuantity);
+                if (maxAvailable <= 0) continue;
+
                 int validQty = itemDto.Quantity > 0 ? Math.Min(itemDto.Quantity, maxAvailable) : 1;
+                validQty = Math.Min(validQty, maxAvailable);
 
                 request.Items.Add(new ReturnExchangeRequestItem
                 {
@@ -563,17 +584,9 @@ public class ReturnExchangeRequestsController : ControllerBase
             }
         }
 
-        // Fallback: If no items matched specific IDs, add first order item so request is never empty
-        if (!request.Items.Any() && order.Items.Any())
+        if (!request.Items.Any())
         {
-            var firstItem = order.Items.First();
-            request.Items.Add(new ReturnExchangeRequestItem
-            {
-                OrderItemId = firstItem.Id,
-                Quantity = 1,
-                ReplacementNote = dto.CustomerNotes,
-                CreatedAt = TimeHelper.GetEgyptTime()
-            });
+            return BadRequest("لا توجد أصناف قابلة للاسترجاع أو الاستبدال في هذا الطلب (جميع الأصناف المحددة مسترجعة مسبقاً).");
         }
 
         _db.ReturnExchangeRequests.Add(request);
@@ -1168,6 +1181,7 @@ public class ReturnExchangeRequestsController : ControllerBase
         }
 
         decimal totalRefundValue = 0;
+        int totalRestockedQty = 0;
 
         // 1. Restock items in inventory & update ReturnedQuantity + Log Movement
         foreach (var reqItem in req.Items)
@@ -1175,10 +1189,22 @@ public class ReturnExchangeRequestsController : ControllerBase
             var orderItem = reqItem.OrderItem;
             if (orderItem != null)
             {
-                orderItem.ReturnedQuantity += reqItem.Quantity;
-                totalRefundValue += (orderItem.UnitPrice * reqItem.Quantity);
+                // 🛡️ DEDUPLICATION & STOCK INTEGRITY GUARD:
+                // Cap to remaining unreturned quantity to make duplicate restocks impossible
+                int remainingReturnable = Math.Max(0, orderItem.Quantity - orderItem.ReturnedQuantity);
+                if (remainingReturnable <= 0)
+                {
+                    _logger.LogWarning("Skip duplicate restock for OrderItem {OrderItemId} on Request {RequestId}. Already returned {Returned}/{Total}", 
+                        orderItem.Id, req.Id, orderItem.ReturnedQuantity, orderItem.Quantity);
+                    continue;
+                }
 
-                int qtyToRestock = Math.Max(1, reqItem.Quantity);
+                int qtyToRestock = Math.Min(reqItem.Quantity, remainingReturnable);
+                if (qtyToRestock <= 0) continue;
+
+                orderItem.ReturnedQuantity += qtyToRestock;
+                totalRefundValue += (orderItem.UnitPrice * qtyToRestock);
+                totalRestockedQty += qtyToRestock;
 
                 if (_inventory != null)
                 {
@@ -1217,6 +1243,16 @@ public class ReturnExchangeRequestsController : ControllerBase
                     }
                 }
             }
+        }
+
+        // 🛡️ If all items were already restocked previously (e.g. duplicate return request confirmed)
+        if (totalRestockedQty == 0 && req.Items.Any())
+        {
+            req.Status = ReturnExchangeStatus.ReceivedAtWarehouse;
+            req.ReceivedAtWarehouseAt = TimeHelper.GetEgyptTime();
+            req.AdminNotes = (req.AdminNotes ?? "") + " | [تنبيه أمان]: تم تخطي إضافة المخزون والقيود نظراً لأن الأصناف تم إرجاعها مسبقاً بالكامل.";
+            await _db.SaveChangesAsync();
+            return Ok(new { message = "تم تأكيد استلام الطلب، وتم تخطي تكرار حركات المخزون والقيود المحاسبية لأن الأصناف مسترجعة مسبقاً." });
         }
 
         // Calculate courier and shipping fee statuses before modifying the status
@@ -1528,8 +1564,22 @@ public class ReturnExchangeRequestsController : ControllerBase
             var orderItem = reqItem.OrderItem;
             if (orderItem != null)
             {
-                totalRefundValue += (orderItem.UnitPrice * reqItem.Quantity);
-                int qtyToRestock = Math.Max(1, reqItem.Quantity);
+                // 🛡️ Prevent duplicate movements during resync
+                bool movementAlreadyLogged = await _db.InventoryMovements
+                    .AsNoTracking()
+                    .AnyAsync(m => m.Reference == req.Order.OrderNumber && m.Type == InventoryMovementType.ReturnIn && m.Note.Contains($"#{req.Id}"));
+
+                if (movementAlreadyLogged)
+                {
+                    totalRefundValue += (orderItem.UnitPrice * reqItem.Quantity);
+                    continue;
+                }
+
+                int remainingReturnable = Math.Max(0, orderItem.Quantity - orderItem.ReturnedQuantity);
+                int qtyToRestock = Math.Min(reqItem.Quantity, remainingReturnable);
+                if (qtyToRestock <= 0) continue;
+
+                totalRefundValue += (orderItem.UnitPrice * qtyToRestock);
 
                 if (_inventory != null && req.Order != null)
                 {
