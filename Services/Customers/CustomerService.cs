@@ -76,7 +76,7 @@ public class CustomerService : ICustomerService
         {
             query = query.Where(c => 
                 (c.MainAccount != null && c.MainAccount.OpeningBalance != 0) ||
-                _db.JournalLines.Any(l => l.CustomerId == c.Id)
+                _db.JournalLines.Any(l => l.CustomerId == c.Id || (l.OrderId != null && _db.Orders.Any(o => o.Id == l.OrderId && o.CustomerId == c.Id)))
             );
         }
 
@@ -119,8 +119,10 @@ public class CustomerService : ICustomerService
             OrderTotal = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => (decimal?)o.TotalAmount) ?? 0,
             HasWebsiteOrders = c.Orders.Any(o => o.Source == OrderSource.Website),
             // Calculate Net Balance in SQL - ONLY for this Customer ID
+            // 🛡️ Enhanced: include both direct CustomerId lines and lines bound via Order on receivable/asset accounts
             JournalNet = _db.JournalLines
-                .Where(l => l.CustomerId == c.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
+                .Where(l => (l.CustomerId == c.Id || (l.OrderId != null && _db.Orders.Any(o => o.Id == l.OrderId && o.CustomerId == c.Id))) && l.JournalEntry.Status == JournalEntryStatus.Posted)
+                .Where(l => l.Account != null && (l.Account.Code.StartsWith("1107") || l.Account.Code.StartsWith("1105") || l.Account.Code.StartsWith("1104") || (c.MainAccountId.HasValue && l.AccountId == c.MainAccountId.Value)))
                 .Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0
         }).Select(x => new {
             x.Id, x.FullName, x.Email, x.Phone, x.AppUserId,
@@ -263,7 +265,8 @@ public class CustomerService : ICustomerService
         if (rawResult == null) return null;
 
         var balance = rawResult.OpeningBalance + await _db.JournalLines
-            .Where(l => l.CustomerId == rawResult.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
+            .Where(l => (l.CustomerId == rawResult.Id || (l.OrderId != null && _db.Orders.Any(o => o.Id == l.OrderId && o.CustomerId == rawResult.Id))) && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .Where(l => l.Account != null && (l.Account.Code.StartsWith("1107") || l.Account.Code.StartsWith("1105") || l.Account.Code.StartsWith("1104") || (rawResult.MainAccountId.HasValue && l.AccountId == rawResult.MainAccountId.Value)))
             .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
 
         return new CustomerDetailDto(
@@ -330,7 +333,8 @@ public class CustomerService : ICustomerService
         if (rawResult == null) return null;
 
         var balance = rawResult.OpeningBalance + await _db.JournalLines
-            .Where(l => l.CustomerId == rawResult.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
+            .Where(l => (l.CustomerId == rawResult.Id || (l.OrderId != null && _db.Orders.Any(o => o.Id == l.OrderId && o.CustomerId == rawResult.Id))) && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .Where(l => l.Account != null && (l.Account.Code.StartsWith("1107") || l.Account.Code.StartsWith("1105") || l.Account.Code.StartsWith("1104") || (rawResult.MainAccountId.HasValue && l.AccountId == rawResult.MainAccountId.Value)))
             .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
 
         return new CustomerDetailDto(
@@ -393,7 +397,8 @@ public class CustomerService : ICustomerService
         if (rawResult == null) return null;
 
         var balance = rawResult.OpeningBalance + await _db.JournalLines
-            .Where(l => l.CustomerId == rawResult.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
+            .Where(l => (l.CustomerId == rawResult.Id || (l.OrderId != null && _db.Orders.Any(o => o.Id == l.OrderId && o.CustomerId == rawResult.Id))) && l.JournalEntry.Status == JournalEntryStatus.Posted)
+            .Where(l => l.Account != null && (l.Account.Code.StartsWith("1107") || l.Account.Code.StartsWith("1105") || l.Account.Code.StartsWith("1104") || (rawResult.MainAccountId.HasValue && l.AccountId == rawResult.MainAccountId.Value)))
             .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
 
         return new CustomerDetailDto(

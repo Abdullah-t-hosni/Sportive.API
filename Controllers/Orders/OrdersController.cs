@@ -1561,6 +1561,7 @@ public class OrdersController : ControllerBase
                         Credit      = 0,
                         Description = "تسديد باستخدام رصيد العميل المتاح",
                         OrderId     = order.Id,
+                        CustomerId  = order.CustomerId,
                         CostCenter  = order.Source,
                         CreatedAt   = TimeHelper.GetEgyptTime(),
                         BranchId    = order.BranchId
@@ -1579,6 +1580,7 @@ public class OrdersController : ControllerBase
                         Credit      = 0,
                         Description = $"تعديل طريقة دفع - {p.Method}",
                         OrderId     = order.Id,
+                        CustomerId  = order.CustomerId,
                         CostCenter  = order.Source,
                         CreatedAt   = TimeHelper.GetEgyptTime(),
                         BranchId    = order.BranchId
@@ -1597,6 +1599,7 @@ public class OrdersController : ControllerBase
                     Credit      = 0,
                     Description = $"إثبات مديونية الطلب المتبقية - {order.OrderNumber}",
                     OrderId     = order.Id,
+                    CustomerId  = order.CustomerId,
                     CostCenter  = order.Source,
                     CreatedAt   = TimeHelper.GetEgyptTime(),
                     BranchId    = order.BranchId

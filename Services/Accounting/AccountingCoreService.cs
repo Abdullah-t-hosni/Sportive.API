@@ -773,6 +773,29 @@ public class AccountingCoreService
     {
         _logger.LogInformation("[Sync] Starting high-performance bulk synchronization of entity balances.");
 
+        // 🧹 Auto-heal: Ensure all JournalLines linked to Orders inherit CustomerId if missing
+        var orphanedOrderLines = await _db.JournalLines
+            .Where(l => l.OrderId != null && l.CustomerId == null && _db.Orders.Any(o => o.Id == l.OrderId && o.CustomerId > 0))
+            .ToListAsync();
+
+        if (orphanedOrderLines.Any())
+        {
+            var ordIds = orphanedOrderLines.Select(l => l.OrderId!.Value).Distinct().ToList();
+            var orderCustMap = await _db.Orders
+                .Where(o => ordIds.Contains(o.Id) && o.CustomerId > 0)
+                .ToDictionaryAsync(o => o.Id, o => o.CustomerId);
+
+            foreach (var line in orphanedOrderLines)
+            {
+                if (line.OrderId.HasValue && orderCustMap.TryGetValue(line.OrderId.Value, out var cId))
+                {
+                    line.CustomerId = cId;
+                }
+            }
+            await _db.SaveChangesAsync();
+            _logger.LogInformation($"[Sync] Auto-healed {orphanedOrderLines.Count} orphaned journal lines with CustomerId.");
+        }
+
         // 1. Sync Orders PaidAmount
         // Group journal lines by OrderId and sum debit - credit in ONE query
         var orderLedgerBalances = await _db.JournalLines
@@ -1151,7 +1174,7 @@ public class AccountingCoreService
 
         // Group journal lines by CustomerId or AccountId and sum debit - credit in ONE query
         var customerLedgerBalancesList = await _db.JournalLines
-            .Where(l => l.CustomerId != null || (l.Account != null && l.Account.Code != null && l.Account.Code.StartsWith("1104")))
+            .Where(l => l.CustomerId != null || (l.Account != null && l.Account.Code != null && (l.Account.Code.StartsWith("1107") || l.Account.Code.StartsWith("1105") || l.Account.Code.StartsWith("1104"))))
             .GroupBy(l => new { l.CustomerId, l.AccountId })
             .Select(g => new {
                 CustomerId = g.Key.CustomerId,

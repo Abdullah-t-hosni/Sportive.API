@@ -879,6 +879,32 @@ public class AppDbContext : IdentityDbContext<AppUser>
 
     private List<AuditEntry> OnBeforeSaveChanges()
     {
+        // 🛡️ Auto-Enrichment: Ensure any JournalLine with an OrderId always has CustomerId populated
+        foreach (var entry in ChangeTracker.Entries<JournalLine>())
+        {
+            if (entry.State == EntityState.Added || entry.State == EntityState.Modified)
+            {
+                var line = entry.Entity;
+                if (line.OrderId.HasValue && !line.CustomerId.HasValue)
+                {
+                    var ordId = line.OrderId.Value;
+                    var localOrd = Set<Order>().Local.FirstOrDefault(o => o.Id == ordId);
+                    if (localOrd != null && localOrd.CustomerId > 0)
+                    {
+                        line.CustomerId = localOrd.CustomerId;
+                    }
+                    else
+                    {
+                        var custId = Set<Order>().Where(o => o.Id == ordId).Select(o => o.CustomerId).FirstOrDefault();
+                        if (custId > 0)
+                        {
+                            line.CustomerId = custId;
+                        }
+                    }
+                }
+            }
+        }
+
         ChangeTracker.DetectChanges();
         var auditEntries = new List<AuditEntry>();
         var userId = _httpContextAccessor?.HttpContext?.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;

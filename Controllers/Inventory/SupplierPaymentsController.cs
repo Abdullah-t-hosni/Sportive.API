@@ -83,7 +83,7 @@ public class SupplierPaymentsController : ControllerBase
             p.ReferenceNumber
         ));
 
-        // Include manual journal entries affecting suppliers (حساب الموردين مدين)
+        // Include manual journal entries & direct payment vouchers affecting suppliers (حساب الموردين مدين)
         var jLinesQ = _db.JournalLines
             .AsNoTracking()
             .Include(l => l.Supplier)
@@ -91,10 +91,13 @@ public class SupplierPaymentsController : ControllerBase
             .Include(l => l.JournalEntry)
                 .ThenInclude(e => e.Lines)
                     .ThenInclude(other => other.Account)
-            .Where(l => l.SupplierId != null && l.Debit > 0 && l.JournalEntry.Type == JournalEntryType.Manual && (
-                l.AccountId == l.Supplier!.MainAccountId ||
-                (l.Supplier!.MainAccountId == null && l.Account.Code != null && l.Account.Code.StartsWith("2101"))
-            ));
+            .Where(l => l.SupplierId != null && l.Debit > 0 && 
+                (l.JournalEntry.Type == JournalEntryType.Manual || l.JournalEntry.Type == JournalEntryType.PaymentVoucher) &&
+                !_db.SupplierPayments.Any(sp => sp.PaymentNumber == l.JournalEntry.Reference) && (
+                    l.AccountId == l.Supplier!.MainAccountId ||
+                    (l.Supplier!.MainAccountId == null && l.Account.Code != null && l.Account.Code.StartsWith("2101")) ||
+                    (l.Account.Code != null && l.Account.Code.StartsWith("2101"))
+                ));
 
         if (supplierId.HasValue) jLinesQ = jLinesQ.Where(l => l.SupplierId == supplierId.Value);
         if (purchaseInvoiceId.HasValue) jLinesQ = jLinesQ.Where(l => l.PurchaseInvoiceId == purchaseInvoiceId.Value);
@@ -117,12 +120,14 @@ public class SupplierPaymentsController : ControllerBase
 
         var jQuery = jLinesQ.Select(l => new SupplierPaymentSummaryDto(
             -l.Id, 
-            l.JournalEntry.EntryNumber, 
+            l.JournalEntry.Reference ?? l.JournalEntry.EntryNumber, 
             l.Supplier!.Name, 
             l.PurchaseInvoice != null ? l.PurchaseInvoice.InvoiceNumber : null,
             l.JournalEntry.EntryDate, 
             l.Debit, 
-            "Manual", 
+            (l.JournalEntry.Reference != null && l.JournalEntry.Reference.StartsWith("SETT")) || (l.JournalEntry.Description != null && l.JournalEntry.Description.Contains("مقاصة")) 
+                ? "Settlement" 
+                : (l.JournalEntry.Type == JournalEntryType.PaymentVoucher || (l.JournalEntry.Reference != null && l.JournalEntry.Reference.StartsWith("PV-")) ? "PaymentVoucher" : "Manual"), 
             l.JournalEntry.Lines.Where(o => o.Credit > 0 && o.Id != l.Id).Select(o => o.Account.NameAr).FirstOrDefault() ?? l.Account.NameAr, 
             l.Description ?? l.JournalEntry.Description,
             l.JournalEntry.AttachmentUrl, 
@@ -139,11 +144,21 @@ public class SupplierPaymentsController : ControllerBase
         var allJ = await jQuery.ToListAsync();
 
         var combined = allP.Concat(allJ).OrderByDescending(x => x.PaymentDate).ToList();
-        var totalItems = combined.Count;
+        var totalCount = combined.Count;
+        var totalVolume = combined.Sum(x => x.Amount);
         var itemsList = combined.Skip((page - 1) * pageSize).Take(pageSize).ToList();
 
-        return Ok(new PaginatedResult<SupplierPaymentSummaryDto>(itemsList, totalItems, page, pageSize,
-            (int)Math.Ceiling((double)totalItems / pageSize)));
+        return Ok(new PaginatedResult<SupplierPaymentSummaryDto>(
+            itemsList, 
+            totalCount, 
+            page, 
+            pageSize,
+            (int)Math.Ceiling((double)totalCount / pageSize),
+            totalVolume,
+            null,
+            null,
+            totalCount
+        ));
     }
 
     [HttpGet("{id}")]
@@ -165,12 +180,14 @@ public class SupplierPaymentsController : ControllerBase
 
             return Ok(new SupplierPaymentSummaryDto(
                 -l.Id, 
-                l.JournalEntry.EntryNumber, 
+                l.JournalEntry.Reference ?? l.JournalEntry.EntryNumber, 
                 l.Supplier?.Name ?? "", 
                 l.PurchaseInvoice != null ? l.PurchaseInvoice.InvoiceNumber : null,
                 l.JournalEntry.EntryDate, 
                 l.Debit, 
-                "Manual", 
+                (l.JournalEntry.Reference != null && l.JournalEntry.Reference.StartsWith("SETT")) || (l.JournalEntry.Description != null && l.JournalEntry.Description.Contains("مقاصة")) 
+                    ? "Settlement" 
+                    : (l.JournalEntry.Type == JournalEntryType.PaymentVoucher || (l.JournalEntry.Reference != null && l.JournalEntry.Reference.StartsWith("PV-")) ? "PaymentVoucher" : "Manual"), 
                 l.JournalEntry.Lines.Where(o => o.Credit > 0 && o.Id != l.Id).Select(o => o.Account.NameAr).FirstOrDefault() ?? l.Account.NameAr, 
                 l.Description ?? l.JournalEntry.Description,
                 l.JournalEntry.AttachmentUrl, 
@@ -403,6 +420,23 @@ public class SupplierPaymentsController : ControllerBase
     [RequirePermission(ModuleKeys.SupplierVouchers, requireEdit: true)]
     public async Task<IActionResult> Delete(int id)
     {
+        if (id < 0)
+        {
+            var lineId = -id;
+            var l = await _db.JournalLines.Include(x => x.JournalEntry).FirstOrDefaultAsync(x => x.Id == lineId);
+            if (l == null) return NotFound();
+
+            var pv = await _db.PaymentVouchers.FirstOrDefaultAsync(v => v.JournalEntryId == l.JournalEntryId || (l.JournalEntry.Reference != null && v.VoucherNumber == l.JournalEntry.Reference));
+            if (pv != null)
+            {
+                _db.PaymentVouchers.Remove(pv);
+            }
+
+            _db.JournalEntries.Remove(l.JournalEntry);
+            await _db.SaveChangesAsync();
+            return NoContent();
+        }
+
         var p = await _db.SupplierPayments
             .Include(p => p.Supplier)
             .Include(p => p.Invoice)
