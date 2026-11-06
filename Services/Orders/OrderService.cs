@@ -1368,8 +1368,8 @@ public class OrderService : IOrderService
                     order.DiscountAmount += (dto.DiscountAmount ?? 0);
                 }
 
-                // 🎁 Prepaid Payment Discount (Vodafone / InstaPay)
-                if (store != null && store.EnablePrepaidDiscount && store.PrepaidDiscountPercentage > 0 &&
+                // 🎁 Prepaid Payment Discount (Vodafone / InstaPay) - STRICTLY Online Website Store Orders ONLY!
+                if (order.Source == OrderSource.Website && store != null && store.EnablePrepaidDiscount && store.PrepaidDiscountPercentage > 0 &&
                     (order.PaymentMethod == PaymentMethod.Vodafone || order.PaymentMethod == PaymentMethod.InstaPay))
                 {
                     decimal netItemsSubtotal = Math.Max(0, order.SubTotal - order.DiscountAmount - order.TemporalDiscount - order.LoyaltyDiscountAmount);
@@ -1377,6 +1377,10 @@ public class OrderService : IOrderService
                     {
                         order.PrepaidDiscount = Math.Round(netItemsSubtotal * (store.PrepaidDiscountPercentage / 100m), 2);
                     }
+                }
+                else
+                {
+                    order.PrepaidDiscount = 0;
                 }
 
                 // 🚀 Free Shipping is evaluated on the NET items total AFTER all discounts
@@ -2017,6 +2021,11 @@ public class OrderService : IOrderService
                             custAddr.UpdatedAt = now;
                         }
                     }
+                }
+
+                if (order.Source != OrderSource.Website)
+                {
+                    order.PrepaidDiscount = 0;
                 }
 
                 order.TotalAmount = Math.Max(0, order.SubTotal + order.DeliveryFee - order.DiscountAmount - order.TemporalDiscount - order.PrepaidDiscount);
