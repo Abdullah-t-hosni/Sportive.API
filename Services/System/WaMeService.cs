@@ -13,6 +13,13 @@ namespace Sportive.API.Services;
 /// </summary>
 public class WaMeService : IWaMeService
 {
+    private static string FormatMoney(decimal amount)
+    {
+        var formatted = (amount % 1 == 0) ? amount.ToString("0") : amount.ToString("0.##");
+        return $"\u200E{formatted} ج.م";
+    }
+
+
     private readonly IConfiguration _config;
     private readonly ITranslator _t;
     private readonly AppDbContext _db;
@@ -41,19 +48,27 @@ public class WaMeService : IWaMeService
         }
 
         var subTotalVal = order.SubTotal;
-        var discountVal = order.DiscountAmount + order.TemporalDiscount;
-        var subTotalAfterDiscountVal = Math.Max(0, subTotalVal - discountVal);
+        var offerDiscountVal = order.DiscountAmount + order.TemporalDiscount;
+        var prepaidDiscountVal = order.PrepaidDiscount;
+        var totalDiscountVal = offerDiscountVal + prepaidDiscountVal;
+        var subTotalAfterDiscountVal = Math.Max(0, subTotalVal - totalDiscountVal);
         var shippingVal = order.DeliveryFee;
         var totalVal = order.TotalAmount;
 
-        var discountPart = discountVal > 0
-            ? $"🎁 {_t.Get("WhatsApp.Discount")}: *{discountVal:N2} ج.م*\n"
+        var discountPart = totalDiscountVal > 0
+            ? $"🎁 {_t.Get("WhatsApp.Discount")}: *{FormatMoney(totalDiscountVal)}*\n"
             : "";
-        var discountText = discountVal > 0
-            ? $"{discountVal:N2} ج.م"
-            : "0.00 ج.م";
+        var discountText = offerDiscountVal > 0
+            ? FormatMoney(offerDiscountVal)
+            : "0 ج.م";
+        var prepaidText = prepaidDiscountVal > 0
+            ? FormatMoney(prepaidDiscountVal)
+            : "0 ج.م";
+        var prepaidPart = prepaidDiscountVal > 0
+            ? $"⚡ خصم الدفع الإلكتروني المسبق: {FormatMoney(prepaidDiscountVal)}\n"
+            : "";
         var shippingText = shippingVal > 0
-            ? $"{shippingVal:N2} ج.م"
+            ? FormatMoney(shippingVal)
             : (_t.Get("WhatsApp.FreeShipping") ?? "مجاني 🚚");
 
         var address = _config["Store:Address"] ?? "فرع Sportive الرئيسي";
@@ -66,17 +81,19 @@ public class WaMeService : IWaMeService
             .Replace("{orderNumber}", order.OrderNumber)
             .Replace("{storeName}", storeBrandName)
             .Replace("{itemsList}", itemsSummary.ToString().TrimEnd())
-            .Replace("{subTotal}", $"{subTotalVal:N2} ج.م")
-            .Replace("{subtotal}", $"{subTotalVal:N2} ج.م")
-            .Replace("{subTotalBeforeDiscount}", $"{subTotalVal:N2} ج.م")
+            .Replace("{subTotal}", FormatMoney(subTotalVal))
+            .Replace("{subtotal}", FormatMoney(subTotalVal))
+            .Replace("{subTotalBeforeDiscount}", FormatMoney(subTotalVal))
             .Replace("{discountAmount}", discountText)
             .Replace("{discount}", discountText)
             .Replace("{discountPart}", discountPart)
-            .Replace("{subTotalAfterDiscount}", $"{subTotalAfterDiscountVal:N2} ج.م")
-            .Replace("{totalAfterDiscount}", $"{subTotalAfterDiscountVal:N2} ج.م")
+            .Replace("{prepaidDiscount}", prepaidText)
+            .Replace("{prepaidDiscountPart}", prepaidPart)
+            .Replace("{subTotalAfterDiscount}", FormatMoney(subTotalAfterDiscountVal))
+            .Replace("{totalAfterDiscount}", FormatMoney(subTotalAfterDiscountVal))
             .Replace("{shippingCost}", shippingText)
             .Replace("{shippingFee}", shippingText)
-            .Replace("{totalAmount}", $"{totalVal:N2} ج.م")
+            .Replace("{totalAmount}", FormatMoney(totalVal))
             .Replace("{paymentMethod}", PaymentMethodLabel(order.PaymentMethod))
             .Replace("{fulfillmentType}", FulfillmentLabel(order.FulfillmentType))
             .Replace("{storeUrl}", StoreUrl)
@@ -84,6 +101,18 @@ public class WaMeService : IWaMeService
             .Replace("{storeAddress}", address)
             .Replace("{trackingPart}", trackingPart)
             .Replace("{trackingCode}", tracking ?? "");
+
+        if (prepaidDiscountVal > 0 && !template.Contains("{prepaidDiscount") && !template.Contains("{prepaidDiscountPart}"))
+        {
+            if (result.Contains("💰 *إجمالي المطلوب:"))
+            {
+                result = result.Replace("💰 *إجمالي المطلوب:", $"⚡ خصم الدفع الإلكتروني المسبق: {FormatMoney(prepaidDiscountVal)}\n💰 *إجمالي المطلوب:");
+            }
+            else if (result.Contains("إجمالي المطلوب:"))
+            {
+                result = result.Replace("إجمالي المطلوب:", $"⚡ خصم الدفع الإلكتروني المسبق: {FormatMoney(prepaidDiscountVal)}\nإجمالي المطلوب:");
+            }
+        }
 
         result = result.Replace("ج.م ج.م", "ج.م").Replace("EGP EGP", "EGP");
         return result;
@@ -135,7 +164,7 @@ public class WaMeService : IWaMeService
                 CustomerFirstName(order),
                 order.OrderNumber,
                 itemsSummary.ToString().TrimEnd(),
-                order.TotalAmount,
+                FormatMoney(order.TotalAmount),
                 discountPart,
                 PaymentMethodLabel(order.PaymentMethod),
                 FulfillmentLabel(order.FulfillmentType),
@@ -229,7 +258,7 @@ public class WaMeService : IWaMeService
                 _t.Get("WhatsApp.PaymentReminder"),
                 CustomerFirstName(order),
                 order.OrderNumber,
-                order.TotalAmount,
+                FormatMoney(order.TotalAmount),
                 StorePhone
             );
         }

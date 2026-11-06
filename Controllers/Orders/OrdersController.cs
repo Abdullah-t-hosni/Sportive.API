@@ -531,22 +531,7 @@ public class OrdersController : ControllerBase
                     }
                 }
 
-                // 2. WhatsApp Auto-Confirmation
-                if (waService != null && waApi != null && !string.IsNullOrWhiteSpace(fullOrder.Customer?.Phone))
-                {
-                    try
-                    {
-                        var confirmResult = waService.OrderConfirmation(fullOrder);
-                        if (!string.IsNullOrWhiteSpace(confirmResult.FullMessage))
-                        {
-                            await waApi.SendWhatsAppMessageAsync(fullOrder.Customer.Phone, confirmResult.FullMessage);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Background WhatsApp confirmation failed for order {OrderId}", orderId);
-                    }
-                }
+                // WhatsApp confirmation is handled centrally in OrderService.SendOrderNotificationsAsync
             }
             catch (Exception ex)
             {
