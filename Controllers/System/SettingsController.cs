@@ -79,7 +79,10 @@ public class SettingsController : ControllerBase
             "ALTER TABLE `StoreSettings` ADD `PrivacyPolicyAr` longtext NULL;",
             "ALTER TABLE `StoreSettings` ADD `PrivacyPolicyEn` longtext NULL;",
             "ALTER TABLE `StoreSettings` ADD `ReturnPolicyAr` longtext NULL;",
-            "ALTER TABLE `StoreSettings` ADD `ReturnPolicyEn` longtext NULL;"
+            "ALTER TABLE `StoreSettings` ADD `ReturnPolicyEn` longtext NULL;",
+            "ALTER TABLE `StoreSettings` ADD `EnablePrepaidDiscount` tinyint(1) NOT NULL DEFAULT 1;",
+            "ALTER TABLE `StoreSettings` ADD `PrepaidDiscountPercentage` decimal(18,2) NOT NULL DEFAULT 5.0;",
+            "ALTER TABLE `Orders` ADD `PrepaidDiscount` decimal(18,2) NOT NULL DEFAULT 0.0;"
         };
 
 
@@ -253,6 +256,8 @@ public class SettingsController : ControllerBase
             info.EnableUrgencyTags       = dto.EnableUrgencyTags;
             info.AllowedPaymentMethods   = dto.AllowedPaymentMethods;
             info.MinOrderPaymentMethods  = dto.MinOrderPaymentMethods;
+            info.EnablePrepaidDiscount   = dto.EnablePrepaidDiscount;
+            info.PrepaidDiscountPercentage = dto.PrepaidDiscountPercentage;
             info.ReceiptHeaderText       = dto.ReceiptHeaderText;
             info.ReceiptFooterText       = dto.ReceiptFooterText;
             info.ReceiptShowLogo         = dto.ReceiptShowLogo;

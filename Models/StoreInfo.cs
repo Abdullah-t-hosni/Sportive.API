@@ -217,6 +217,12 @@ public class StoreInfo
     [JsonPropertyName("minOrderPaymentMethods")]
     public string? MinOrderPaymentMethods { get; set; } = "Cash,Vodafone,InstaPay";
 
+    [JsonPropertyName("enablePrepaidDiscount")]
+    public bool EnablePrepaidDiscount { get; set; } = true;
+
+    [JsonPropertyName("prepaidDiscountPercentage")]
+    public decimal PrepaidDiscountPercentage { get; set; } = 5.0m;
+
     // مخزن الموقع الإلكتروني - يُستخدم لخصم مبيعات الموقع منه تلقائياً
     [JsonPropertyName("websiteWarehouseId")]
     public int? WebsiteWarehouseId { get; set; }

@@ -200,7 +200,8 @@ public record OrderSummaryDto(
     decimal? LoyaltyDiscountAmount = 0,
     decimal? LoyaltyPointsRedeemed = 0,
     decimal DeliveryFee = 0,
-    decimal SubTotal = 0
+    decimal SubTotal = 0,
+    decimal? PrepaidDiscount = 0
 );
 
 public record StorePickupItemDto(
@@ -278,7 +279,8 @@ public record OrderDetailDto(
     decimal LoyaltyPointsRedeemed = 0,
     decimal LoyaltyDiscountAmount = 0,
     decimal LoyaltyPointsEarned = 0,
-    decimal CustomerLoyaltyBalance = 0
+    decimal CustomerLoyaltyBalance = 0,
+    decimal PrepaidDiscount = 0
 );
 
 public record UpdateBostaShipmentDto(

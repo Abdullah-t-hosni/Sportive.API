@@ -78,6 +78,7 @@ public class Order : BaseEntity
     public decimal SubTotal { get; set; }
     public decimal DiscountAmount { get; set; } = 0;
     public decimal TemporalDiscount { get; set; } = 0; // خصومات زمنية (عروض تلقائية)
+    public decimal PrepaidDiscount { get; set; } = 0; // خصم الدفع الإلكتروني المسبق (انستاباي / محافظ)
     public string? CouponCode { get; set; }
     public decimal TotalAmount { get; set; }
     public decimal TotalVatAmount { get; set; } = 0;

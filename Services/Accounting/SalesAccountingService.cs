@@ -193,6 +193,14 @@ public class SalesAccountingService
              lines.Add((salesDiscAcct, manualNetDisc, 0, _t.Get("Accounting.ManualDiscountDesc", order.OrderNumber, order.DiscountAmount)));
         }
 
+        // Prepaid payment discount handling
+        decimal prepaidNetDisc = 0;
+        if (order.PrepaidDiscount > 0)
+        {
+             prepaidNetDisc = Math.Round(order.PrepaidDiscount / (1 + vatRate), 2);
+             lines.Add((salesDiscAcct, prepaidNetDisc, 0, $"خصم الدفع الإلكتروني المسبق لطلب #{order.OrderNumber} ({order.PrepaidDiscount} ج.م)"));
+        }
+
         // Loyalty points discount handling
         decimal loyaltyNetDisc = 0;
         if (order.LoyaltyDiscountAmount > 0)
@@ -201,8 +209,8 @@ public class SalesAccountingService
              lines.Add((salesDiscAcct, loyaltyNetDisc, 0, $"خصم نقاط الولاء لفاتورة #{order.OrderNumber} ({order.LoyaltyPointsRedeemed} نقطة)"));
         }
 
-        // Fix: Subtract manualNetDisc and loyaltyNetDisc from totalNetDiscount to prevent double-counting distributed global discounts
-        decimal remainingPromoDisc = Math.Round(totalNetDiscount - manualNetDisc - loyaltyNetDisc, 2);
+        // Fix: Subtract manualNetDisc, prepaidNetDisc and loyaltyNetDisc from totalNetDiscount to prevent double-counting distributed global discounts
+        decimal remainingPromoDisc = Math.Round(totalNetDiscount - manualNetDisc - prepaidNetDisc - loyaltyNetDisc, 2);
         if (remainingPromoDisc > 0.05m)
         {
             lines.Add((salesDiscAcct, remainingPromoDisc, 0, _t.Get("Accounting.OfferDiscountDesc", order.OrderNumber, totalGrossDiscount)));

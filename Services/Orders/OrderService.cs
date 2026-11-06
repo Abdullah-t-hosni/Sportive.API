@@ -156,7 +156,8 @@ public class OrderService : IOrderService
                 o.LoyaltyDiscountAmount,
                 o.LoyaltyPointsRedeemed,
                 o.DeliveryFee,
-                o.SubTotal
+                o.SubTotal,
+                o.PrepaidDiscount
             ))
             .ToListAsync();
 
@@ -392,7 +393,8 @@ public class OrderService : IOrderService
             o.LoyaltyPointsRedeemed,
             o.LoyaltyDiscountAmount,
             o.LoyaltyPointsEarned,
-            o.Customer?.LoyaltyPointsBalance ?? 0
+            o.Customer?.LoyaltyPointsBalance ?? 0,
+            o.PrepaidDiscount
         );
     }
 
@@ -1366,16 +1368,27 @@ public class OrderService : IOrderService
                     order.DiscountAmount += (dto.DiscountAmount ?? 0);
                 }
 
+                // 🎁 Prepaid Payment Discount (Vodafone / InstaPay)
+                if (store != null && store.EnablePrepaidDiscount && store.PrepaidDiscountPercentage > 0 &&
+                    (order.PaymentMethod == PaymentMethod.Vodafone || order.PaymentMethod == PaymentMethod.InstaPay))
+                {
+                    decimal netItemsSubtotal = Math.Max(0, order.SubTotal - order.DiscountAmount - order.TemporalDiscount - order.LoyaltyDiscountAmount);
+                    if (netItemsSubtotal > 0)
+                    {
+                        order.PrepaidDiscount = Math.Round(netItemsSubtotal * (store.PrepaidDiscountPercentage / 100m), 2);
+                    }
+                }
+
                 // 🚀 Free Shipping is evaluated on the NET items total AFTER all discounts
                 // (product/bundle discounts, special offers, coupon and loyalty). Shipping itself is excluded.
                 if (order.Source == OrderSource.Website && order.FulfillmentType == FulfillmentType.Delivery)
                 {
-                    decimal effectiveNetItems = Math.Max(0, order.SubTotal - order.TemporalDiscount - order.DiscountAmount - order.LoyaltyDiscountAmount);
+                    decimal effectiveNetItems = Math.Max(0, order.SubTotal - order.TemporalDiscount - order.DiscountAmount - order.LoyaltyDiscountAmount - order.PrepaidDiscount);
                     bool qualifiesForFree = deliveryThreshold.HasValue && deliveryThreshold.Value > 0 && effectiveNetItems >= deliveryThreshold.Value;
                     order.DeliveryFee = qualifiesForFree ? 0 : baseDeliveryFee;
                 }
 
-                order.TotalAmount = Math.Max(0, order.SubTotal + order.DeliveryFee - order.DiscountAmount - order.TemporalDiscount - order.LoyaltyDiscountAmount);
+                order.TotalAmount = Math.Max(0, order.SubTotal + order.DeliveryFee - order.DiscountAmount - order.TemporalDiscount - order.LoyaltyDiscountAmount - order.PrepaidDiscount);
 
                 // 💡 Initial Paid Amount calculation for POS Mixed payments & Structured Payment Table
                 if (order.Source == OrderSource.POS)
@@ -2006,7 +2019,7 @@ public class OrderService : IOrderService
                     }
                 }
 
-                order.TotalAmount = Math.Max(0, order.SubTotal + order.DeliveryFee - order.DiscountAmount - order.TemporalDiscount);
+                order.TotalAmount = Math.Max(0, order.SubTotal + order.DeliveryFee - order.DiscountAmount - order.TemporalDiscount - order.PrepaidDiscount);
 
                 // 6. UPDATE PAYMENTS
                 if (dto.PaymentMethod.HasValue)
