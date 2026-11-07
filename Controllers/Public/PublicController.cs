@@ -191,7 +191,7 @@ public class PublicController : ControllerBase
         // 1.5 Fetch active campaign discounts (from نظام العروض)
         var now = Sportive.API.Utils.TimeHelper.GetEgyptTime();
         var productIds = products.Select(x => x.Id).ToList();
-        var categoryIds = products.Where(x => x.CategoryId.HasValue).Select(x => x.CategoryId!.Value).ToList();
+        var productCategoryIds = products.Where(x => x.CategoryId.HasValue).Select(x => x.CategoryId!.Value).ToList();
         var brandIds = products.Where(x => x.BrandId.HasValue).Select(x => x.BrandId!.Value).ToList();
 
         var activeCampaignDiscounts = await _db.ProductDiscounts
@@ -201,7 +201,7 @@ public class PublicController : ControllerBase
             .Where(d => 
                 (d.ProductId == null && d.CategoryId == null && d.BrandId == null) ||
                 (d.ProductId != null && productIds.Contains(d.ProductId.Value)) ||
-                (d.CategoryId != null && categoryIds.Contains(d.CategoryId.Value)) ||
+                (d.CategoryId != null && productCategoryIds.Contains(d.CategoryId.Value)) ||
                 (d.BrandId != null && brandIds.Contains(d.BrandId.Value))
             )
             .ToListAsync();
