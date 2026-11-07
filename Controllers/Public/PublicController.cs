@@ -96,8 +96,10 @@ public class PublicController : ControllerBase
     [HttpGet("facebook-feed")]
     public async Task<IActionResult> GetFacebookFeed(
         [FromQuery] string? section = null,
+        [FromQuery] string? sections = null,
         [FromQuery] CategoryType? type = null,
         [FromQuery] int? categoryId = null,
+        [FromQuery] string? categoryIds = null,
         [FromQuery] decimal? originalPriceMultiplier = null,
         [FromQuery] decimal? discountPercent = null,
         [FromQuery] bool? showOriginalPrice = null)
@@ -112,11 +114,15 @@ public class PublicController : ControllerBase
 
         string feedTitle = "Sportive Product Feed";
 
-        // Section filter (men, women, kids, shoes, equipment, special)
-        if (!string.IsNullOrWhiteSpace(section))
+        // Section filter (men, women, kids, shoes, equipment, special - supports single or comma-separated sections)
+        var secParam = !string.IsNullOrWhiteSpace(sections) ? sections : section;
+        if (!string.IsNullOrWhiteSpace(secParam))
         {
-            var secLower = section.Trim().ToLowerInvariant();
-            CategoryType? targetType = secLower switch
+            var secList = secParam.Split(new[] { ',', '|', ';' }, StringSplitOptions.RemoveEmptyEntries)
+                                  .Select(s => s.Trim().ToLowerInvariant())
+                                  .ToList();
+
+            var targetTypes = secList.Select(s => s switch
             {
                 "men" => CategoryType.Men,
                 "women" => CategoryType.Women,
@@ -124,13 +130,13 @@ public class PublicController : ControllerBase
                 "equipment" => CategoryType.Equipment,
                 "shoes" => CategoryType.Shoes,
                 "special" => CategoryType.SpecialSizes,
-                _ => null
-            };
+                _ => (CategoryType?)null
+            }).Where(t => t.HasValue).Select(t => t!.Value).Distinct().ToList();
 
-            if (targetType.HasValue)
+            if (targetTypes.Any())
             {
-                query = query.Where(p => p.Category != null && p.Category.Type == targetType.Value);
-                feedTitle = $"Sportive Product Feed - {secLower.ToUpper()}";
+                query = query.Where(p => p.Category != null && targetTypes.Contains(p.Category.Type));
+                feedTitle = $"Sportive Product Feed - {string.Join(" + ", secList).ToUpper()}";
             }
         }
         else if (type.HasValue)
@@ -139,20 +145,44 @@ public class PublicController : ControllerBase
             feedTitle = $"Sportive Product Feed - {type.Value}";
         }
 
-        // Subcategory filter by CategoryId (direct CategoryId or child categories)
-        if (categoryId.HasValue && categoryId.Value > 0)
+        // Subcategory filter by CategoryId / CategoryIds (supports single ID or comma-separated list)
+        var catParam = !string.IsNullOrWhiteSpace(categoryIds) ? categoryIds : null;
+        var parsedCatIds = new List<int>();
+        if (!string.IsNullOrWhiteSpace(catParam))
+        {
+            foreach (var part in catParam.Split(new[] { ',', '|', ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (int.TryParse(part.Trim(), out int cid) && cid > 0)
+                    parsedCatIds.Add(cid);
+            }
+        }
+        else if (categoryId.HasValue && categoryId.Value > 0)
+        {
+            parsedCatIds.Add(categoryId.Value);
+        }
+
+        if (parsedCatIds.Any())
         {
             var childIds = await _db.Categories
-                .Where(c => c.ParentId == categoryId.Value)
+                .Where(c => c.ParentId.HasValue && parsedCatIds.Contains(c.ParentId.Value))
                 .Select(c => c.Id)
                 .ToListAsync();
 
-            query = query.Where(p => p.CategoryId == categoryId.Value || (p.CategoryId.HasValue && childIds.Contains(p.CategoryId.Value)));
+            var allTargetCatIds = parsedCatIds.Concat(childIds).Distinct().ToList();
+
+            query = query.Where(p => p.CategoryId.HasValue && allTargetCatIds.Contains(p.CategoryId.Value));
             
-            var catObj = await _db.Categories.FirstOrDefaultAsync(c => c.Id == categoryId.Value);
-            if (catObj != null)
+            if (parsedCatIds.Count == 1)
             {
-                feedTitle = $"Sportive Product Feed - {catObj.NameAr}";
+                var catObj = await _db.Categories.FirstOrDefaultAsync(c => c.Id == parsedCatIds[0]);
+                if (catObj != null)
+                {
+                    feedTitle = $"Sportive Product Feed - {catObj.NameAr}";
+                }
+            }
+            else
+            {
+                feedTitle = $"Sportive Product Feed - Combined Categories ({parsedCatIds.Count})";
             }
         }
 
