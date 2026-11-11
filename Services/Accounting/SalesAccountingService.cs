@@ -596,6 +596,14 @@ public class SalesAccountingService
 
         decimal totalRefundValue = totalNetReturn + totalVatReturn; // Excludes shipping for partial returns
 
+        // 🎯 طلبات المتجر الإلكتروني (Online Store / Website):
+        // في طلبات المتجر (وخاصة بعد التسليم)، المرتجع لا يتم صرفه نقداً من درج نقدية الموقع
+        // بل يُثبت كاستحقاق ورصيد في حساب العميل (ذمم مدينة - العملاء)
+        // ما لم يتم تحديد حساب صرف محدد (RefundAccountId).
+        if (order.Source != OrderSource.POS && !refundAccountId.HasValue)
+        {
+            refundToStoreCredit = true;
+        }
 
         // ✅ ROBUST MULTI-RETURN DEBT LOGIC:
         // We calculate how much of the original debt is still "remaining" after previous returns.
