@@ -71,7 +71,7 @@ public class OrderService : IOrderService
         int? customerId = null, DateTime? fromDate = null, DateTime? toDate = null, string? salesPersonId = null, OrderSource? source = null, PaymentMethod? paymentMethod = null,
         string? orderBy = null, bool descending = false, int? branchId = null, int? warehouseId = null)
     {
-        pageSize = Math.Clamp(pageSize, 1, 2000);
+        pageSize = Math.Clamp(pageSize, 1, 10000);
         var query = _db.Orders
             .AsNoTracking();
 

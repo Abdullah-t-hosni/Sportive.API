@@ -84,7 +84,7 @@ public class OrdersController : ControllerBase
         [FromQuery] string? orderBy = null, [FromQuery] bool descending = false,
         [FromQuery] int? branchId = null, [FromQuery] int? warehouseId = null)
     {
-        pageSize = Math.Clamp(pageSize, 1, 2000);
+        pageSize = Math.Clamp(pageSize, 1, 10000);
 
         bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
         int? isolatedBranchId = canViewAll ? branchId : User.GetBranchId();

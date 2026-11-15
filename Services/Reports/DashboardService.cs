@@ -1129,14 +1129,32 @@ public class DashboardService : IDashboardService
         return top.Select(t => new TopProductDto(t.ProductId, t.ProductNameAr, t.ProductNameEn, t.ProductId.HasValue ? imgs.GetValueOrDefault(t.ProductId.Value) : null, t.Sold, t.Revenue)).ToList();
     }
 
-    public async Task<List<OrderStatusStatsDto>> GetOrderStatusStatsAsync(int? branchId = null, OrderSource? source = null)
+    public async Task<List<OrderStatusStatsDto>> GetOrderStatusStatsAsync(int? branchId = null, OrderSource? source = null, DateTime? fromDate = null, DateTime? toDate = null)
     {
-        var query = _db.Orders.AsNoTracking().AsQueryable();
+        var query = _db.Orders.AsNoTracking().Where(o => !o.OrderNumber.EndsWith("-RTN"));
         if (branchId.HasValue) query = query.Where(o => o.BranchId == branchId.Value);
         if (source.HasValue) query = query.Where(o => o.Source == source.Value);
+
+        // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
+        if (fromDate.HasValue) query = query.Where(o => o.CreatedAt >= fromDate.Value.Date.AddHours(TimeHelper.GetBusinessDayEndHour()));
+        if (toDate.HasValue)
+        {
+            var endOfBusinessDay = toDate.Value.Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
+            query = query.Where(o => o.CreatedAt <= endOfBusinessDay);
+        }
+
         var stats = await query.GroupBy(o => o.Status).Select(g => new { Status = g.Key, Count = g.Count() }).ToListAsync();
+        var pickupCount = await query.Where(o => o.FulfillmentType == FulfillmentType.Pickup).CountAsync();
         var total = stats.Sum(s => s.Count);
-        return stats.Select(s => new OrderStatusStatsDto(s.Status.ToString(), s.Count, total > 0 ? Math.Round((decimal)s.Count / total * 100, 1) : 0)).ToList();
+
+        var result = stats.Select(s => new OrderStatusStatsDto(s.Status.ToString(), s.Count, total > 0 ? Math.Round((decimal)s.Count / total * 100, 1) : 0)).ToList();
+        if (pickupCount > 0)
+        {
+            result.Add(new OrderStatusStatsDto("StorePickup", pickupCount, total > 0 ? Math.Round((decimal)pickupCount / total * 100, 1) : 0));
+        }
+        result.Add(new OrderStatusStatsDto("all", total, 100));
+
+        return result;
     }
 
     public async Task<List<OrderSummaryDto>> GetRecentOrdersAsync(int count = 10, int? branchId = null, OrderSource? source = null)

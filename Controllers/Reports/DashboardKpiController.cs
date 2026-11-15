@@ -54,11 +54,15 @@ public class DashboardKpiController : ControllerBase
     }
 
     [HttpGet("order-status-stats")]
-    public async Task<IActionResult> GetOrderStatusStats([FromQuery] int? filterBranchId = null, [FromQuery] OrderSource? source = null)
+    public async Task<IActionResult> GetOrderStatusStats(
+        [FromQuery] int? filterBranchId = null,
+        [FromQuery] OrderSource? source = null,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null)
     {
         bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
         int? branchId = !canViewAll ? User.GetBranchId() : (filterBranchId > 0 ? filterBranchId : null);
-        return Ok(await _dashboard.GetOrderStatusStatsAsync(branchId, source));
+        return Ok(await _dashboard.GetOrderStatusStatsAsync(branchId, source, fromDate, toDate));
     }
 
     [HttpGet("recent-orders")]
