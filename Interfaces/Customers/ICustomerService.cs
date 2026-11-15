@@ -12,6 +12,7 @@ public interface ICustomerService
         string? orderBy = null, bool isDescending = true,
         string? source = null,
         bool? hasLedgerActivity = null);
+    Task<List<CustomerLookupDto>> GetCustomerLookupAsync(string? search = null, bool? hasLedgerActivity = null);
     Task<CustomerDetailDto?> GetCustomerByIdAsync(int id);
     Task<CustomerDetailDto?> GetCustomerByEmailAsync(string email);
     Task<CustomerDetailDto?> GetCustomerByUserIdAsync(string userId);

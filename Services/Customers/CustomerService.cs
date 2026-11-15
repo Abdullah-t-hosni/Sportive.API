@@ -76,7 +76,7 @@ public class CustomerService : ICustomerService
         {
             query = query.Where(c => 
                 (c.MainAccount != null && c.MainAccount.OpeningBalance != 0) ||
-                _db.JournalLines.Any(l => l.CustomerId == c.Id || (l.OrderId != null && _db.Orders.Any(o => o.Id == l.OrderId && o.CustomerId == c.Id)))
+                _db.JournalLines.Any(l => l.CustomerId == c.Id)
             );
         }
 
@@ -94,12 +94,19 @@ public class CustomerService : ICustomerService
 
         if (!string.IsNullOrWhiteSpace(search))
         {
-            var s = search.ToLower();
-            var searchHash = _encryptionHelper.ComputeSearchHash(search);
+            var s = search.ToLower().Trim();
+            var searchHash = _encryptionHelper.ComputeSearchHash(s);
+            var cleanPhone = s.Replace(" ", "").Replace("-", "");
+            var searchHashClean = _encryptionHelper.ComputeSearchHash(cleanPhone);
+            string intlPhone = cleanPhone.StartsWith("0") ? "2" + cleanPhone : cleanPhone.StartsWith("2") ? cleanPhone : "2" + cleanPhone;
+            var searchHashIntl = _encryptionHelper.ComputeSearchHash(intlPhone);
+
             query = query.Where(c =>
                 c.FullName.ToLower().Contains(s) ||
                 c.EmailHash == searchHash ||
-                c.PhoneHash == searchHash);
+                c.PhoneHash == searchHash ||
+                c.PhoneHash == searchHashClean ||
+                c.PhoneHash == searchHashIntl);
         }
 
         // 2. Map to a rich projection for filtering and sorting
@@ -118,10 +125,9 @@ public class CustomerService : ICustomerService
             OrderCount = c.Orders.Count,
             OrderTotal = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => (decimal?)o.TotalAmount) ?? 0,
             HasWebsiteOrders = c.Orders.Any(o => o.Source == OrderSource.Website),
-            // Calculate Net Balance in SQL - ONLY for this Customer ID
-            // 🛡️ Enhanced: include both direct CustomerId lines and lines bound via Order on receivable/asset accounts
+            // Calculate Net Balance in SQL - ONLY for this Customer ID directly via IX_JournalLines_CustomerId
             JournalNet = _db.JournalLines
-                .Where(l => (l.CustomerId == c.Id || (l.OrderId != null && _db.Orders.Any(o => o.Id == l.OrderId && o.CustomerId == c.Id))) && l.JournalEntry.Status == JournalEntryStatus.Posted)
+                .Where(l => l.CustomerId == c.Id && l.JournalEntry.Status == JournalEntryStatus.Posted)
                 .Where(l => l.Account != null && (l.Account.Code.StartsWith("1107") || l.Account.Code.StartsWith("1105") || l.Account.Code.StartsWith("1104") || (c.MainAccountId.HasValue && l.AccountId == c.MainAccountId.Value)))
                 .Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0
         }).Select(x => new {
@@ -156,11 +162,11 @@ public class CustomerService : ICustomerService
             .ToListAsync();
 
         // 5. Hydrate DTOs
-        // We need addresses separately or joined (let's fetch them in a single batch for the page)
+        // We only load addresses for reasonable page sizes to prevent massive packet bloat
         var pageIds = rawCustomers.Select(c => c.Id).ToList();
-        var addressMap = await _db.Addresses
-            .Where(a => pageIds.Contains(a.CustomerId))
-            .ToListAsync();
+        var addressMap = pageSize <= 100 
+            ? await _db.Addresses.Where(a => pageIds.Contains(a.CustomerId)).ToListAsync()
+            : new List<Address>();
 
         var items = rawCustomers.Select(c => new CustomerDetailDto(
             Id: c.Id, 
@@ -194,6 +200,67 @@ public class CustomerService : ICustomerService
         return new PaginatedResult<CustomerDetailDto>(
             items, total, page, pageSize,
             (int)Math.Ceiling((double)total / pageSize));
+    }
+
+    public async Task<List<CustomerLookupDto>> GetCustomerLookupAsync(string? search = null, bool? hasLedgerActivity = null)
+    {
+        var staffRoleIds = await _db.Roles
+            .Where(r => r.Name != null && AppRoles.StaffRoles.Contains(r.Name))
+            .Select(r => r.Id)
+            .ToListAsync();
+
+        var staffUserIds = await _db.UserRoles
+            .Where(ur => staffRoleIds.Contains(ur.RoleId))
+            .Select(ur => ur.UserId)
+            .ToListAsync();
+
+        var query = _db.Customers
+            .AsNoTracking()
+            .Where(c => c.AppUserId == null || !staffUserIds.Contains(c.AppUserId))
+            .AsQueryable();
+
+        if (hasLedgerActivity.HasValue && hasLedgerActivity.Value)
+        {
+            query = query.Where(c => 
+                (c.MainAccount != null && c.MainAccount.OpeningBalance != 0) ||
+                _db.JournalLines.Any(l => l.CustomerId == c.Id)
+            );
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.ToLower().Trim();
+            var searchHash = _encryptionHelper.ComputeSearchHash(s);
+            var cleanPhone = s.Replace(" ", "").Replace("-", "");
+            var searchHashClean = _encryptionHelper.ComputeSearchHash(cleanPhone);
+            string intlPhone = cleanPhone.StartsWith("0") ? "2" + cleanPhone : cleanPhone.StartsWith("2") ? cleanPhone : "2" + cleanPhone;
+            var searchHashIntl = _encryptionHelper.ComputeSearchHash(intlPhone);
+
+            query = query.Where(c =>
+                c.FullName.ToLower().Contains(s) ||
+                c.EmailHash == searchHash ||
+                c.PhoneHash == searchHash ||
+                c.PhoneHash == searchHashClean ||
+                c.PhoneHash == searchHashIntl);
+        }
+
+        var raw = await query
+            .OrderByDescending(c => c.CreatedAt)
+            .Select(c => new
+            {
+                c.Id,
+                c.FullName,
+                c.PhoneEncrypted,
+                c.MainAccountId
+            })
+            .ToListAsync();
+
+        return raw.Select(c => new CustomerLookupDto(
+            c.Id,
+            c.FullName,
+            c.PhoneEncrypted != null ? _encryptionHelper.Decrypt(c.PhoneEncrypted) : null,
+            c.MainAccountId
+        )).ToList();
     }
 
     public async Task<List<CustomerRfmDto>> GetRfmDataAsync()

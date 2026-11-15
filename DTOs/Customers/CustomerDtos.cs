@@ -48,6 +48,13 @@ public record CustomerBasicDto(
     string LoyaltyTierName = "Bronze"
 );
 
+public record CustomerLookupDto(
+    [property: JsonPropertyName("id")] int Id,
+    [property: JsonPropertyName("fullName")] string FullName,
+    [property: JsonPropertyName("phone")] string? Phone,
+    [property: JsonPropertyName("mainAccountId")] int? MainAccountId
+);
+
 public record CustomerDetailDto(
     [property: JsonPropertyName("id")] int Id,
     [property: JsonPropertyName("fullName")] string FullName,

@@ -51,6 +51,11 @@ public class CustomersController : ControllerBase
         Ok(await _customers.GetCustomersAsync(page, pageSize, search, minSpent, minOrders, joinStartDate, joinEndDate, categoryId, hasDebt, orderBy, isDescending, source, hasLedgerActivity));
 
     [RequirePermission(ModuleKeys.Customers + "," + ModuleKeys.Pos + "," + ModuleKeys.Orders)]
+    [HttpGet("lookup")]
+    public async Task<IActionResult> GetLookup([FromQuery] string? search = null, [FromQuery] bool? hasLedgerActivity = null) =>
+        Ok(await _customers.GetCustomerLookupAsync(search, hasLedgerActivity));
+
+    [RequirePermission(ModuleKeys.Customers + "," + ModuleKeys.Pos + "," + ModuleKeys.Orders)]
     [HttpGet("rfm")]
     public async Task<IActionResult> GetRfm() =>
         Ok(await _customers.GetRfmDataAsync());
