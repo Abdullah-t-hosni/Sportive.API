@@ -4914,7 +4914,7 @@ public class OperationalReportsController : ControllerBase
         // Project lightweight scalars first; load Customer & Items ONLY for the requested page!
         var ordersQuery = _db.Orders
             .AsNoTracking()
-            .Where(o => o.Source == OrderSource.Website && o.CreatedAt >= from && o.CreatedAt <= to);
+            .Where(o => o.Source == OrderSource.Website && o.CreatedAt >= from && o.CreatedAt <= to && !o.OrderNumber.EndsWith("-RTN"));
 
         // Load Shipping Companies to identify Bosta, Gohary, and AS
         var shippingCompanies = await _db.ShippingCompanies.AsNoTracking().ToListAsync();
