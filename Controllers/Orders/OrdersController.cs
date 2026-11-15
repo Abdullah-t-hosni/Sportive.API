@@ -2283,6 +2283,88 @@ public class OrdersController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>
+    /// GET /api/orders/customer-orders?customerId=...&phone=...&name=...
+    /// جلب كامل طلبات العميل لعرضها في بروفيل العميل بغض النظر عن فلاتر لوحة التحكم الحالية
+    /// </summary>
+    [HttpGet("customer-orders")]
+    [RequirePermission(ModuleKeys.Orders + "," + ModuleKeys.OrdersMain + "," + ModuleKeys.OnlineStore + "," + ModuleKeys.OnlineOrders)]
+    public async Task<IActionResult> GetCustomerOrders([FromQuery] int? customerId, [FromQuery] string? phone, [FromQuery] string? name)
+    {
+        if (!customerId.HasValue && string.IsNullOrWhiteSpace(phone) && string.IsNullOrWhiteSpace(name))
+            return BadRequest("CustomerId, Phone or Name is required.");
+
+        var query = _db.Orders
+            .AsNoTracking()
+            .Include(o => o.Customer)
+            .Include(o => o.Items)
+            .Where(o => !o.OrderNumber.EndsWith("-RTN"))
+            .AsQueryable();
+
+        // 1. Resolve Customer ID if missing but phone is provided
+        int? targetCustomerId = customerId;
+        if (!targetCustomerId.HasValue && !string.IsNullOrWhiteSpace(phone))
+        {
+            var cleanPhone = phone.Trim().Replace(" ", "").Replace("-", "");
+            var pHash = Customer.EncryptionHelper?.ComputeSearchHash(cleanPhone) ?? cleanPhone;
+            string intlPhone = cleanPhone.StartsWith("0") ? "2" + cleanPhone : cleanPhone.StartsWith("2") ? cleanPhone : "2" + cleanPhone;
+            var pHashIntl = Customer.EncryptionHelper?.ComputeSearchHash(intlPhone) ?? intlPhone;
+
+            var cust = await _db.Customers
+                .AsNoTracking()
+                .Where(c => c.PhoneHash == pHash || c.PhoneHash == pHashIntl)
+                .Select(c => (int?)c.Id)
+                .FirstOrDefaultAsync();
+
+            if (cust.HasValue) targetCustomerId = cust.Value;
+        }
+
+        if (targetCustomerId.HasValue && targetCustomerId.Value > 0)
+        {
+            query = query.Where(o => o.CustomerId == targetCustomerId.Value);
+        }
+        else if (!string.IsNullOrWhiteSpace(phone))
+        {
+            var cleanPhone = phone.Trim().Replace(" ", "").Replace("-", "");
+            var pHash = Customer.EncryptionHelper?.ComputeSearchHash(cleanPhone) ?? cleanPhone;
+            string intlPhone = cleanPhone.StartsWith("0") ? "2" + cleanPhone : cleanPhone.StartsWith("2") ? cleanPhone : "2" + cleanPhone;
+            var pHashIntl = Customer.EncryptionHelper?.ComputeSearchHash(intlPhone) ?? intlPhone;
+            query = query.Where(o => o.Customer != null && (o.Customer.PhoneHash == pHash || o.Customer.PhoneHash == pHashIntl));
+        }
+        else if (!string.IsNullOrWhiteSpace(name))
+        {
+            var sName = name.Trim();
+            query = query.Where(o => o.Customer != null && o.Customer.FullName == sName);
+        }
+
+        var orders = await query
+            .OrderByDescending(o => o.CreatedAt)
+            .Take(100)
+            .Select(o => new
+            {
+                id = o.Id,
+                orderNumber = o.OrderNumber,
+                status = o.Status.ToString(),
+                createdAt = o.CreatedAt,
+                totalAmount = o.TotalAmount,
+                returnedAmount = _db.JournalLines
+                    .Where(l => l.OrderId == o.Id && l.JournalEntry.Type == JournalEntryType.SalesReturn)
+                    .Sum(l => (decimal?)l.Debit) ?? 0,
+                itemCount = o.Items.Count,
+                itemsCount = o.Items.Count,
+                customerId = o.CustomerId,
+                customerName = o.Customer != null ? o.Customer.FullName : "",
+                customerPhone = o.Customer != null ? o.Customer.Phone : "",
+                bostaShipmentStatus = o.BostaShipmentStatus,
+                bostaTrackingNumber = o.BostaTrackingNumber,
+                bostaAwbUrl = o.BostaAwbUrl,
+                bostaDeliveryId = o.BostaDeliveryId
+            })
+            .ToListAsync();
+
+        return Ok(orders);
+    }
+
 }
 
 public record ArchiveBatchDto(int[] Ids, bool? Archive = true);
