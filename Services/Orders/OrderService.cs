@@ -69,13 +69,20 @@ public class OrderService : IOrderService
     public async Task<PaginatedResult<OrderSummaryDto>> GetOrdersAsync(
         int page, int pageSize, OrderStatus? status = null, string? search = null,
         int? customerId = null, DateTime? fromDate = null, DateTime? toDate = null, string? salesPersonId = null, OrderSource? source = null, PaymentMethod? paymentMethod = null,
-        string? orderBy = null, bool descending = false, int? branchId = null, int? warehouseId = null)
+        string? orderBy = null, bool descending = false, int? branchId = null, int? warehouseId = null, FulfillmentType? fulfillmentType = null)
     {
         pageSize = Math.Clamp(pageSize, 1, 10000);
         var query = _db.Orders
             .AsNoTracking();
 
-        if (status.HasValue) query = query.Where(o => o.Status == status.Value);
+        if (status.HasValue)
+        {
+            if (status.Value == OrderStatus.Returned)
+                query = query.Where(o => o.Status == OrderStatus.Returned || o.Status == OrderStatus.PartiallyReturned);
+            else
+                query = query.Where(o => o.Status == status.Value);
+        }
+        if (fulfillmentType.HasValue) query = query.Where(o => o.FulfillmentType == fulfillmentType.Value);
         if (source.HasValue) query = query.Where(o => o.Source == source.Value);
         if (paymentMethod.HasValue) query = query.Where(o => o.PaymentMethod == paymentMethod.Value);
         if (customerId.HasValue) query = query.Where(o => o.CustomerId == customerId.Value);

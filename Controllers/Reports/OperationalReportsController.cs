@@ -4905,7 +4905,9 @@ public class OperationalReportsController : ControllerBase
         pageSize = Math.Clamp(pageSize, 1, 500);
 
         // Date range with Egypt Business Day End Hour (2 AM cutoff, standard across all financial reports)
-        var from = (fromDate ?? new DateTime(TimeHelper.GetEgyptTime().Year, TimeHelper.GetEgyptTime().Month, 1)).Date.AddHours(TimeHelper.GetBusinessDayEndHour());
+        var from = fromDate.HasValue 
+            ? fromDate.Value.Date.AddHours(TimeHelper.GetBusinessDayEndHour()) 
+            : new DateTime(2020, 1, 1);
         var to = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
 
         // 1. Orders Base Query for Online Store (Source == Website or 3)
@@ -5006,6 +5008,7 @@ public class OperationalReportsController : ControllerBase
                 o.ShippingTrackingNumber,
                 o.BostaDeliveryId,
                 o.BostaTrackingNumber,
+                Governorate = o.DeliveryAddress != null ? o.DeliveryAddress.City : (o.FulfillmentType == FulfillmentType.Pickup ? "استلام من الفرع" : null),
                 o.SubTotal,
                 o.DiscountAmount,
                 o.TemporalDiscount,
@@ -5069,6 +5072,7 @@ public class OperationalReportsController : ControllerBase
 
         var courierMap = new Dictionary<string, (int Total, int Delivered, int Returned, decimal Collected, decimal Pending, decimal DeliveryFee, decimal CourierCost)>();
         var pmMap = new Dictionary<string, (int Count, decimal Amount)>();
+        var govMap = new Dictionary<string, (int Count, decimal Amount)>();
 
         var orderRows = new List<object>();
 
@@ -5219,6 +5223,15 @@ public class OperationalReportsController : ControllerBase
             pStats.Count++;
             pStats.Amount += o.TotalAmount;
             pmMap[pmKey] = pStats;
+
+            // Governorate Breakdown
+            string govKey = !string.IsNullOrWhiteSpace(o.Governorate) ? o.Governorate.Trim() : "غير محدد";
+            if (!govMap.TryGetValue(govKey, out var gStats))
+                gStats = (0, 0);
+            gStats.Count++;
+            if (o.Status != OrderStatus.Cancelled)
+                gStats.Amount += o.TotalAmount;
+            govMap[govKey] = gStats;
 
             // Row Item Profit (only allocate and hydrate full row details for the requested page!)
             if (pagedOrderDetails.TryGetValue(o.Id, out var detail))

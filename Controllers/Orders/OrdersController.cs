@@ -82,14 +82,15 @@ public class OrdersController : ControllerBase
         [FromQuery] DateTime? toDate = null, [FromQuery] string? salesPersonId = null,
         [FromQuery] OrderSource? source = null, [FromQuery] PaymentMethod? paymentMethod = null,
         [FromQuery] string? orderBy = null, [FromQuery] bool descending = false,
-        [FromQuery] int? branchId = null, [FromQuery] int? warehouseId = null)
+        [FromQuery] int? branchId = null, [FromQuery] int? warehouseId = null,
+        [FromQuery] FulfillmentType? fulfillmentType = null)
     {
         pageSize = Math.Clamp(pageSize, 1, 10000);
 
         bool canViewAll = await User.HasViewAllBranchesAsync(HttpContext);
         int? isolatedBranchId = canViewAll ? branchId : User.GetBranchId();
 
-        var result = await _orderService.GetOrdersAsync(page, pageSize, status, search, customerId, fromDate, toDate, salesPersonId, source, paymentMethod, orderBy, descending, isolatedBranchId, warehouseId);
+        var result = await _orderService.GetOrdersAsync(page, pageSize, status, search, customerId, fromDate, toDate, salesPersonId, source, paymentMethod, orderBy, descending, isolatedBranchId, warehouseId, fulfillmentType);
         return Ok(result);
     }
 
