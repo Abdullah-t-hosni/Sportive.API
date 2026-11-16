@@ -29,6 +29,7 @@ public class ReturnExchangeRequestsController : ControllerBase
     private readonly IAccountingService _accounting;
     private readonly INotificationService _notificationService;
     private readonly IInventoryService _inventory;
+    private readonly ICustomerService _customerService;
 
     public ReturnExchangeRequestsController(
         AppDbContext db,
@@ -36,7 +37,8 @@ public class ReturnExchangeRequestsController : ControllerBase
         ILogger<ReturnExchangeRequestsController> logger,
         IAccountingService accounting,
         INotificationService notificationService,
-        IInventoryService inventory)
+        IInventoryService inventory,
+        ICustomerService customerService)
     {
         _db = db;
         _hubContext = hubContext;
@@ -44,6 +46,7 @@ public class ReturnExchangeRequestsController : ControllerBase
         _accounting = accounting;
         _notificationService = notificationService;
         _inventory = inventory;
+        _customerService = customerService;
     }
 
     private static string GenerateOrderHash(string orderNumber)
@@ -721,10 +724,13 @@ public class ReturnExchangeRequestsController : ControllerBase
         {
             var s = filter.Search.Trim().ToLower();
             var searchHash = Customer.EncryptionHelper?.ComputeSearchHash(filter.Search.Trim()) ?? "";
+            var matchingCustomerIds = await _customerService.SearchCustomerIdsAsync(filter.Search.Trim());
+
             query = query.Where(r =>
                 (r.Order != null && r.Order.OrderNumber.ToLower().Contains(s)) ||
                 (r.Customer != null && r.Customer.FullName != null && r.Customer.FullName.ToLower().Contains(s)) ||
                 (!string.IsNullOrEmpty(searchHash) && r.Customer != null && r.Customer.PhoneHash == searchHash) ||
+                (matchingCustomerIds.Count > 0 && r.CustomerId != null && matchingCustomerIds.Contains(r.CustomerId.Value)) ||
                 (r.Reason != null && r.Reason.ToLower().Contains(s)) ||
                 (r.CustomerNotes != null && r.CustomerNotes.ToLower().Contains(s)) ||
                 r.OrderId.ToString() == s ||

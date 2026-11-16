@@ -100,23 +100,24 @@ public class OrderService : IOrderService
         if (!string.IsNullOrWhiteSpace(search))
         {
             var s = search.Trim().TrimStart('#').Trim();
-            // 1. Exact phone hash lookup
+            var isNumeric = int.TryParse(s, out var numericId);
             var phoneHash = _encryptionHelper.ComputeSearchHash(s);
-            // 2. Partial or formatted phone lookup via customer phone index
-            var phoneCustomerIds = await _customerService.GetCustomerIdsByPhoneAsync(s);
+            var matchingCustomerIds = await _customerService.SearchCustomerIdsAsync(s);
 
-            if (phoneCustomerIds.Count > 0)
+            if (matchingCustomerIds.Count > 0)
             {
                 query = query.Where(o =>
                     o.OrderNumber.Contains(s) ||
+                    (isNumeric && o.Id == numericId) ||
                     (o.Customer != null && o.Customer.FullName.Contains(s)) ||
                     (o.Customer != null && o.Customer.PhoneHash != null && o.Customer.PhoneHash == phoneHash) ||
-                    phoneCustomerIds.Contains(o.CustomerId));
+                    matchingCustomerIds.Contains(o.CustomerId));
             }
             else
             {
                 query = query.Where(o =>
                     o.OrderNumber.Contains(s) ||
+                    (isNumeric && o.Id == numericId) ||
                     (o.Customer != null && o.Customer.FullName.Contains(s)) ||
                     (o.Customer != null && o.Customer.PhoneHash != null && o.Customer.PhoneHash == phoneHash));
             }

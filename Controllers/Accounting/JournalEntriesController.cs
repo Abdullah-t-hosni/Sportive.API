@@ -23,7 +23,8 @@ public class JournalEntriesController : ControllerBase
     private readonly SequenceService _seq;
     private readonly AccountingCoreService _core;
     private readonly IAuditService _audit;
-    public JournalEntriesController(IAccountingService accounting, AppDbContext db, IPdfService pdf, ITranslator t, SequenceService seq, AccountingCoreService core, IAuditService audit)
+    private readonly ICustomerService _customerService;
+    public JournalEntriesController(IAccountingService accounting, AppDbContext db, IPdfService pdf, ITranslator t, SequenceService seq, AccountingCoreService core, IAuditService audit, ICustomerService customerService)
     {
         _accounting = accounting;
         _db = db;
@@ -32,6 +33,7 @@ public class JournalEntriesController : ControllerBase
         _seq = seq;
         _core = core;
         _audit = audit;
+        _customerService = customerService;
     }
 
     [HttpGet("{id}/pdf")]
@@ -79,6 +81,7 @@ public class JournalEntriesController : ControllerBase
             var cleanSearch = trimmedSearch.TrimStart('#').Trim();
             var isNumeric = int.TryParse(cleanSearch, out var searchId);
             var isDecimal = decimal.TryParse(cleanSearch, out var searchAmt);
+            var matchingCustIds = await _customerService.SearchCustomerIdsAsync(trimmedSearch);
 
             var matchingOrderIds = _db.Orders
                 .Where(o => o.OrderNumber.Contains(cleanSearch) || o.OrderNumber.Contains(trimmedSearch))
@@ -90,6 +93,7 @@ public class JournalEntriesController : ControllerBase
                            || (r.Reference != null && (r.Reference.Contains(trimmedSearch) || r.Reference.Contains(cleanSearch)))
                            || (r.OrderId.HasValue && matchingOrderIds.Contains(r.OrderId.Value))
                            || (r.Order != null && (r.Order.OrderNumber.Contains(cleanSearch) || r.Order.OrderNumber.Contains(trimmedSearch)))
+                           || (matchingCustIds.Count > 0 && r.Lines.Any(l => l.CustomerId.HasValue && matchingCustIds.Contains(l.CustomerId.Value)))
                            || r.Lines.Any(l => (l.Description != null && (l.Description.Contains(trimmedSearch) || l.Description.Contains(cleanSearch)))
                                             || (l.OrderId.HasValue && matchingOrderIds.Contains(l.OrderId.Value))
                                             || (l.Customer != null && l.Customer.FullName.Contains(trimmedSearch))

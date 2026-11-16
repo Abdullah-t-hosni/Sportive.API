@@ -21,12 +21,14 @@ public class OperationalReportsController : ControllerBase
     private readonly ILogger<OperationalReportsController> _logger;
     private readonly Microsoft.Extensions.Caching.Memory.IMemoryCache _cache;
     private readonly ITranslator _t;
-    public OperationalReportsController(AppDbContext db, ILogger<OperationalReportsController> logger, Microsoft.Extensions.Caching.Memory.IMemoryCache cache, ITranslator t)
+    private readonly ICustomerService _customerService;
+    public OperationalReportsController(AppDbContext db, ILogger<OperationalReportsController> logger, Microsoft.Extensions.Caching.Memory.IMemoryCache cache, ITranslator t, ICustomerService customerService)
     {
         _db = db;
         _logger = logger;
         _cache = cache;
         _t = t;
+        _customerService = customerService;
     }
     [HttpPost("reset-supplier-balances")]
     public async Task<IActionResult> ResetSupplierBalances()
@@ -101,12 +103,20 @@ public class OperationalReportsController : ControllerBase
 
         if (customerId == null && !string.IsNullOrEmpty(search))
         {
-            var searchHash = Customer.EncryptionHelper?.ComputeSearchHash(search);
-            var found = await _db.Customers
-                .Where(c => c.FullName.Contains(search) || (searchHash != null && c.PhoneHash == searchHash))
-                .Select(c => c.Id)
-                .FirstOrDefaultAsync();
-            if (found > 0) customerId = found;
+            var matchingIds = await _customerService.SearchCustomerIdsAsync(search);
+            if (matchingIds.Count > 0)
+            {
+                customerId = matchingIds[0];
+            }
+            else
+            {
+                var searchHash = Customer.EncryptionHelper?.ComputeSearchHash(search);
+                var found = await _db.Customers
+                    .Where(c => c.FullName.Contains(search) || (searchHash != null && c.PhoneHash == searchHash))
+                    .Select(c => c.Id)
+                    .FirstOrDefaultAsync();
+                if (found > 0) customerId = found;
+            }
         }
 
         if (customerId == null)
@@ -354,8 +364,16 @@ public class OperationalReportsController : ControllerBase
 
         if (!string.IsNullOrEmpty(search))
         {
-            var searchHash = Customer.EncryptionHelper?.ComputeSearchHash(search);
-            customersQuery = customersQuery.Where(c => c.FullName.Contains(search) || (searchHash != null && c.PhoneHash == searchHash));
+            var matchingIds = await _customerService.SearchCustomerIdsAsync(search);
+            if (matchingIds.Count > 0)
+            {
+                customersQuery = customersQuery.Where(c => c.FullName.Contains(search) || matchingIds.Contains(c.Id));
+            }
+            else
+            {
+                var searchHash = Customer.EncryptionHelper?.ComputeSearchHash(search);
+                customersQuery = customersQuery.Where(c => c.FullName.Contains(search) || (searchHash != null && c.PhoneHash == searchHash));
+            }
         }
 
         var customers = await customersQuery
@@ -1433,11 +1451,14 @@ public class OperationalReportsController : ControllerBase
         {
             var searchLower = search.ToLower();
             var searchHash = Sportive.API.Models.Customer.EncryptionHelper?.ComputeSearchHash(search) ?? "";
+            var matchingIds = await _customerService.SearchCustomerIdsAsync(search);
 
             returnsQ = returnsQ.Where(j => 
                 (j.Reference != null && j.Reference.ToLower().Contains(searchLower)) ||
+                (j.Order != null && j.Order.OrderNumber.ToLower().Contains(searchLower)) ||
                 (j.Order != null && j.Order.Customer != null && j.Order.Customer.FullName.ToLower().Contains(searchLower)) ||
-                (j.Order != null && j.Order.Customer != null && j.Order.Customer.PhoneHash == searchHash)
+                (j.Order != null && j.Order.Customer != null && j.Order.Customer.PhoneHash == searchHash) ||
+                (matchingIds.Count > 0 && j.Order != null && matchingIds.Contains(j.Order.CustomerId))
             );
         }
 
@@ -4983,9 +5004,11 @@ public class OperationalReportsController : ControllerBase
         {
             var s = search.Trim().ToLower();
             var searchHash = Customer.EncryptionHelper?.ComputeSearchHash(search.Trim()) ?? "";
+            var matchingCustomerIds = await _customerService.SearchCustomerIdsAsync(search);
             ordersQuery = ordersQuery.Where(o =>
                 o.OrderNumber.ToLower().Contains(s) ||
                 (o.Customer != null && (o.Customer.FullName.ToLower().Contains(s) || (!string.IsNullOrEmpty(searchHash) && o.Customer.PhoneHash == searchHash))) ||
+                (matchingCustomerIds.Count > 0 && matchingCustomerIds.Contains(o.CustomerId)) ||
                 (o.ShippingTrackingNumber != null && o.ShippingTrackingNumber.ToLower().Contains(s)) ||
                 (o.BostaTrackingNumber != null && o.BostaTrackingNumber.ToLower().Contains(s))
             );

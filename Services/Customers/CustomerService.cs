@@ -980,6 +980,37 @@ public class CustomerService : ICustomerService
         return matchedIds;
     }
 
+    public async Task<List<int>> SearchCustomerIdsAsync(string query)
+    {
+        if (string.IsNullOrWhiteSpace(query)) return new List<int>();
+
+        var s = query.Trim();
+        var results = new HashSet<int>();
+
+        // 1. Phone index lookup (partial/full/formatted)
+        var phoneIds = await GetCustomerIdsByPhoneAsync(s);
+        foreach (var id in phoneIds) results.Add(id);
+
+        // 2. Name and exact hash lookup in database
+        var hash = _encryptionHelper.ComputeSearchHash(s);
+        var cleanPhone = s.Replace(" ", "").Replace("-", "");
+        var hashClean = _encryptionHelper.ComputeSearchHash(cleanPhone);
+
+        var matchingCusts = await _db.Customers
+            .AsNoTracking()
+            .Where(c => c.FullName.Contains(s) ||
+                        c.EmailHash == hash ||
+                        c.PhoneHash == hash ||
+                        c.PhoneHash == hashClean)
+            .Select(c => c.Id)
+            .Take(100)
+            .ToListAsync();
+
+        foreach (var id in matchingCusts) results.Add(id);
+
+        return results.Take(200).ToList();
+    }
+
     private void InvalidatePhoneCache()
     {
         try

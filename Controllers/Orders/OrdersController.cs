@@ -38,6 +38,7 @@ public class OrdersController : ControllerBase
     private readonly IHubContext<NotificationHub> _hubContext;
     private readonly ITenantContext _tenantContext;
     private readonly Sportive.API.Services.Loyalty.ILoyaltyService _loyaltyService;
+    private readonly ICustomerService _customerService;
     private static readonly HttpClient _bostaHttpClient = new HttpClient(new SocketsHttpHandler
     {
         PooledConnectionLifetime = TimeSpan.FromMinutes(15)
@@ -57,7 +58,8 @@ public class OrdersController : ControllerBase
         IMemoryCache cache, 
         IHubContext<NotificationHub> hubContext, 
         ITenantContext tenantContext,
-        Sportive.API.Services.Loyalty.ILoyaltyService loyaltyService)
+        Sportive.API.Services.Loyalty.ILoyaltyService loyaltyService,
+        ICustomerService customerService)
     {
         _orderService = orderService;
         _pdfService   = pdfService;
@@ -70,6 +72,7 @@ public class OrdersController : ControllerBase
         _hubContext   = hubContext;
         _tenantContext = tenantContext;
         _loyaltyService = loyaltyService;
+        _customerService = customerService;
     }
 
     [HttpGet]
@@ -137,10 +140,22 @@ public class OrdersController : ControllerBase
 
         if (!string.IsNullOrEmpty(search))
         {
-            search = search.Trim();
-            query = query.Where(o => o.OrderNumber.Contains(search) || 
-                                     o.Customer.FullName.Contains(search) || 
-                                     (o.Customer.Phone != null && o.Customer.Phone.Contains(search)));
+            search = search.Trim().TrimStart('#').Trim();
+            var isNumeric = int.TryParse(search, out var numId);
+            var matchingCustomerIds = await _customerService.SearchCustomerIdsAsync(search);
+            if (matchingCustomerIds.Count > 0)
+            {
+                query = query.Where(o => o.OrderNumber.Contains(search) || 
+                                         (isNumeric && o.Id == numId) ||
+                                         (o.Customer != null && o.Customer.FullName.Contains(search)) || 
+                                         matchingCustomerIds.Contains(o.CustomerId));
+            }
+            else
+            {
+                query = query.Where(o => o.OrderNumber.Contains(search) || 
+                                         (isNumeric && o.Id == numId) ||
+                                         (o.Customer != null && o.Customer.FullName.Contains(search)));
+            }
         }
 
         var orders = await query
@@ -1723,10 +1738,22 @@ public class OrdersController : ControllerBase
         if (to.HasValue)   q = q.Where(o => o.ArchivedAt <= to);
         if (!string.IsNullOrEmpty(search))
         {
-            var searchHash = Customer.EncryptionHelper?.ComputeSearchHash(search);
-            q = q.Where(o => o.OrderNumber.Contains(search)
-                           || (o.Customer != null && o.Customer.FullName.Contains(search))
-                           || (o.Customer != null && searchHash != null && o.Customer.PhoneHash == searchHash));
+            var s = search.Trim().TrimStart('#').Trim();
+            var isNumeric = int.TryParse(s, out var numId);
+            var matchingCustomerIds = await _customerService.SearchCustomerIdsAsync(s);
+            if (matchingCustomerIds.Count > 0)
+            {
+                q = q.Where(o => o.OrderNumber.Contains(s)
+                               || (isNumeric && o.Id == numId)
+                               || (o.Customer != null && o.Customer.FullName.Contains(s))
+                               || matchingCustomerIds.Contains(o.CustomerId));
+            }
+            else
+            {
+                q = q.Where(o => o.OrderNumber.Contains(s)
+                               || (isNumeric && o.Id == numId)
+                               || (o.Customer != null && o.Customer.FullName.Contains(s)));
+            }
         }
 
         var total = await q.CountAsync();
@@ -2305,18 +2332,26 @@ public class OrdersController : ControllerBase
         int? targetCustomerId = customerId;
         if (!targetCustomerId.HasValue && !string.IsNullOrWhiteSpace(phone))
         {
-            var cleanPhone = phone.Trim().Replace(" ", "").Replace("-", "");
-            var pHash = Customer.EncryptionHelper?.ComputeSearchHash(cleanPhone) ?? cleanPhone;
-            string intlPhone = cleanPhone.StartsWith("0") ? "2" + cleanPhone : cleanPhone.StartsWith("2") ? cleanPhone : "2" + cleanPhone;
-            var pHashIntl = Customer.EncryptionHelper?.ComputeSearchHash(intlPhone) ?? intlPhone;
+            var phoneIds = await _customerService.GetCustomerIdsByPhoneAsync(phone);
+            if (phoneIds.Count > 0)
+            {
+                targetCustomerId = phoneIds[0];
+            }
+            else
+            {
+                var cleanPhone = phone.Trim().Replace(" ", "").Replace("-", "");
+                var pHash = Customer.EncryptionHelper?.ComputeSearchHash(cleanPhone) ?? cleanPhone;
+                string intlPhone = cleanPhone.StartsWith("0") ? "2" + cleanPhone : cleanPhone.StartsWith("2") ? cleanPhone : "2" + cleanPhone;
+                var pHashIntl = Customer.EncryptionHelper?.ComputeSearchHash(intlPhone) ?? intlPhone;
 
-            var cust = await _db.Customers
-                .AsNoTracking()
-                .Where(c => c.PhoneHash == pHash || c.PhoneHash == pHashIntl)
-                .Select(c => (int?)c.Id)
-                .FirstOrDefaultAsync();
+                var cust = await _db.Customers
+                    .AsNoTracking()
+                    .Where(c => c.PhoneHash == pHash || c.PhoneHash == pHashIntl)
+                    .Select(c => (int?)c.Id)
+                    .FirstOrDefaultAsync();
 
-            if (cust.HasValue) targetCustomerId = cust.Value;
+                if (cust.HasValue) targetCustomerId = cust.Value;
+            }
         }
 
         if (targetCustomerId.HasValue && targetCustomerId.Value > 0)

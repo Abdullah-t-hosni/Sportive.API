@@ -14,6 +14,7 @@ public interface ICustomerService
         bool? hasLedgerActivity = null);
     Task<List<CustomerLookupDto>> GetCustomerLookupAsync(string? search = null, bool? hasLedgerActivity = null);
     Task<List<int>> GetCustomerIdsByPhoneAsync(string phoneQuery);
+    Task<List<int>> SearchCustomerIdsAsync(string query);
     Task<CustomerDetailDto?> GetCustomerByIdAsync(int id);
     Task<CustomerDetailDto?> GetCustomerByEmailAsync(string email);
     Task<CustomerDetailDto?> GetCustomerByUserIdAsync(string userId);

@@ -1271,7 +1271,7 @@ public class InternalChatBotService : IInternalChatBotService
                     }
 
                     // Fallback: If no order matched and input looks like a phone number, search by customer phone hash!
-                    if (!matchedOrders.Any() && raw.Length >= 9 && raw.All(char.IsDigit))
+                    if (!matchedOrders.Any() && raw.Length >= 4 && (raw.All(char.IsDigit) || raw.StartsWith("+")))
                     {
                         var (phoneHashes, _) = GetSearchHashes(raw);
                         if (phoneHashes.Any())

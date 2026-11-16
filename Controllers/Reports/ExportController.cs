@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ClosedXML.Excel;
 using Sportive.API.Data;
+using Sportive.API.Interfaces;
 using Sportive.API.Models;
 
 namespace Sportive.API.Controllers;
@@ -15,8 +16,13 @@ namespace Sportive.API.Controllers;
 public class ExportController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly ICustomerService _customerService;
 
-    public ExportController(AppDbContext db) => _db = db;
+    public ExportController(AppDbContext db, ICustomerService customerService)
+    {
+        _db = db;
+        _customerService = customerService;
+    }
 
     // ORDERS
     // GET /api/export/orders?source=0&fromDate=2025-01-01&toDate=2025-12-31&mode=invoice
@@ -592,9 +598,11 @@ public class ExportController : ControllerBase
         {
             var s = search.Trim().ToLower();
             var searchHash = Customer.EncryptionHelper?.ComputeSearchHash(search.Trim());
+            var matchingCustomerIds = await _customerService.SearchCustomerIdsAsync(search.Trim());
             query = query.Where(c =>
                 c.FullName.ToLower().Contains(s) ||
-                (searchHash != null && (c.EmailHash == searchHash || c.PhoneHash == searchHash)));
+                (searchHash != null && (c.EmailHash == searchHash || c.PhoneHash == searchHash)) ||
+                (matchingCustomerIds.Count > 0 && matchingCustomerIds.Contains(c.Id)));
         }
 
         // 5. Min Orders Filter
@@ -1025,6 +1033,7 @@ public class ExportController : ControllerBase
         {
             var trimmedSearch = search.Trim();
             var cleanSearch = trimmedSearch.TrimStart('#').Trim();
+            var matchingCustIds = await _customerService.SearchCustomerIdsAsync(trimmedSearch);
 
             var matchingOrderIds = _db.Orders
                 .Where(o => o.OrderNumber.Contains(cleanSearch) || o.OrderNumber.Contains(trimmedSearch))
@@ -1037,6 +1046,7 @@ public class ExportController : ControllerBase
                 (j.Description != null && (j.Description.Contains(trimmedSearch) || j.Description.Contains(cleanSearch))) ||
                 (j.OrderId.HasValue && matchingOrderIds.Contains(j.OrderId.Value)) ||
                 (j.Order != null && (j.Order.OrderNumber.Contains(cleanSearch) || j.Order.OrderNumber.Contains(trimmedSearch))) ||
+                (matchingCustIds.Count > 0 && j.Lines.Any(l => l.CustomerId.HasValue && matchingCustIds.Contains(l.CustomerId.Value))) ||
                 j.Lines.Any(l => (l.Description != null && (l.Description.Contains(trimmedSearch) || l.Description.Contains(cleanSearch)))
                               || (l.OrderId.HasValue && matchingOrderIds.Contains(l.OrderId.Value))
                               || (l.Customer != null && l.Customer.FullName.Contains(trimmedSearch))
