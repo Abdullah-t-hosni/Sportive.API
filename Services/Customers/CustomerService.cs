@@ -1,9 +1,11 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Sportive.API.Data;
 using Sportive.API.DTOs;
 using Sportive.API.Interfaces;
 using Sportive.API.Models;
 using Sportive.API.Utils;
+using System.Text;
 using System.Text.Json;
 
 namespace Sportive.API.Services;
@@ -12,11 +14,13 @@ public class CustomerService : ICustomerService
 {
     private readonly AppDbContext _db;
     private readonly EncryptionHelper _encryptionHelper;
+    private readonly IMemoryCache _cache;
 
-    public CustomerService(AppDbContext db, EncryptionHelper encryptionHelper)
+    public CustomerService(AppDbContext db, EncryptionHelper encryptionHelper, IMemoryCache cache)
     {
         _db = db;
         _encryptionHelper = encryptionHelper;
+        _cache = cache;
     }
 
     public async Task<PaginatedResult<CustomerDetailDto>> GetCustomersAsync(
@@ -101,12 +105,27 @@ public class CustomerService : ICustomerService
             string intlPhone = cleanPhone.StartsWith("0") ? "2" + cleanPhone : cleanPhone.StartsWith("2") ? cleanPhone : "2" + cleanPhone;
             var searchHashIntl = _encryptionHelper.ComputeSearchHash(intlPhone);
 
-            query = query.Where(c =>
-                c.FullName.ToLower().Contains(s) ||
-                c.EmailHash == searchHash ||
-                c.PhoneHash == searchHash ||
-                c.PhoneHash == searchHashClean ||
-                c.PhoneHash == searchHashIntl);
+            var phoneCustomerIds = await GetCustomerIdsByPhoneAsync(s);
+
+            if (phoneCustomerIds.Count > 0)
+            {
+                query = query.Where(c =>
+                    c.FullName.ToLower().Contains(s) ||
+                    c.EmailHash == searchHash ||
+                    c.PhoneHash == searchHash ||
+                    c.PhoneHash == searchHashClean ||
+                    c.PhoneHash == searchHashIntl ||
+                    phoneCustomerIds.Contains(c.Id));
+            }
+            else
+            {
+                query = query.Where(c =>
+                    c.FullName.ToLower().Contains(s) ||
+                    c.EmailHash == searchHash ||
+                    c.PhoneHash == searchHash ||
+                    c.PhoneHash == searchHashClean ||
+                    c.PhoneHash == searchHashIntl);
+            }
         }
 
         // 2. Map to a rich projection for filtering and sorting
@@ -236,12 +255,27 @@ public class CustomerService : ICustomerService
             string intlPhone = cleanPhone.StartsWith("0") ? "2" + cleanPhone : cleanPhone.StartsWith("2") ? cleanPhone : "2" + cleanPhone;
             var searchHashIntl = _encryptionHelper.ComputeSearchHash(intlPhone);
 
-            query = query.Where(c =>
-                c.FullName.ToLower().Contains(s) ||
-                c.EmailHash == searchHash ||
-                c.PhoneHash == searchHash ||
-                c.PhoneHash == searchHashClean ||
-                c.PhoneHash == searchHashIntl);
+            var phoneCustomerIds = await GetCustomerIdsByPhoneAsync(s);
+
+            if (phoneCustomerIds.Count > 0)
+            {
+                query = query.Where(c =>
+                    c.FullName.ToLower().Contains(s) ||
+                    c.EmailHash == searchHash ||
+                    c.PhoneHash == searchHash ||
+                    c.PhoneHash == searchHashClean ||
+                    c.PhoneHash == searchHashIntl ||
+                    phoneCustomerIds.Contains(c.Id));
+            }
+            else
+            {
+                query = query.Where(c =>
+                    c.FullName.ToLower().Contains(s) ||
+                    c.EmailHash == searchHash ||
+                    c.PhoneHash == searchHash ||
+                    c.PhoneHash == searchHashClean ||
+                    c.PhoneHash == searchHashIntl);
+            }
         }
 
         var raw = await query
@@ -532,6 +566,7 @@ public class CustomerService : ICustomerService
 
         _db.Customers.Add(customer);
         await _db.SaveChangesAsync();
+        InvalidatePhoneCache();
 
         return (await GetCustomerByIdAsync(customer.Id))!;
     }
@@ -581,6 +616,7 @@ public class CustomerService : ICustomerService
         }
 
         await _db.SaveChangesAsync();
+        InvalidatePhoneCache();
         return (await GetCustomerByIdAsync(customer.Id))!;
     }
 
@@ -712,6 +748,7 @@ public class CustomerService : ICustomerService
         customer.IsActive = !customer.IsActive;
         customer.UpdatedAt = TimeHelper.GetEgyptTime();
         await _db.SaveChangesAsync();
+        InvalidatePhoneCache();
         return true;
     }
 
@@ -742,6 +779,7 @@ public class CustomerService : ICustomerService
         
         _db.Customers.Remove(customer);
         await _db.SaveChangesAsync();
+        InvalidatePhoneCache();
         return true;
     }
 
@@ -888,4 +926,96 @@ public class CustomerService : ICustomerService
 
         return new CustomerInsightsDto(vipCount, regularCount, lostCount, trend);
     }
+
+    public async Task<List<int>> GetCustomerIdsByPhoneAsync(string phoneQuery)
+    {
+        if (string.IsNullOrWhiteSpace(phoneQuery)) return new List<int>();
+
+        var digits = NormalizePhoneDigits(phoneQuery);
+        if (digits.Length < 3) return new List<int>();
+
+        var dbName = _db.Database.GetDbConnection().Database ?? "default";
+        var cacheKey = $"CUSTOMER_PHONE_INDEX_{dbName}";
+
+        if (!_cache.TryGetValue(cacheKey, out List<CachedCustomerPhone>? phoneIndex) || phoneIndex == null)
+        {
+            var raw = await _db.Customers
+                .AsNoTracking()
+                .Where(c => c.PhoneEncrypted != null && c.PhoneEncrypted != "")
+                .Select(c => new { c.Id, c.PhoneEncrypted })
+                .ToListAsync();
+
+            phoneIndex = new List<CachedCustomerPhone>(raw.Count);
+            foreach (var c in raw)
+            {
+                var decrypted = _encryptionHelper.Decrypt(c.PhoneEncrypted!);
+                if (!string.IsNullOrEmpty(decrypted))
+                {
+                    var clean = NormalizePhoneDigits(decrypted);
+                    if (!string.IsNullOrEmpty(clean))
+                    {
+                        phoneIndex.Add(new CachedCustomerPhone(c.Id, clean));
+                    }
+                }
+            }
+
+            var cacheOptions = new MemoryCacheEntryOptions
+            {
+                SlidingExpiration = TimeSpan.FromMinutes(30),
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(2)
+            };
+            _cache.Set(cacheKey, phoneIndex, cacheOptions);
+        }
+
+        var searchDigitsNoZero = digits.TrimStart('0');
+
+        var matchedIds = phoneIndex
+            .Where(p => p.CleanPhone.Contains(digits) || 
+                       (searchDigitsNoZero.Length >= 3 && p.CleanPhone.Contains(searchDigitsNoZero)))
+            .Select(p => p.CustomerId)
+            .Distinct()
+            .Take(200)
+            .ToList();
+
+        return matchedIds;
+    }
+
+    private void InvalidatePhoneCache()
+    {
+        try
+        {
+            var dbName = _db.Database.GetDbConnection().Database ?? "default";
+            _cache.Remove($"CUSTOMER_PHONE_INDEX_{dbName}");
+        }
+        catch { }
+    }
+
+    private static string NormalizePhoneDigits(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return string.Empty;
+        var sb = new StringBuilder(input.Length);
+        foreach (var ch in input)
+        {
+            if (ch >= '0' && ch <= '9')
+            {
+                sb.Append(ch);
+            }
+            else if (ch >= '٠' && ch <= '٩')
+            {
+                sb.Append((char)('0' + (ch - '٠')));
+            }
+        }
+        var result = sb.ToString();
+        if (result.StartsWith("201") && result.Length >= 12)
+        {
+            result = "0" + result.Substring(2);
+        }
+        else if (result.StartsWith("201") && result.Length >= 7)
+        {
+            result = "0" + result.Substring(2);
+        }
+        return result;
+    }
+
+    public record CachedCustomerPhone(int CustomerId, string CleanPhone);
 }

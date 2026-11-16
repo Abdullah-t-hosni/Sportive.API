@@ -100,12 +100,26 @@ public class OrderService : IOrderService
         if (!string.IsNullOrWhiteSpace(search))
         {
             var s = search.Trim().TrimStart('#').Trim();
-            // Hash the search term for encrypted phone lookup
+            // 1. Exact phone hash lookup
             var phoneHash = _encryptionHelper.ComputeSearchHash(s);
-            query = query.Where(o =>
-                o.OrderNumber.Contains(s) ||
-                (o.Customer != null && o.Customer.FullName.Contains(s)) ||
-                (o.Customer != null && o.Customer.PhoneHash != null && o.Customer.PhoneHash == phoneHash));
+            // 2. Partial or formatted phone lookup via customer phone index
+            var phoneCustomerIds = await _customerService.GetCustomerIdsByPhoneAsync(s);
+
+            if (phoneCustomerIds.Count > 0)
+            {
+                query = query.Where(o =>
+                    o.OrderNumber.Contains(s) ||
+                    (o.Customer != null && o.Customer.FullName.Contains(s)) ||
+                    (o.Customer != null && o.Customer.PhoneHash != null && o.Customer.PhoneHash == phoneHash) ||
+                    phoneCustomerIds.Contains(o.CustomerId));
+            }
+            else
+            {
+                query = query.Where(o =>
+                    o.OrderNumber.Contains(s) ||
+                    (o.Customer != null && o.Customer.FullName.Contains(s)) ||
+                    (o.Customer != null && o.Customer.PhoneHash != null && o.Customer.PhoneHash == phoneHash));
+            }
         }
 
         // 🚫 Hide courier settlement dummy return orders (-RTN) from normal orders listing
