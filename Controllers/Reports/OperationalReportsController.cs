@@ -4948,9 +4948,24 @@ public class OperationalReportsController : ControllerBase
         string goharyName = goharyCompany?.NameAr ?? "شركة الجوهري";
 
         // Filters
-        if (!string.IsNullOrEmpty(status) && Enum.TryParse<OrderStatus>(status, true, out var parsedStatus))
+        if (!string.IsNullOrEmpty(status))
         {
-            ordersQuery = ordersQuery.Where(o => o.Status == parsedStatus);
+            if (status.Equals("StorePickup", StringComparison.OrdinalIgnoreCase))
+            {
+                ordersQuery = ordersQuery.Where(o => o.FulfillmentType == FulfillmentType.Pickup || o.ShippingType == "Pickup" || (o.CustomerNotes != null && o.CustomerNotes.Contains("استلام من الفرع")));
+            }
+            else if (status.Equals("Returned", StringComparison.OrdinalIgnoreCase))
+            {
+                ordersQuery = ordersQuery.Where(o => o.Status == OrderStatus.Returned || o.Status == OrderStatus.PartiallyReturned);
+            }
+            else if (status.Equals("ReturnInShipping", StringComparison.OrdinalIgnoreCase))
+            {
+                ordersQuery = ordersQuery.Where(o => o.Status == OrderStatus.ReturnInShipping);
+            }
+            else if (Enum.TryParse<OrderStatus>(status, true, out var parsedStatus))
+            {
+                ordersQuery = ordersQuery.Where(o => o.Status == parsedStatus);
+            }
         }
 
         if (!string.IsNullOrEmpty(paymentMethod) && Enum.TryParse<PaymentMethod>(paymentMethod, true, out var parsedPm))
@@ -5252,8 +5267,7 @@ public class OperationalReportsController : ControllerBase
             if (!govMap.TryGetValue(govKey, out var gStats))
                 gStats = (0, 0);
             gStats.Count++;
-            if (o.Status != OrderStatus.Cancelled)
-                gStats.Amount += o.TotalAmount;
+            gStats.Amount += o.TotalAmount;
             govMap[govKey] = gStats;
 
             // Row Item Profit (only allocate and hydrate full row details for the requested page!)
@@ -5567,12 +5581,23 @@ public class OperationalReportsController : ControllerBase
             percentage = totalOrdersCount > 0 ? Math.Round(((decimal)kvp.Value.Count / totalOrdersCount) * 100m, 1) : 0
         }).OrderByDescending(p => p.totalAmount).ToList();
 
+        var govBreakdownList = govMap.Select(kvp => new {
+            governorate = kvp.Key,
+            count = kvp.Value.Count,
+            totalSales = kvp.Value.Amount
+        }).OrderByDescending(g => g.count).ToList();
+
         var response = new {
             summary = new {
                 totalOrdersCount,
                 deliveredOrdersCount,
                 returnedOrdersCount,
                 inShippingOrdersCount,
+                filterOrdersTotalAmount = allOrders.Sum(o => o.TotalAmount),
+                deliveredOrdersAmount = allOrders.Where(o => o.Status == OrderStatus.Delivered).Sum(o => o.TotalAmount),
+                cancelledOrdersAmount = allOrders.Where(o => o.Status == OrderStatus.Cancelled).Sum(o => o.TotalAmount),
+                inTransitOrdersAmount = allOrders.Where(o => o.Status == OrderStatus.OutForDelivery).Sum(o => o.TotalAmount),
+                returnedOrdersAmount = allOrders.Where(o => o.Status == OrderStatus.Returned || o.Status == OrderStatus.ReturnInShipping || o.Status == OrderStatus.PartiallyReturned).Sum(o => o.TotalAmount),
 
                 // Official GL Figures (Matched to General Ledger and Trial Balance)
                 glGrossSales,
@@ -5646,6 +5671,7 @@ public class OperationalReportsController : ControllerBase
             reconciliation,
             couriers = courierBreakdownList,
             paymentMethods = paymentBreakdownList,
+            governorates = govBreakdownList,
             expenses = sortedExpenseRows,
             orders = paginatedRows,
             pagination = new {
