@@ -144,14 +144,21 @@ public record CustomerLoyaltyInfoDto(
     int MinPointsToRedeem
 );
 
-// ========== RFM (lightweight — no addresses, no balance) ==========
+// ========== RFM (Customer Intelligence) ==========
 public record CustomerRfmDto(
-    [property: JsonPropertyName("id")]          int      Id,
-    [property: JsonPropertyName("fullName")]    string   FullName,
-    [property: JsonPropertyName("phone")]       string?  Phone,
-    [property: JsonPropertyName("totalOrders")] int      TotalOrders,
-    [property: JsonPropertyName("totalSpent")]  decimal  TotalSpent,
-    [property: JsonPropertyName("createdAt")]   DateTime CreatedAt
+    [property: JsonPropertyName("id")]               int       Id,
+    [property: JsonPropertyName("fullName")]         string    FullName,
+    [property: JsonPropertyName("phone")]            string?   Phone,
+    [property: JsonPropertyName("totalOrders")]      int       TotalOrders,
+    [property: JsonPropertyName("totalSpent")]       decimal   TotalSpent,
+    [property: JsonPropertyName("createdAt")]        DateTime  CreatedAt,
+    [property: JsonPropertyName("lastOrderDate")]    DateTime? LastOrderDate = null,
+    [property: JsonPropertyName("lastOrderAmount")]  decimal   LastOrderAmount = 0,
+    [property: JsonPropertyName("balance")]          decimal   Balance = 0,
+    [property: JsonPropertyName("isCompany")]        bool      IsCompany = false,
+    [property: JsonPropertyName("companyName")]      string?   CompanyName = null,
+    [property: JsonPropertyName("categoryName")]     string?   CategoryName = null,
+    [property: JsonPropertyName("loyaltyPoints")]    decimal   LoyaltyPoints = 0
 );
 
 // ========== ADDRESS ==========
