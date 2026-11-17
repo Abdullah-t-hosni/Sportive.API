@@ -297,7 +297,12 @@ public class CustomerService : ICustomerService
         )).ToList();
     }
 
-    public async Task<List<CustomerRfmDto>> GetRfmDataAsync()
+    public async Task<List<CustomerRfmDto>> GetRfmDataAsync(
+        int? branchId = null,
+        int? categoryId = null,
+        OrderSource? source = null,
+        DateTime? fromDate = null,
+        DateTime? toDate = null)
     {
         var staffRoleIds = await _db.Roles
             .Where(r => r.Name != null && AppRoles.StaffRoles.Contains(r.Name))
@@ -309,9 +314,26 @@ public class CustomerService : ICustomerService
             .Select(ur => ur.UserId)
             .ToListAsync();
 
-        var data = await _db.Customers
+        var custQuery = _db.Customers
             .AsNoTracking()
-            .Where(c => c.AppUserId == null || !staffUserIds.Contains(c.AppUserId))
+            .Where(c => c.AppUserId == null || !staffUserIds.Contains(c.AppUserId));
+
+        if (categoryId.HasValue)
+        {
+            custQuery = custQuery.Where(c => c.CategoryId == categoryId.Value);
+        }
+
+        if (branchId.HasValue)
+        {
+            custQuery = custQuery.Where(c => c.Orders.Any(o => o.Status != OrderStatus.Cancelled && o.BranchId == branchId.Value));
+        }
+
+        if (source.HasValue)
+        {
+            custQuery = custQuery.Where(c => c.Orders.Any(o => o.Status != OrderStatus.Cancelled && o.Source == source.Value));
+        }
+
+        var data = await custQuery
             .OrderByDescending(c => c.CreatedAt)
             .Select(c => new
             {
@@ -319,13 +341,32 @@ public class CustomerService : ICustomerService
                 c.FullName,
                 c.PhoneEncrypted,
                 c.CreatedAt,
+                c.CategoryId,
                 CategoryName = c.Category != null ? c.Category.NameAr : null,
                 c.LoyaltyPointsBalance,
                 OpeningBalance = (c.MainAccount != null && c.MainAccount.Code != "1107") ? c.MainAccount.OpeningBalance : 0,
-                TotalOrders = c.Orders.Count(o => o.Status != OrderStatus.Cancelled),
-                TotalSpent = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => (decimal?)o.TotalAmount) ?? 0,
-                LastOrderDate = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Max(o => (DateTime?)o.CreatedAt),
-                LastOrderAmount = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).OrderByDescending(o => o.CreatedAt).Select(o => (decimal?)o.TotalAmount).FirstOrDefault() ?? 0,
+                TotalOrders = c.Orders.Count(o => o.Status != OrderStatus.Cancelled 
+                    && (!branchId.HasValue || o.BranchId == branchId.Value)
+                    && (!source.HasValue || o.Source == source.Value)
+                    && (!fromDate.HasValue || o.CreatedAt >= fromDate.Value)
+                    && (!toDate.HasValue || o.CreatedAt <= toDate.Value)),
+                TotalSpent = c.Orders.Where(o => o.Status != OrderStatus.Cancelled 
+                    && (!branchId.HasValue || o.BranchId == branchId.Value)
+                    && (!source.HasValue || o.Source == source.Value)
+                    && (!fromDate.HasValue || o.CreatedAt >= fromDate.Value)
+                    && (!toDate.HasValue || o.CreatedAt <= toDate.Value)).Sum(o => (decimal?)o.TotalAmount) ?? 0,
+                LastOrderDate = c.Orders.Where(o => o.Status != OrderStatus.Cancelled 
+                    && (!branchId.HasValue || o.BranchId == branchId.Value)
+                    && (!source.HasValue || o.Source == source.Value)
+                    && (!fromDate.HasValue || o.CreatedAt >= fromDate.Value)
+                    && (!toDate.HasValue || o.CreatedAt <= toDate.Value)).Max(o => (DateTime?)o.CreatedAt),
+                LastOrderAmount = c.Orders.Where(o => o.Status != OrderStatus.Cancelled 
+                    && (!branchId.HasValue || o.BranchId == branchId.Value)
+                    && (!source.HasValue || o.Source == source.Value)
+                    && (!fromDate.HasValue || o.CreatedAt >= fromDate.Value)
+                    && (!toDate.HasValue || o.CreatedAt <= toDate.Value))
+                    .OrderByDescending(o => o.CreatedAt)
+                    .Select(o => (decimal?)o.TotalAmount).FirstOrDefault() ?? 0,
                 JournalNet = _db.JournalLines
                     .Where(l => l.CustomerId == c.Id && l.JournalEntry.Status == JournalEntryStatus.Posted)
                     .Where(l => l.Account != null && (l.Account.Code.StartsWith("1107") || l.Account.Code.StartsWith("1105") || (c.MainAccountId.HasValue && l.AccountId == c.MainAccountId.Value)))
@@ -354,7 +395,8 @@ public class CustomerService : ICustomerService
                 false,
                 null,
                 c.CategoryName,
-                c.LoyaltyPointsBalance
+                c.LoyaltyPointsBalance,
+                c.CategoryId
             );
         }).ToList();
     }

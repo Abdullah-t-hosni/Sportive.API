@@ -158,7 +158,8 @@ public record CustomerRfmDto(
     [property: JsonPropertyName("isCompany")]        bool      IsCompany = false,
     [property: JsonPropertyName("companyName")]      string?   CompanyName = null,
     [property: JsonPropertyName("categoryName")]     string?   CategoryName = null,
-    [property: JsonPropertyName("loyaltyPoints")]    decimal   LoyaltyPoints = 0
+    [property: JsonPropertyName("loyaltyPoints")]    decimal   LoyaltyPoints = 0,
+    [property: JsonPropertyName("categoryId")]       int?      CategoryId = null
 );
 
 // ========== ADDRESS ==========

@@ -57,8 +57,13 @@ public class CustomersController : ControllerBase
 
     [RequirePermission(ModuleKeys.Customers + "," + ModuleKeys.Pos + "," + ModuleKeys.Orders)]
     [HttpGet("rfm")]
-    public async Task<IActionResult> GetRfm() =>
-        Ok(await _customers.GetRfmDataAsync());
+    public async Task<IActionResult> GetRfm(
+        [FromQuery] int? branchId = null,
+        [FromQuery] int? categoryId = null,
+        [FromQuery] OrderSource? source = null,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null) =>
+        Ok(await _customers.GetRfmDataAsync(branchId, categoryId, source, fromDate, toDate));
 
     [RequirePermission(ModuleKeys.Customers)]
     [HttpGet("insights")]

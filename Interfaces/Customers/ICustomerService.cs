@@ -1,4 +1,5 @@
 using Sportive.API.DTOs;
+using Sportive.API.Models;
 
 namespace Sportive.API.Interfaces;
 
@@ -28,7 +29,7 @@ public interface ICustomerService
     Task EnsureCustomerAccountAsync(int customerId, bool isEmployee = false, int? employeeId = null);
     Task SyncAllMissingAccountsAsync();
     Task<CustomerDetailDto> UpdateCustomerAsync(int id, UpdateCustomerDto dto);
-    Task<List<CustomerRfmDto>> GetRfmDataAsync();
+    Task<List<CustomerRfmDto>> GetRfmDataAsync(int? branchId = null, int? categoryId = null, OrderSource? source = null, DateTime? fromDate = null, DateTime? toDate = null);
     Task<int> GetOrCreateCustomerIdByUserIdAsync(string userId);
     Task EvaluateCustomerCategoryAsync(int customerId);
     Task<CustomerInsightsDto> GetInsightsAsync();
