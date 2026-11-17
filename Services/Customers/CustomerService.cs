@@ -309,7 +309,7 @@ public class CustomerService : ICustomerService
             .Select(ur => ur.UserId)
             .ToListAsync();
 
-        var customers = await _db.Customers
+        var data = await _db.Customers
             .AsNoTracking()
             .Where(c => c.AppUserId == null || !staffUserIds.Contains(c.AppUserId))
             .OrderByDescending(c => c.CreatedAt)
@@ -317,153 +317,42 @@ public class CustomerService : ICustomerService
             {
                 c.Id,
                 c.FullName,
-                c.Phone,
+                c.PhoneEncrypted,
                 c.CreatedAt,
-                IsCompany = false,
-                CompanyName = (string?)null,
                 CategoryName = c.Category != null ? c.Category.NameAr : null,
                 c.LoyaltyPointsBalance,
-                c.MainAccountId,
-                OpeningBalance = (c.MainAccount != null && c.MainAccount.Code != "1107") ? c.MainAccount.OpeningBalance : 0
+                OpeningBalance = (c.MainAccount != null && c.MainAccount.Code != "1107") ? c.MainAccount.OpeningBalance : 0,
+                TotalOrders = c.Orders.Count(o => o.Status != OrderStatus.Cancelled),
+                TotalSpent = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => (decimal?)o.TotalAmount) ?? 0,
+                LastOrderDate = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Max(o => (DateTime?)o.CreatedAt),
+                LastOrderAmount = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).OrderByDescending(o => o.CreatedAt).Select(o => (decimal?)o.TotalAmount).FirstOrDefault() ?? 0,
+                JournalNet = _db.JournalLines
+                    .Where(l => l.CustomerId == c.Id && l.JournalEntry.Status == JournalEntryStatus.Posted)
+                    .Where(l => l.Account != null && (l.Account.Code.StartsWith("1107") || l.Account.Code.StartsWith("1105") || (c.MainAccountId.HasValue && l.AccountId == c.MainAccountId.Value)))
+                    .Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0
             })
             .ToListAsync();
 
-        var orderStats = await _db.Orders
-            .AsNoTracking()
-            .Where(o => o.Status != OrderStatus.Cancelled && o.CustomerId > 0)
-            .GroupBy(o => o.CustomerId)
-            .Select(g => new
-            {
-                CustomerId = g.Key,
-                TotalOrders = g.Count(),
-                TotalSpent = g.Sum(o => o.TotalAmount),
-                LastOrderDate = g.Max(o => (DateTime?)o.CreatedAt),
-                LastOrderAmount = g.OrderByDescending(o => o.CreatedAt).Select(o => o.TotalAmount).FirstOrDefault()
-            })
-            .ToDictionaryAsync(x => x.CustomerId);
-
-        var mainAccountIds = customers
-            .Where(c => c.MainAccountId.HasValue)
-            .Select(c => c.MainAccountId!.Value)
-            .Distinct()
-            .ToList();
-
-        var rawLines = await _db.JournalLines
-            .AsNoTracking()
-            .Where(l => l.JournalEntry.Status == JournalEntryStatus.Posted
-                     && l.Account != null
-                     && (l.Account.Code.StartsWith("1107") || mainAccountIds.Contains(l.AccountId)))
-            .Select(l => new
-            {
-                l.AccountId,
-                Is1107 = l.Account!.Code.StartsWith("1107"),
-                l.CustomerId,
-                l.OrderId,
-                OrderCustomerId = l.JournalEntry.Order != null ? (int?)l.JournalEntry.Order.CustomerId : null,
-                VoucherNumber = l.JournalEntry.Reference,
-                Net = l.Debit - l.Credit
-            })
-            .ToListAsync();
-
-        var unresolvedOrderIds = rawLines
-            .Where(l => l.CustomerId == null && l.OrderCustomerId == null && l.OrderId.HasValue)
-            .Select(l => l.OrderId!.Value)
-            .Distinct()
-            .ToList();
-
-        var orderCustomerMap = unresolvedOrderIds.Count > 0
-            ? await _db.Orders
-                .AsNoTracking()
-                .Where(o => unresolvedOrderIds.Contains(o.Id))
-                .Select(o => new { o.Id, o.CustomerId })
-                .ToDictionaryAsync(x => x.Id, x => x.CustomerId)
-            : new Dictionary<int, int>();
-
-        var unresolvedRefs = rawLines
-            .Where(l => l.CustomerId == null && l.OrderCustomerId == null && !l.OrderId.HasValue && !string.IsNullOrEmpty(l.VoucherNumber))
-            .Select(l => l.VoucherNumber!)
-            .Distinct()
-            .ToList();
-
-        var voucherCustomerMap = new Dictionary<string, int>();
-        if (unresolvedRefs.Count > 0)
+        return data.Select(c =>
         {
-            var voucherRows = await _db.ReceiptVouchers
-                .AsNoTracking()
-                .Where(rv => rv.CustomerId.HasValue && unresolvedRefs.Contains(rv.VoucherNumber))
-                .Select(rv => new { rv.VoucherNumber, CustomerId = rv.CustomerId!.Value })
-                .ToListAsync();
-
-            foreach (var vr in voucherRows)
+            string? phone = null;
+            if (!string.IsNullOrEmpty(c.PhoneEncrypted))
             {
-                voucherCustomerMap.TryAdd(vr.VoucherNumber, vr.CustomerId);
+                phone = _encryptionHelper != null ? _encryptionHelper.Decrypt(c.PhoneEncrypted) : c.PhoneEncrypted;
             }
-        }
-
-        var customerMainAccMap = customers.ToDictionary(c => c.Id, c => c.MainAccountId);
-        var journalNetMap = new Dictionary<int, decimal>();
-
-        foreach (var l in rawLines)
-        {
-            int? effCustId = l.CustomerId ?? l.OrderCustomerId;
-            if (!effCustId.HasValue && l.OrderId.HasValue && orderCustomerMap.TryGetValue(l.OrderId.Value, out var oCustId))
-                effCustId = oCustId;
-            if (!effCustId.HasValue && !string.IsNullOrEmpty(l.VoucherNumber) && voucherCustomerMap.TryGetValue(l.VoucherNumber, out var vCustId))
-                effCustId = vCustId;
-
-            if (!effCustId.HasValue) continue;
-            if (!customerMainAccMap.TryGetValue(effCustId.Value, out var custMainAccId)) continue;
-
-            if (!l.Is1107 && custMainAccId != l.AccountId) continue;
-
-            journalNetMap[effCustId.Value] = journalNetMap.GetValueOrDefault(effCustId.Value) + l.Net;
-        }
-
-        var returnEntries = await _db.JournalEntries
-            .AsNoTracking()
-            .Where(j => j.Type == JournalEntryType.SalesReturn
-                     && j.Status != JournalEntryStatus.Draft
-                     && !j.Lines.Any(l => l.Account != null && l.Account.Code.StartsWith("1107"))
-                     && j.Order != null
-                     && (j.Order.PaymentMethod == PaymentMethod.Credit || j.Order.PaidAmount < j.Order.TotalAmount - 0.01m))
-            .Select(j => new
-            {
-                j.Order!.CustomerId,
-                CashRefund = j.Lines
-                    .Where(l => l.Account != null && (l.Account.Code.StartsWith("1101") || l.Account.Code.StartsWith("1102")))
-                    .Sum(l => (decimal?)(l.Credit - l.Debit)) ?? 0,
-                TotalRefund = j.Lines
-                    .Where(l => l.Account != null && !l.Account.Code.StartsWith("41") && !l.Account.Code.StartsWith("2105") && !l.Account.Code.StartsWith("51"))
-                    .Sum(l => (decimal?)(l.Credit - l.Debit)) ?? 0
-            })
-            .ToListAsync();
-
-        var returnDeductionMap = new Dictionary<int, decimal>();
-        foreach (var r in returnEntries)
-        {
-            decimal refundVal = r.CashRefund > 0 ? r.CashRefund : r.TotalRefund;
-            if (refundVal > 0)
-                returnDeductionMap[r.CustomerId] = returnDeductionMap.GetValueOrDefault(r.CustomerId) + refundVal;
-        }
-
-        return customers.Select(c =>
-        {
-            orderStats.TryGetValue(c.Id, out var os);
-            decimal jNet = journalNetMap.GetValueOrDefault(c.Id);
-            decimal retDed = returnDeductionMap.GetValueOrDefault(c.Id);
 
             return new CustomerRfmDto(
                 c.Id,
                 c.FullName,
-                c.Phone,
-                os?.TotalOrders ?? 0,
-                os?.TotalSpent ?? 0m,
+                phone,
+                c.TotalOrders,
+                c.TotalSpent,
                 c.CreatedAt,
-                os?.LastOrderDate,
-                os?.LastOrderAmount ?? 0m,
-                c.OpeningBalance + jNet - retDed,
-                c.IsCompany,
-                c.CompanyName,
+                c.LastOrderDate,
+                c.LastOrderAmount,
+                c.OpeningBalance + c.JournalNet,
+                false,
+                null,
                 c.CategoryName,
                 c.LoyaltyPointsBalance
             );
