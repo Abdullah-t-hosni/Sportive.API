@@ -9,6 +9,7 @@ using Sportive.API.Models;
 using Sportive.API.Utils;
 using Microsoft.Extensions.Caching.Memory;
 using Sportive.API.DTOs;
+using Sportive.API.Extensions;
 
 namespace Sportive.API.Controllers;
 
@@ -1940,60 +1941,138 @@ public class OperationalReportsController : ControllerBase
         [FromQuery] bool      excel    = false,
         [FromQuery] int?      branchId = null)
     {
-        var from = fromDate ?? TimeHelper.GetEgyptTime().Date;
-        var to   = toDate?.Date.AddDays(1).AddTicks(-1) ?? TimeHelper.GetEgyptTime();
+        var endHour = TimeHelper.GetBusinessDayEndHour();
+        var from = (fromDate ?? TimeHelper.GetEgyptTime()).Date.AddHours(endHour);
+        var to   = (toDate ?? TimeHelper.GetEgyptTime()).Date.AddDays(1).AddHours(endHour).AddTicks(-1);
+
+        int? isolatedBranchId = await User.HasViewAllBranchesAsync(HttpContext) ? branchId : User.GetBranchId();
 
         var q = _db.Orders.AsNoTracking()
-            .Include(o => o.Customer)
-            .Include(o => o.Items)
             .Where(o => o.Source == OrderSource.POS
                      && o.CreatedAt >= from && o.CreatedAt <= to
                      && !string.IsNullOrEmpty(o.SalesPersonId));
 
         if (!string.IsNullOrEmpty(userId)) q = q.Where(o => o.SalesPersonId == userId);
-        if (branchId.HasValue) q = q.Where(o => o.BranchId == branchId.Value);
+        if (isolatedBranchId.HasValue) q = q.Where(o => o.BranchId == isolatedBranchId.Value);
 
-        var orders = await q.OrderByDescending(o => o.CreatedAt).ToListAsync();
+        var orders = await q
+            .OrderByDescending(o => o.CreatedAt)
+            .Select(o => new {
+                o.Id,
+                o.OrderNumber,
+                o.CreatedAt,
+                o.SalesPersonId,
+                CustomerName = o.Customer != null ? o.Customer.FullName : "",
+                o.TotalAmount,
+                Discount = o.DiscountAmount + o.TemporalDiscount,
+                o.Status,
+                o.PaymentMethod,
+                ItemCount = o.Items.Sum(i => i.Quantity),
+                PartialReturnAmount = o.Items
+                    .Where(i => i.ReturnedQuantity > 0 && i.Quantity > 0)
+                    .Sum(i => (i.TotalPrice / i.Quantity) * i.ReturnedQuantity),
+                Items = excel
+                    ? o.Items.Select(it => new {
+                        SKU = it.Product != null ? it.Product.SKU : null,
+                        ProductName = it.Product != null ? it.Product.NameAr : it.ProductNameAr,
+                        it.Size,
+                        it.Color,
+                        it.Quantity,
+                        it.UnitPrice,
+                        it.DiscountAmount,
+                        it.TotalPrice
+                    }).ToList()
+                    : null
+            })
+            .ToListAsync();
+
         var personIds = orders.Select(o => o.SalesPersonId).Where(id => !string.IsNullOrEmpty(id)).Distinct().ToList();
         var numericIds = personIds.Where(id => int.TryParse(id, out _)).Select(id => int.Parse(id!)).ToList();
         
-        var empNames = await _db.Employees.Where(e => numericIds.Contains(e.Id)).ToDictionaryAsync(e => e.Id.ToString(), e => e.Name);
+        var empNames = await _db.Employees.AsNoTracking().Where(e => numericIds.Contains(e.Id)).ToDictionaryAsync(e => e.Id.ToString(), e => e.Name);
         var remainingIds = personIds.Where(id => id != null && !empNames.ContainsKey(id)).ToList();
-        var userNamesResult = await _db.Users.Where(u => remainingIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.FullName);
+        var userNamesResult = await _db.Users.AsNoTracking().Where(u => remainingIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.FullName);
 
         var personNamesMap = empNames;
         foreach (var un in userNamesResult) if (!personNamesMap.ContainsKey(un.Key)) personNamesMap[un.Key] = un.Value;
 
-        var byPerson = orders
+        var grouped = orders
             .GroupBy(o => o.SalesPersonId != null && personNamesMap.ContainsKey(o.SalesPersonId) ? o.SalesPersonId : "Unknown")
             .Select(g => {
                 var ordersList = g.ToList();
-                var grossSales = ordersList.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount + o.DiscountAmount + o.TemporalDiscount);
-                decimal totalReturns = 0;
-                foreach(var o in ordersList.Where(o => o.Status != OrderStatus.Cancelled)) {
-                    if (o.Status == OrderStatus.Returned) totalReturns += o.TotalAmount;
-                    else {
-                        foreach(var item in o.Items.Where(i => i.ReturnedQuantity > 0)) {
-                            totalReturns += (item.Quantity > 0) ? (item.TotalPrice / item.Quantity) * item.ReturnedQuantity : 0;
-                        }
-                    }
-                }
-                var totalDiscount = ordersList.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.DiscountAmount + o.TemporalDiscount);
+                var activeOrders = ordersList.Where(o => o.Status != OrderStatus.Cancelled).ToList();
+                var grossSales = activeOrders.Sum(o => o.TotalAmount + o.Discount);
+                var totalReturns = activeOrders.Sum(o => o.Status == OrderStatus.Returned ? o.TotalAmount : o.PartialReturnAmount);
+                var totalDiscount = activeOrders.Sum(o => o.Discount);
                 var netSales = grossSales - totalReturns - totalDiscount;
-                return new UserActivityRow(g.Key, personNamesMap.GetValueOrDefault(g.Key, "System/Unknown"), ordersList.Count, grossSales, totalReturns, totalDiscount, netSales, ordersList.Count(o => o.Status == OrderStatus.Cancelled));
-            }).OrderByDescending(r => r.NetSales).ToList();
+                var cancellations = ordersList.Count(o => o.Status == OrderStatus.Cancelled);
+                var totalItems = activeOrders.Sum(o => o.ItemCount);
+                var avgOrderValue = activeOrders.Count > 0 ? Math.Round(netSales / activeOrders.Count, 2) : 0m;
+                var returnRate = grossSales > 0 ? Math.Round((totalReturns / grossSales) * 100, 1) : 0m;
+                var peakHourGroup = activeOrders
+                    .GroupBy(o => o.CreatedAt.Hour)
+                    .OrderByDescending(h => h.Sum(x => x.TotalAmount))
+                    .FirstOrDefault();
+                var paymentBreakdown = activeOrders
+                    .GroupBy(o => o.PaymentMethod.ToString())
+                    .Select(p => new { method = p.Key, count = p.Count(), amount = Math.Round(p.Sum(x => x.TotalAmount), 2) })
+                    .OrderByDescending(p => p.amount)
+                    .ToList();
+
+                return new {
+                    Row = new UserActivityRow(g.Key, personNamesMap.GetValueOrDefault(g.Key, "System/Unknown"), ordersList.Count, grossSales, totalReturns, totalDiscount, netSales, cancellations),
+                    AvgOrderValue = avgOrderValue,
+                    TotalItems = totalItems,
+                    ReturnRate = returnRate,
+                    PeakHour = peakHourGroup != null ? (int?)peakHourGroup.Key : null,
+                    PaymentBreakdown = paymentBreakdown
+                };
+            })
+            .OrderByDescending(r => r.Row.NetSales)
+            .ToList();
+
+        if (excel)
+        {
+            var excelDetail = orders.Select(o => new {
+                o.Id,
+                o.OrderNumber, o.CreatedAt, o.SalesPersonId,
+                SalesPersonName = (o.SalesPersonId != null && personNamesMap.TryGetValue(o.SalesPersonId, out var name)) ? name : "Unknown",
+                o.CustomerName,
+                o.TotalAmount, DiscountAmount = o.Discount, Status = o.Status.ToString(),
+                PaymentMethod = o.PaymentMethod.ToString(),
+                o.ItemCount,
+                o.Items
+            }).ToList();
+            return ExcelUserActivity(grouped.Select(x => x.Row).ToList(), excelDetail, from, to);
+        }
 
         var detail = orders.Select(o => new {
+            o.Id,
             o.OrderNumber, o.CreatedAt, o.SalesPersonId,
             SalesPersonName = (o.SalesPersonId != null && personNamesMap.TryGetValue(o.SalesPersonId, out var name)) ? name : "Unknown",
-            CustomerName = o.Customer?.FullName ?? "",
-            o.TotalAmount, DiscountAmount = o.DiscountAmount + o.TemporalDiscount, Status = o.Status.ToString(),
-            ItemCount = o.Items.Sum(i => i.Quantity),
-            Items = o.Items.Select(it => new { it.Product?.SKU, ProductName = it.Product?.NameAr ?? it.ProductNameAr, it.Size, it.Color, it.Quantity, it.UnitPrice, it.DiscountAmount, it.TotalPrice }).ToList()
+            o.CustomerName,
+            o.TotalAmount, DiscountAmount = o.Discount, Status = o.Status.ToString(),
+            PaymentMethod = o.PaymentMethod.ToString(),
+            o.ItemCount
         }).ToList();
 
-        if (excel) return ExcelUserActivity(byPerson, detail, from, to);
-        return Ok(new { from, to, summary = byPerson, detail });
+        var summary = grouped.Select(x => new {
+            x.Row.UserId,
+            x.Row.UserName,
+            x.Row.OrderCount,
+            x.Row.GrossSales,
+            x.Row.TotalReturns,
+            x.Row.TotalDiscount,
+            x.Row.NetSales,
+            x.Row.Cancellations,
+            x.AvgOrderValue,
+            x.TotalItems,
+            x.ReturnRate,
+            x.PeakHour,
+            x.PaymentBreakdown
+        }).ToList();
+
+        return Ok(new { from, to, summary, detail });
     }
 
     // ══════════════════════════════════════════════════════
