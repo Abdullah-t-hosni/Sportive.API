@@ -212,10 +212,35 @@ public class ProductService : IProductService
         }
 
         if (!string.IsNullOrWhiteSpace(filter.Size))
-            query = query.Where(p => p.Variants.Any(v => v.Size == filter.Size));
+        {
+            var sizes = filter.Size
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(s => s.ToLower())
+                .Distinct()
+                .ToList();
+            if (sizes.Count > 0)
+            {
+                bool publicOnly = filter.OnlyPublic == true;
+                query = query.Where(p => p.Variants.Any(v => (!publicOnly || v.IsActive) && v.Size != null && sizes.Contains(v.Size.ToLower())));
+            }
+        }
 
         if (!string.IsNullOrWhiteSpace(filter.Color))
-            query = query.Where(p => p.Variants.Any(v => v.Color == filter.Color || v.ColorAr == filter.Color));
+        {
+            var colors = filter.Color
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(c => c.ToLower())
+                .Distinct()
+                .ToList();
+            if (colors.Count > 0)
+            {
+                bool publicOnly = filter.OnlyPublic == true;
+                query = query.Where(p => p.Variants.Any(v => (!publicOnly || v.IsActive) && (
+                    (v.Color != null && colors.Contains(v.Color.ToLower())) ||
+                    (v.ColorAr != null && colors.Contains(v.ColorAr.ToLower()))
+                )));
+            }
+        }
 
         if (filter.IsFeatured.HasValue)
             query = query.Where(p => p.IsFeatured == filter.IsFeatured);
