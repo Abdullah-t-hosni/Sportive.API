@@ -99,6 +99,7 @@ public class WaMeService : IWaMeService
             .Replace("{storeUrl}", StoreUrl)
             .Replace("{storePhone}", StorePhone)
             .Replace("{storeAddress}", address)
+            .Replace("{invoiceUrl}", $"{StoreUrl}/invoice/{order.OrderNumber}")
             .Replace("{trackingPart}", trackingPart)
             .Replace("{trackingCode}", tracking ?? "");
 

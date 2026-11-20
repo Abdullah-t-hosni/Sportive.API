@@ -84,15 +84,18 @@ public class WhatsAppApiService : IWhatsAppApiService
             {
                 try
                 {
+                    var targetSession = isPos ? "pos" : "store";
                     var payload = new
                     {
                         phone = formattedPhone,
-                        message = messageText
+                        message = messageText,
+                        session = targetSession
                     };
 
-                    _logger.LogInformation("[WhatsApp Attempt {Attempt}/3] Sending message via Gateway {Url} to {Phone}", attempt, targetUri, formattedPhone);
+                    _logger.LogInformation("[WhatsApp Attempt {Attempt}/3] Sending message via Gateway {Url} ({Session}) to {Phone}", attempt, targetUri, targetSession, formattedPhone);
 
                     using var request = new HttpRequestMessage(HttpMethod.Post, targetUri);
+                    request.Headers.Add("x-session-id", targetSession);
                     request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
                     var response = await _httpClient.SendAsync(request);
