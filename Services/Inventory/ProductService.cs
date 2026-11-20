@@ -88,12 +88,12 @@ public class ProductService : IProductService
             if (filter.WarehouseId.HasValue)
             {
                 query = query.Where(p => _db.ProductWarehouseStocks
-                    .Where(w => w.ProductVariant.ProductId == p.Id && w.WarehouseId == filter.WarehouseId.Value)
+                    .Where(w => w.ProductVariant.ProductId == p.Id && w.WarehouseId == filter.WarehouseId.Value && w.ProductVariant.IsActive && (w.ProductVariant.MaxOnlineStock == null || w.ProductVariant.MaxOnlineStock > 0))
                     .Sum(w => (int?)w.Quantity) > 0);
             }
             else
             {
-                query = query.Where(p => p.TotalStock > 0);
+                query = query.Where(p => p.TotalStock > 0 && (!p.Variants.Any() || p.Variants.Any(v => v.IsActive && v.StockQuantity > 0 && (v.MaxOnlineStock == null || v.MaxOnlineStock > 0))));
             }
         }
 
@@ -250,15 +250,16 @@ public class ProductService : IProductService
 
         if (filter.OnlyInStock == true)
         {
+            bool publicOnly = filter.OnlyPublic == true;
             if (filter.WarehouseId.HasValue)
             {
                 query = query.Where(p => _db.ProductWarehouseStocks
-                    .Where(w => w.ProductVariant.ProductId == p.Id && w.WarehouseId == filter.WarehouseId.Value)
+                    .Where(w => w.ProductVariant.ProductId == p.Id && w.WarehouseId == filter.WarehouseId.Value && (!publicOnly || (w.ProductVariant.IsActive && (w.ProductVariant.MaxOnlineStock == null || w.ProductVariant.MaxOnlineStock > 0))))
                     .Sum(w => (int?)w.Quantity) > 0);
             }
             else
             {
-                query = query.Where(p => p.TotalStock > 0);
+                query = query.Where(p => p.TotalStock > 0 && (!publicOnly || !p.Variants.Any() || p.Variants.Any(v => v.IsActive && v.StockQuantity > 0 && (v.MaxOnlineStock == null || v.MaxOnlineStock > 0))));
             }
         }
 
@@ -930,7 +931,9 @@ public class ProductService : IProductService
             StockQuantity = 0, // Start with 0, let LogMovement handle it
             ReorderLevel = dto.ReorderLevel ?? 0,
             PriceAdjustment = dto.PriceAdjustment,
-            OnlinePriceAdjustment = dto.OnlinePriceAdjustment
+            OnlinePriceAdjustment = dto.OnlinePriceAdjustment,
+            IsActive = dto.IsActive ?? true,
+            MaxOnlineStock = dto.MaxOnlineStock
         };
         _db.ProductVariants.Add(v);
         await _db.SaveChangesAsync(); // Save to get the ID
@@ -1036,12 +1039,12 @@ public class ProductService : IProductService
             if (warehouseId.HasValue)
             {
                 query = query.Where(p => _db.ProductWarehouseStocks
-                    .Where(w => w.ProductVariant.ProductId == p.Id && w.WarehouseId == warehouseId.Value)
+                    .Where(w => w.ProductVariant.ProductId == p.Id && w.WarehouseId == warehouseId.Value && w.ProductVariant.IsActive && (w.ProductVariant.MaxOnlineStock == null || w.ProductVariant.MaxOnlineStock > 0))
                     .Sum(w => (int?)w.Quantity) > 0);
             }
             else
             {
-                query = query.Where(p => p.TotalStock > 0);
+                query = query.Where(p => p.TotalStock > 0 && (!p.Variants.Any() || p.Variants.Any(v => v.IsActive && v.StockQuantity > 0 && (v.MaxOnlineStock == null || v.MaxOnlineStock > 0))));
             }
         }
 
@@ -1135,12 +1138,12 @@ public class ProductService : IProductService
             if (warehouseId.HasValue)
             {
                 query = query.Where(p => _db.ProductWarehouseStocks
-                    .Where(w => w.ProductVariant.ProductId == p.Id && w.WarehouseId == warehouseId.Value)
+                    .Where(w => w.ProductVariant.ProductId == p.Id && w.WarehouseId == warehouseId.Value && w.ProductVariant.IsActive && (w.ProductVariant.MaxOnlineStock == null || w.ProductVariant.MaxOnlineStock > 0))
                     .Sum(w => (int?)w.Quantity) > 0);
             }
             else
             {
-                query = query.Where(p => p.TotalStock > 0);
+                query = query.Where(p => p.TotalStock > 0 && (!p.Variants.Any() || p.Variants.Any(v => v.IsActive && v.StockQuantity > 0 && (v.MaxOnlineStock == null || v.MaxOnlineStock > 0))));
             }
         }
 

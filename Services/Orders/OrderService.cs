@@ -716,6 +716,7 @@ public class OrderService : IOrderService
                 var allCategories = await _db.Categories.AsNoTracking().ToDictionaryAsync(c => c.Id, c => c.ParentId);
 
                 // 3. Handle Items
+                var websiteQuotaToDeduct = new Dictionary<int, int>();
                 if (dto.Items != null && dto.Items.Any())
                 {
                     // ⚡ Preload all products for this order to avoid N+1 query
@@ -906,15 +907,18 @@ public class OrderService : IOrderService
                             .Sum(x => x.Quantity);
 
                         var rawStock = variant?.StockQuantity ?? (product.TotalStock);
-                        var availableStock = (actualSource == OrderSource.Website && variant?.MaxOnlineStock != null && variant.MaxOnlineStock.Value > 0)
-                            ? Math.Min(rawStock, variant.MaxOnlineStock.Value)
-                            : rawStock;
+                        var availableStock = GetEffectiveOnlineStock(rawStock, variant, actualSource);
                         if (store != null && !store.AllowBackorders && totalRequested > availableStock)
                         {
                             throw new ArgumentException(
                                 actualSource == OrderSource.POS
                                 ? _t.Get("Orders.StockUnavailable", totalRequested, product.NameAr, availableStock)
                                 : _t.Get("Orders.StockUnavailable", totalRequested, product.NameAr, availableStock));
+                        }
+
+                        if (actualSource == OrderSource.Website && variant?.MaxOnlineStock != null)
+                        {
+                            websiteQuotaToDeduct[variant.Id] = websiteQuotaToDeduct.GetValueOrDefault(variant.Id) + item.Quantity;
                         }
 
                         order.Items.Add(orderItem);
@@ -1008,12 +1012,15 @@ public class OrderService : IOrderService
                         .Sum(x => x.Quantity);
 
                     var rawStock = ci.ProductVariant?.StockQuantity ?? ci.Product.TotalStock;
-                    var availableStock = (ci.ProductVariant?.MaxOnlineStock != null && ci.ProductVariant.MaxOnlineStock.Value > 0)
-                        ? Math.Min(rawStock, ci.ProductVariant.MaxOnlineStock.Value)
-                        : rawStock;
+                    var availableStock = GetEffectiveOnlineStock(rawStock, ci.ProductVariant, actualSource);
                     if (store != null && !store.AllowBackorders && totalRequested > availableStock)
                     {
                         throw new ArgumentException(_t.Get("Orders.StockUnavailable", totalRequested, ci.Product.NameAr, availableStock));
+                    }
+
+                    if (actualSource == OrderSource.Website && ci.ProductVariant?.MaxOnlineStock != null)
+                    {
+                        websiteQuotaToDeduct[ci.ProductVariant.Id] = websiteQuotaToDeduct.GetValueOrDefault(ci.ProductVariant.Id) + ci.Quantity;
                     }
 
                         decimal basePrice = (ci.Product.OnlinePrice.HasValue && ci.Product.OnlinePrice > 0)
@@ -1121,6 +1128,16 @@ public class OrderService : IOrderService
                         );
                         
                         _db.CartItems.Remove(ci);
+                    }
+                }
+
+                // ✅ Deduct limited Website online allocation atomically inside the transaction
+                if (actualSource == OrderSource.Website && websiteQuotaToDeduct.Count > 0)
+                {
+                    bool allowBackorders = store?.AllowBackorders == true;
+                    foreach (var kv in websiteQuotaToDeduct)
+                    {
+                        await AdjustWebsiteQuotaAsync(kv.Key, -kv.Value, enforceNonNegative: true, allowBackorders: allowBackorders);
                     }
                 }
 
@@ -1802,10 +1819,18 @@ public class OrderService : IOrderService
                     if (diff > 0)
                     {
                         await _inventory.LogMovementAsync(InventoryMovementType.Sale, -diff, key.ProductId, key.VariantId == 0 ? (int?)null : key.VariantId, order.OrderNumber, "Order Edited (Item Added or Increased)", updatedByUserId, 0, order.Source, false, true, warehouseId: order.WarehouseId);
+                        if (order.Source == OrderSource.Website && key.VariantId > 0)
+                        {
+                            await AdjustWebsiteQuotaAsync(key.VariantId, -diff);
+                        }
                     }
                     else if (diff < 0)
                     {
                         await _inventory.LogMovementAsync(InventoryMovementType.Adjustment, -diff, key.ProductId, key.VariantId == 0 ? (int?)null : key.VariantId, order.OrderNumber, "Order Edited (Item Removed or Decreased)", updatedByUserId, 0, order.Source, false, true, warehouseId: order.WarehouseId);
+                        if (order.Source == OrderSource.Website && key.VariantId > 0)
+                        {
+                            await AdjustWebsiteQuotaAsync(key.VariantId, -diff);
+                        }
                     }
                 }
 
@@ -2791,6 +2816,10 @@ public class OrderService : IOrderService
                         warehouseId: order.WarehouseId,
                         isDamaged: isDamaged
                     );
+                    if (order.Source == OrderSource.Website && !isDamaged && item.ProductVariantId.HasValue)
+                    {
+                        await AdjustWebsiteQuotaAsync(item.ProductVariantId.Value, qtyToRestock);
+                    }
                 }
             }
         }
@@ -3095,6 +3124,10 @@ public class OrderService : IOrderService
                         warehouseId: order.WarehouseId,
                         isDamaged: isDamaged
                     );
+                    if (order.Source == OrderSource.Website && !isDamaged && item.ProductVariantId.HasValue)
+                    {
+                        await AdjustWebsiteQuotaAsync(item.ProductVariantId.Value, qtyToRestock);
+                    }
                 }
             }
 
@@ -3269,6 +3302,11 @@ public class OrderService : IOrderService
                     };
                     returnedOrderItems.Add(returnClone);
 
+                    bool isReturnDamaged = dto.Reason?.Contains("تالف", StringComparison.OrdinalIgnoreCase) == true ||
+                                           dto.Reason?.Contains("damaged", StringComparison.OrdinalIgnoreCase) == true ||
+                                           dto.Note?.Contains("تالف", StringComparison.OrdinalIgnoreCase) == true ||
+                                           dto.Note?.Contains("damaged", StringComparison.OrdinalIgnoreCase) == true;
+
                     // 3. Update Inventory
                     await _inventory.LogMovementAsync(
                         InventoryMovementType.ReturnIn,
@@ -3278,11 +3316,12 @@ public class OrderService : IOrderService
                         order.Source,
                         autoSave: false,
                         warehouseId: order.WarehouseId,
-                        isDamaged: dto.Reason?.Contains("تالف", StringComparison.OrdinalIgnoreCase) == true || 
-                                   dto.Reason?.Contains("damaged", StringComparison.OrdinalIgnoreCase) == true ||
-                                   dto.Note?.Contains("تالف", StringComparison.OrdinalIgnoreCase) == true ||
-                                   dto.Note?.Contains("damaged", StringComparison.OrdinalIgnoreCase) == true
+                        isDamaged: isReturnDamaged
                     );
+                    if (order.Source == OrderSource.Website && !isReturnDamaged && line.ProductVariantId.HasValue)
+                    {
+                        await AdjustWebsiteQuotaAsync(line.ProductVariantId.Value, req.Quantity);
+                    }
                 }
 
                 // 4. Update Order Status
@@ -4015,6 +4054,10 @@ public class OrderService : IOrderService
                             autoSave: false,
                             ignoreIdempotency: true
                         );
+                        if (order?.Source == OrderSource.Website && mov.ProductVariantId.HasValue && mov.Quantity > 0)
+                        {
+                            await AdjustWebsiteQuotaAsync(mov.ProductVariantId.Value, -(int)mov.Quantity);
+                        }
                     }
                 }
 
@@ -4110,6 +4153,11 @@ public class OrderService : IOrderService
                             };
                             returnedOrderItems.Add(returnClone);
 
+                            bool isUpdatedReturnDamaged = dto.Reason?.Contains("تالف", StringComparison.OrdinalIgnoreCase) == true ||
+                                                          dto.Reason?.Contains("damaged", StringComparison.OrdinalIgnoreCase) == true ||
+                                                          dto.Note?.Contains("تالف", StringComparison.OrdinalIgnoreCase) == true ||
+                                                          dto.Note?.Contains("damaged", StringComparison.OrdinalIgnoreCase) == true;
+
                             await _inventory.LogMovementAsync(
                                 InventoryMovementType.ReturnIn,
                                 req.Quantity, line.ProductId, line.ProductVariantId,
@@ -4118,11 +4166,12 @@ public class OrderService : IOrderService
                                 order.Source,
                                 autoSave: false,
                                 ignoreIdempotency: true,
-                                isDamaged: dto.Reason?.Contains("تالف", StringComparison.OrdinalIgnoreCase) == true || 
-                                           dto.Reason?.Contains("damaged", StringComparison.OrdinalIgnoreCase) == true ||
-                                           dto.Note?.Contains("تالف", StringComparison.OrdinalIgnoreCase) == true ||
-                                           dto.Note?.Contains("damaged", StringComparison.OrdinalIgnoreCase) == true
+                                isDamaged: isUpdatedReturnDamaged
                             );
+                            if (order.Source == OrderSource.Website && !isUpdatedReturnDamaged && line.ProductVariantId.HasValue)
+                            {
+                                await AdjustWebsiteQuotaAsync(line.ProductVariantId.Value, req.Quantity);
+                            }
                         }
 
                         if (order.Items.All(i => i.Quantity == i.ReturnedQuantity))
@@ -4247,6 +4296,62 @@ public class OrderService : IOrderService
         item.ReviewRequested = true;
         await _db.SaveChangesAsync();
         return true;
+    }
+
+    private static int GetEffectiveOnlineStock(int rawStock, ProductVariant? variant, OrderSource source) =>
+        (source == OrderSource.Website && variant?.MaxOnlineStock != null)
+            ? Math.Max(0, Math.Min(rawStock, variant.MaxOnlineStock.Value))
+            : rawStock;
+
+    /// <summary>
+    /// Atomically adjusts remaining Website online allocation (`MaxOnlineStock`) when set (non-null).
+    /// Leaves null ("unlimited / full warehouse stock") untouched.
+    /// </summary>
+    private async Task AdjustWebsiteQuotaAsync(int variantId, int delta, bool enforceNonNegative = false, bool allowBackorders = false)
+    {
+        if (delta == 0) return;
+
+        if (delta < 0)
+        {
+            int qtyToDeduct = -delta;
+            if (enforceNonNegative && !allowBackorders)
+            {
+                int affected = await _db.Database.ExecuteSqlInterpolatedAsync(
+                    $"UPDATE `ProductVariants` SET `MaxOnlineStock` = `MaxOnlineStock` - {qtyToDeduct} WHERE `Id` = {variantId} AND `MaxOnlineStock` IS NOT NULL AND `MaxOnlineStock` >= {qtyToDeduct}");
+                if (affected == 0)
+                {
+                    var currentVar = await _db.ProductVariants
+                        .AsNoTracking()
+                        .Include(v => v.Product)
+                        .FirstOrDefaultAsync(v => v.Id == variantId);
+                    if (currentVar?.MaxOnlineStock != null)
+                    {
+                        int rem = Math.Max(0, currentVar.MaxOnlineStock.Value);
+                        throw new ArgumentException(_t.Get("Orders.StockUnavailable", qtyToDeduct, currentVar.Product?.NameAr ?? "", rem));
+                    }
+                    return;
+                }
+            }
+            else
+            {
+                await _db.Database.ExecuteSqlInterpolatedAsync(
+                    $"UPDATE `ProductVariants` SET `MaxOnlineStock` = GREATEST(0, `MaxOnlineStock` - {qtyToDeduct}) WHERE `Id` = {variantId} AND `MaxOnlineStock` IS NOT NULL");
+            }
+        }
+        else
+        {
+            await _db.Database.ExecuteSqlInterpolatedAsync(
+                $"UPDATE `ProductVariants` SET `MaxOnlineStock` = `MaxOnlineStock` + {delta} WHERE `Id` = {variantId} AND `MaxOnlineStock` IS NOT NULL");
+        }
+
+        var tracked = _db.ChangeTracker.Entries<ProductVariant>().FirstOrDefault(e => e.Entity.Id == variantId);
+        if (tracked != null && tracked.Entity.MaxOnlineStock.HasValue)
+        {
+            int updatedCap = Math.Max(0, tracked.Entity.MaxOnlineStock.Value + delta);
+            tracked.Entity.MaxOnlineStock = updatedCap;
+            tracked.OriginalValues[nameof(ProductVariant.MaxOnlineStock)] = updatedCap;
+            tracked.Property(x => x.MaxOnlineStock).IsModified = false;
+        }
     }
 
     private static bool IsCategoryExcluded(string? excludedCategoryIds, int? productCatId, Dictionary<int, int?> allCategories)

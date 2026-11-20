@@ -836,6 +836,10 @@ public class ReturnExchangeRequestsController : ControllerBase
                     if (oldVar != null)
                     {
                         oldVar.StockQuantity += reqItem.Quantity;
+                        if (req.Order?.Source == OrderSource.Website && oldVar.MaxOnlineStock.HasValue)
+                        {
+                            oldVar.MaxOnlineStock += reqItem.Quantity;
+                        }
                         oldVar.UpdatedAt = TimeHelper.GetEgyptTime();
 
                         var oldWhStocks = await _db.ProductWarehouseStocks
@@ -897,6 +901,10 @@ public class ReturnExchangeRequestsController : ControllerBase
                     if (matchedVariant != null)
                     {
                         matchedVariant.StockQuantity = Math.Max(0, matchedVariant.StockQuantity - reqItem.Quantity);
+                        if (req.Order?.Source == OrderSource.Website && matchedVariant.MaxOnlineStock.HasValue)
+                        {
+                            matchedVariant.MaxOnlineStock = Math.Max(0, matchedVariant.MaxOnlineStock.Value - reqItem.Quantity);
+                        }
                         matchedVariant.UpdatedAt = TimeHelper.GetEgyptTime();
 
                         var newWhStocks = await _db.ProductWarehouseStocks
@@ -1246,6 +1254,19 @@ public class ReturnExchangeRequestsController : ControllerBase
                     {
                         var product = await _db.Products.FirstOrDefaultAsync(p => p.Id == orderItem.ProductId.Value);
                         if (product != null) product.TotalStock += qtyToRestock;
+                    }
+                }
+
+                bool isReturnDamaged = req.Reason?.Contains("تالف", StringComparison.OrdinalIgnoreCase) == true ||
+                                       req.Reason?.Contains("damaged", StringComparison.OrdinalIgnoreCase) == true ||
+                                       req.AdminNotes?.Contains("تالف", StringComparison.OrdinalIgnoreCase) == true ||
+                                       req.AdminNotes?.Contains("damaged", StringComparison.OrdinalIgnoreCase) == true;
+                if (req.Order.Source == OrderSource.Website && !isReturnDamaged && orderItem.ProductVariantId.HasValue)
+                {
+                    var quotaVar = await _db.ProductVariants.FirstOrDefaultAsync(v => v.Id == orderItem.ProductVariantId.Value);
+                    if (quotaVar?.MaxOnlineStock != null)
+                    {
+                        quotaVar.MaxOnlineStock += qtyToRestock;
                     }
                 }
             }

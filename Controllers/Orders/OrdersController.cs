@@ -1172,6 +1172,10 @@ public class OrdersController : ControllerBase
                 if (variant != null)
                 {
                     variant.StockQuantity -= kvp.Value;
+                    if (order.Source == OrderSource.Website && variant.MaxOnlineStock.HasValue)
+                    {
+                        variant.MaxOnlineStock = Math.Max(0, variant.MaxOnlineStock.Value - kvp.Value);
+                    }
                     variant.UpdatedAt = TimeHelper.GetEgyptTime();
                 }
             }

@@ -51,9 +51,7 @@ public class CartService : ICartService
             throw new ArgumentException($"المقاس واللون المحدد للمنتج '{product.NameAr}' غير متاح حالياً بالمتجر.");
         }
         var rawStock = variant?.StockQuantity ?? product.TotalStock;
-        var availableStock = (variant?.MaxOnlineStock != null && variant.MaxOnlineStock.Value > 0)
-            ? Math.Min(rawStock, variant.MaxOnlineStock.Value)
-            : rawStock;
+        var availableStock = GetWebsiteAvailableStock(rawStock, variant);
 
         var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
         var existing = await _db.CartItems.FirstOrDefaultAsync(c =>
@@ -117,9 +115,7 @@ public class CartService : ICartService
                 throw new ArgumentException($"المقاس واللون المحدد للمنتج '{product.NameAr}' غير متاح حالياً بالمتجر.");
             }
             var rawStock = variant?.StockQuantity ?? product.TotalStock;
-            var availableStock = (variant?.MaxOnlineStock != null && variant.MaxOnlineStock.Value > 0)
-                ? Math.Min(rawStock, variant.MaxOnlineStock.Value)
-                : rawStock;
+            var availableStock = GetWebsiteAvailableStock(rawStock, variant);
 
             var existing = await _db.CartItems.FirstOrDefaultAsync(c =>
                 c.CustomerId == customerId &&
@@ -172,9 +168,7 @@ public class CartService : ICartService
             var store = await _db.StoreInfo.AsNoTracking().FirstOrDefaultAsync(s => s.StoreConfigId == 1);
             var variant = item.ProductVariantId.HasValue ? product.Variants.FirstOrDefault(v => v.Id == item.ProductVariantId.Value) : null;
             var rawStock = variant?.StockQuantity ?? product.TotalStock;
-            var availableStock = (variant?.MaxOnlineStock != null && variant.MaxOnlineStock.Value > 0)
-                ? Math.Min(rawStock, variant.MaxOnlineStock.Value)
-                : rawStock;
+            var availableStock = GetWebsiteAvailableStock(rawStock, variant);
 
             if (store != null && !store.AllowBackorders && dto.Quantity > availableStock)
             {
@@ -204,6 +198,11 @@ public class CartService : ICartService
         _db.CartItems.RemoveRange(items);
         await _db.SaveChangesAsync();
     }
+
+    private static int GetWebsiteAvailableStock(int rawStock, ProductVariant? variant) =>
+        variant?.MaxOnlineStock != null
+            ? Math.Max(0, Math.Min(rawStock, variant.MaxOnlineStock.Value))
+            : rawStock;
 
     private async Task<List<CartItem>> GetCartItemsAsync(int customerId) =>
         await _db.CartItems
