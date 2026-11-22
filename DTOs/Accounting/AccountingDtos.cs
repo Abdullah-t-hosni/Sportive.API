@@ -234,7 +234,9 @@ public record CreateReceiptVoucherDto(
     string?  AttachmentPublicId = null,
     int?     CostCenter = null,
     int?     EmployeeId = null,
-    int?     BranchId = null
+    int?     BranchId = null,
+    decimal  FeeAmount = 0m,
+    int?     FeeAccountId = null
 );
 
 public record UpdateReceiptVoucherDto(
@@ -251,7 +253,9 @@ public record UpdateReceiptVoucherDto(
     string?  AttachmentPublicId = null,
     int?     CostCenter = null,
     int?     EmployeeId = null,
-    int?     BranchId = null
+    int?     BranchId = null,
+    decimal  FeeAmount = 0m,
+    int?     FeeAccountId = null
 );
 
 public record VoucherSummaryDto(
@@ -267,7 +271,9 @@ public record VoucherSummaryDto(
     string?  AttachmentUrl = null,
     string?  AttachmentPublicId = null,
     int?     CostCenter = null,
-    string? CostCenterLabel = null
+    string? CostCenterLabel = null,
+    decimal  FeeAmount = 0m,
+    int?     FeeAccountId = null
 );
 
 // ══════════════════════════════════════════════════════
@@ -288,7 +294,9 @@ public record CreatePaymentVoucherDto(
     string?  AttachmentPublicId = null,
     int?     CostCenter = null,
     int?     EmployeeId = null,
-    int?     BranchId = null
+    int?     BranchId = null,
+    decimal  FeeAmount = 0m,
+    int?     FeeAccountId = null
 );
 
 public record UpdatePaymentVoucherDto(
@@ -305,7 +313,9 @@ public record UpdatePaymentVoucherDto(
     string?  AttachmentPublicId = null,
     int?     CostCenter = null,
     int?     EmployeeId = null,
-    int?     BranchId = null
+    int?     BranchId = null,
+    decimal  FeeAmount = 0m,
+    int?     FeeAccountId = null
 );
 
 // ══════════════════════════════════════════════════════

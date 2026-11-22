@@ -1206,6 +1206,33 @@ public class SchemaFixController : ControllerBase
         return s;
     }
 
+    [HttpGet("run-voucher-fees-schema")]
+    public async Task<IActionResult> RunVoucherFeesSchema()
+    {
+        _logger.LogWarning("SchemaFix run-voucher-fees-schema triggered.");
+        var cmds = new[] {
+            "ALTER TABLE `PaymentVouchers` ADD COLUMN `FeeAmount` DECIMAL(18, 2) NOT NULL DEFAULT 0;",
+            "ALTER TABLE `paymentvouchers` ADD COLUMN `FeeAmount` DECIMAL(18, 2) NOT NULL DEFAULT 0;",
+            "ALTER TABLE `PaymentVouchers` ADD COLUMN `FeeAccountId` INT NULL;",
+            "ALTER TABLE `paymentvouchers` ADD COLUMN `FeeAccountId` INT NULL;",
+            "ALTER TABLE `ReceiptVouchers` ADD COLUMN `FeeAmount` DECIMAL(18, 2) NOT NULL DEFAULT 0;",
+            "ALTER TABLE `receiptvouchers` ADD COLUMN `FeeAmount` DECIMAL(18, 2) NOT NULL DEFAULT 0;",
+            "ALTER TABLE `ReceiptVouchers` ADD COLUMN `FeeAccountId` INT NULL;",
+            "ALTER TABLE `receiptvouchers` ADD COLUMN `FeeAccountId` INT NULL;"
+        };
+        int applied = 0;
+        foreach (var cmd in cmds)
+        {
+            try
+            {
+                await _db.Database.ExecuteSqlRawAsync(cmd);
+                applied++;
+            }
+            catch { }
+        }
+        return Ok(new { message = "Voucher fee schema checked/applied.", applied });
+    }
+
     [HttpGet("fix-website-pending-orders")]
     public async Task<IActionResult> FixWebsitePendingOrders()
     {

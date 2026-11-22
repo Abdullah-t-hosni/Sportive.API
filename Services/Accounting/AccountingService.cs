@@ -33,6 +33,7 @@ public interface IAccountingService
     Task<JournalEntry> UpdateManualEntryAsync(int id, UpdateJournalEntryDto dto, ClaimsPrincipal? user);
     Task PostReceiptVoucherAsync(ReceiptVoucher voucher, int? orderId = null);
     Task PostPaymentVoucherAsync(PaymentVoucher voucher);
+    Task<int> ResolveBankCommissionAccountIdAsync(int? requestedFeeAccountId = null);
     Task<string> GetMappedCashAccount(PaymentMethod method, OrderSource source, Dictionary<string, int?>? map = null);
     Task<decimal> GetAccountBalanceAsync(string code);
     Task<decimal> GetTodayDrawerBalanceAsync(string cashAccountCode);
@@ -121,6 +122,7 @@ public class AccountingService : IAccountingService
     public Task PostOrderRefundAsync(Order order) => _payment.PostOrderRefundAsync(order);
     public Task PostReceiptVoucherAsync(ReceiptVoucher voucher, int? orderId = null) => _payment.PostReceiptVoucherAsync(voucher, orderId);
     public Task PostPaymentVoucherAsync(PaymentVoucher voucher) => _payment.PostPaymentVoucherAsync(voucher);
+    public Task<int> ResolveBankCommissionAccountIdAsync(int? requestedFeeAccountId = null) => _payment.ResolveBankCommissionAccountIdAsync(requestedFeeAccountId);
     public Task PostSupplierPaymentAsync(SupplierPayment payment) => _payment.PostSupplierPaymentAsync(payment);
 
     public Task ReverseEntryAsync(int journalEntryId, string reason) => _journal.ReverseEntryAsync(journalEntryId, reason);

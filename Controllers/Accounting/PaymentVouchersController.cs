@@ -104,7 +104,7 @@ public class PaymentVouchersController : ControllerBase
         var total = await q.CountAsync();
         var rawItems = await q.OrderByDescending(v => v.VoucherDate).ThenByDescending(v => v.Id).Skip((page-1)*pageSize).Take(pageSize)
             .Select(v => new { 
-                v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description, v.CreatedAt,
+                v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.FeeAmount, v.FeeAccountId, v.PaymentMethod, v.Reference, v.Description, v.CreatedAt,
                 v.CashAccountId, v.ToAccountId,
                 v.CostCenter,
                 CashAccountName = v.CashAccount != null ? v.CashAccount.NameAr : null,
@@ -114,7 +114,7 @@ public class PaymentVouchersController : ControllerBase
             }).ToListAsync();
 
         var items = rawItems.Select(v => new {
-            v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.PaymentMethod, v.Reference, v.Description, v.CreatedAt,
+            v.Id, v.VoucherNumber, v.VoucherDate, v.Amount, v.FeeAmount, v.FeeAccountId, v.PaymentMethod, v.Reference, v.Description, v.CreatedAt,
             v.CashAccountId, v.ToAccountId,
             CostCenter = (int?)v.CostCenter,
             CostCenterLabel = v.CostCenter == OrderSource.Website ? _t.Get("Accounting.CostCenter.Website") : (v.CostCenter == OrderSource.POS ? _t.Get("Accounting.CostCenter.POS") : _t.Get("Accounting.CostCenter.General")),
@@ -139,13 +139,55 @@ public class PaymentVouchersController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreatePaymentVoucherDto dto)
     {
+        if (dto.FeeAmount < 0)
+            return BadRequest("عمولة التحويل لا يمكن أن تكون سالبة.");
+
+        var resolvedToAccountId = dto.ToAccountId;
+        if (resolvedToAccountId <= 0)
+        {
+            if (dto.SupplierId.HasValue && dto.SupplierId.Value > 0)
+            {
+                resolvedToAccountId = await _db.Suppliers
+                    .Where(s => s.Id == dto.SupplierId.Value)
+                    .Select(s => s.MainAccountId ?? 0)
+                    .FirstOrDefaultAsync();
+                if (resolvedToAccountId <= 0)
+                    resolvedToAccountId = await _db.AccountSystemMappings
+                        .Where(m => m.Key.ToLower() == MappingKeys.Supplier.ToLower())
+                        .Select(m => m.AccountId)
+                        .FirstOrDefaultAsync() ?? 0;
+                if (resolvedToAccountId <= 0)
+                    resolvedToAccountId = await _db.Accounts
+                        .Where(a => a.Code.StartsWith("2101") && a.IsLeaf && a.AllowPosting)
+                        .OrderBy(a => a.Code)
+                        .Select(a => a.Id)
+                        .FirstOrDefaultAsync();
+            }
+            else if (dto.EmployeeId.HasValue && dto.EmployeeId.Value > 0)
+            {
+                resolvedToAccountId = await _db.AccountSystemMappings
+                    .Where(m => m.Key.ToLower() == MappingKeys.EmployeeAdvances.ToLower())
+                    .Select(m => m.AccountId)
+                    .FirstOrDefaultAsync() ?? 0;
+                if (resolvedToAccountId <= 0)
+                    resolvedToAccountId = await _db.Accounts
+                        .Where(a => a.Code.StartsWith("1105") && a.IsLeaf && a.AllowPosting)
+                        .OrderBy(a => a.Code)
+                        .Select(a => a.Id)
+                        .FirstOrDefaultAsync();
+            }
+        }
+        if (resolvedToAccountId <= 0)
+            return BadRequest(_t.Get("Accounting.PaymentVoucher.AccountNotFound"));
+
         // 🔒 حماية لمنع تكرار السند عند الضغط المتكرر (Double-Click / Idempotency Protection)
         var recentThreshold = TimeHelper.GetEgyptTime().AddSeconds(-15);
         var currentUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         var existingDuplicate = await _db.PaymentVouchers
             .Where(v => v.Amount == dto.Amount
+                     && v.FeeAmount == dto.FeeAmount
                      && v.CashAccountId == dto.CashAccountId
-                     && v.ToAccountId == dto.ToAccountId
+                     && v.ToAccountId == resolvedToAccountId
                      && v.Description == dto.Description
                      && v.CreatedAt >= recentThreshold
                      && (currentUserId == null || v.CreatedByUserId == currentUserId))
@@ -153,7 +195,14 @@ public class PaymentVouchersController : ControllerBase
 
         if (existingDuplicate != null)
         {
-            return Ok(new { id = existingDuplicate.Id, message = "تم حفظ السند بنجاح." });
+            return Ok(new {
+                id = existingDuplicate.Id,
+                voucherNumber = existingDuplicate.VoucherNumber,
+                amount = existingDuplicate.Amount,
+                feeAmount = existingDuplicate.FeeAmount,
+                voucherDate = existingDuplicate.VoucherDate,
+                message = "تم حفظ السند بنجاح."
+            });
         }
 
         var vNo = await _seq.NextAsync("PV");
@@ -180,12 +229,14 @@ public class PaymentVouchersController : ControllerBase
 
         var voucher = new PaymentVoucher {
             VoucherNumber = vNo, VoucherDate = vDate, Amount = dto.Amount, CashAccountId = dto.CashAccountId,
-            ToAccountId = dto.ToAccountId, SupplierId = dto.SupplierId, PaymentMethod = dto.PaymentMethod,
+            ToAccountId = resolvedToAccountId, SupplierId = dto.SupplierId, PaymentMethod = dto.PaymentMethod,
             Reference = dto.Reference, Description = dto.Description, AttachmentUrl = dto.AttachmentUrl,
             AttachmentPublicId = dto.AttachmentPublicId,
             CostCenter = (OrderSource?)resolvedCostCenter,
             EmployeeId = dto.EmployeeId,
             BranchId = resolvedBranchId,
+            FeeAmount = dto.FeeAmount,
+            FeeAccountId = dto.FeeAmount > 0 ? dto.FeeAccountId : null,
             CreatedByUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value, CreatedAt = TimeHelper.GetEgyptTime(), PurchaseInvoiceId = dto.PurchaseInvoiceId
         };
 
@@ -219,11 +270,17 @@ public class PaymentVouchersController : ControllerBase
         }
 
         var employeeAdvancesAccountId = await _db.AccountSystemMappings
-            .Where(m => m.Key == MappingKeys.EmployeeAdvances.ToLower())
+            .Where(m => m.Key.ToLower() == MappingKeys.EmployeeAdvances.ToLower())
             .Select(m => m.AccountId)
             .FirstOrDefaultAsync();
 
-        if (dto.ToAccountId == employeeAdvancesAccountId && dto.EmployeeId.HasValue)
+        var toAccCode = await _db.Accounts
+            .Where(a => a.Id == resolvedToAccountId)
+            .Select(a => a.Code)
+            .FirstOrDefaultAsync();
+
+        if (((employeeAdvancesAccountId.HasValue && resolvedToAccountId == employeeAdvancesAccountId.Value)
+             || (toAccCode != null && toAccCode.StartsWith("1105"))) && dto.EmployeeId.HasValue)
         {
             var advNo = await _seq.NextAsync("ADV");
             var advance = new EmployeeAdvance
@@ -249,12 +306,22 @@ public class PaymentVouchersController : ControllerBase
         
         try { await _audit.LogChangeAsync<PaymentVoucher>("CreatePaymentVoucher", "PaymentVoucher", voucher.Id.ToString(), null, voucher, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
-        return Ok(new { id = voucher.Id, message = "تم حفظ السند بنجاح." });
+        return Ok(new {
+            id = voucher.Id,
+            voucherNumber = voucher.VoucherNumber,
+            amount = voucher.Amount,
+            feeAmount = voucher.FeeAmount,
+            voucherDate = voucher.VoucherDate,
+            message = "تم حفظ السند بنجاح."
+        });
     }
 
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdatePaymentVoucherDto dto)
     {
+        if (dto.FeeAmount < 0)
+            return BadRequest("عمولة التحويل لا يمكن أن تكون سالبة.");
+
         var voucher = await _db.PaymentVouchers.Include(v => v.CashAccount).FirstOrDefaultAsync(v => v.Id == id);
         if (voucher == null) return NotFound();
 
@@ -265,6 +332,7 @@ public class PaymentVouchersController : ControllerBase
             return BadRequest(_t.Get("Accounting.PaymentVoucher.CannotEditPosted"));
 
         var oldAmount = voucher.Amount;
+        var oldCashAccountId = voucher.CashAccountId;
         var vDate = TimeHelper.ResolveBusinessDateTime(dto.VoucherDate);
 
         int? resolvedBranchId = User.GetBranchId();
@@ -285,6 +353,8 @@ public class PaymentVouchersController : ControllerBase
         voucher.PurchaseInvoiceId = dto.PurchaseInvoiceId;
         voucher.CostCenter = (OrderSource?)resolvedCostCenter;
         voucher.BranchId = resolvedBranchId;
+        voucher.FeeAmount = dto.FeeAmount;
+        voucher.FeeAccountId = dto.FeeAmount > 0 ? dto.FeeAccountId : null;
         voucher.UpdatedAt = TimeHelper.GetEgyptTime();
 
         if (voucher.PurchaseInvoiceId.HasValue)
@@ -303,6 +373,11 @@ public class PaymentVouchersController : ControllerBase
             entry.Description = voucher.Description;
             entry.UpdatedAt = TimeHelper.GetEgyptTime();
             _db.JournalLines.RemoveRange(entry.Lines);
+
+            var cashAccName = voucher.CashAccountId == oldCashAccountId
+                ? (voucher.CashAccount?.NameAr ?? "")
+                : (await _db.Accounts.Where(a => a.Id == voucher.CashAccountId).Select(a => a.NameAr).FirstOrDefaultAsync() ?? "");
+            var feeAmt = voucher.FeeAmount > 0 ? voucher.FeeAmount : 0m;
             
             entry.Lines.Add(new JournalLine { 
                 AccountId = voucher.ToAccountId, 
@@ -314,11 +389,25 @@ public class PaymentVouchersController : ControllerBase
                 CostCenter = voucher.CostCenter,
                 BranchId = voucher.BranchId
             });
+            if (feeAmt > 0)
+            {
+                var feeAccId = await _accounting.ResolveBankCommissionAccountIdAsync(voucher.FeeAccountId);
+                entry.Lines.Add(new JournalLine {
+                    AccountId = feeAccId,
+                    Debit = feeAmt,
+                    Credit = 0,
+                    Description = $"عمولة تحويل بنكي - سند صرف #{voucher.VoucherNumber}",
+                    SupplierId = voucher.SupplierId,
+                    EmployeeId = voucher.EmployeeId,
+                    CostCenter = voucher.CostCenter,
+                    BranchId = voucher.BranchId
+                });
+            }
             entry.Lines.Add(new JournalLine { 
                 AccountId = voucher.CashAccountId, 
                 Debit = 0, 
-                Credit = voucher.Amount, 
-                Description = _t.Get("Accounting.FromAccountDesc", voucher.CashAccount?.NameAr ?? ""),
+                Credit = voucher.Amount + feeAmt, 
+                Description = _t.Get("Accounting.FromAccountDesc", cashAccName),
                 SupplierId = voucher.SupplierId,
                 EmployeeId = voucher.EmployeeId,
                 CostCenter = voucher.CostCenter,
@@ -336,7 +425,14 @@ public class PaymentVouchersController : ControllerBase
         
         try { await _audit.LogChangeAsync<PaymentVoucher>("UpdatePaymentVoucher", "PaymentVoucher", id.ToString(), oldVoucher, voucher, User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Name)); } catch { }
 
-        return Ok(new { id = voucher.Id, message = "تم تحديث السند بنجاح." });
+        return Ok(new {
+            id = voucher.Id,
+            voucherNumber = voucher.VoucherNumber,
+            amount = voucher.Amount,
+            feeAmount = voucher.FeeAmount,
+            voucherDate = voucher.VoucherDate,
+            message = "تم تحديث السند بنجاح."
+        });
     }
 
     [HttpDelete("{id}")]

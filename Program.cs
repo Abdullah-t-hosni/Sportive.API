@@ -535,5 +535,39 @@ _ = Task.Run(async () =>
     }
 });
 
+// ✅ Ensure FeeAmount & FeeAccountId columns exist synchronously before serving requests
+try
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await db.Database.OpenConnectionAsync();
+    try
+    {
+        var feeAlterCmds = new[]
+        {
+            "ALTER TABLE `PaymentVouchers` ADD COLUMN `FeeAmount` DECIMAL(18, 2) NOT NULL DEFAULT 0;",
+            "ALTER TABLE `paymentvouchers` ADD COLUMN `FeeAmount` DECIMAL(18, 2) NOT NULL DEFAULT 0;",
+            "ALTER TABLE `PaymentVouchers` ADD COLUMN `FeeAccountId` INT NULL;",
+            "ALTER TABLE `paymentvouchers` ADD COLUMN `FeeAccountId` INT NULL;",
+            "ALTER TABLE `ReceiptVouchers` ADD COLUMN `FeeAmount` DECIMAL(18, 2) NOT NULL DEFAULT 0;",
+            "ALTER TABLE `receiptvouchers` ADD COLUMN `FeeAmount` DECIMAL(18, 2) NOT NULL DEFAULT 0;",
+            "ALTER TABLE `ReceiptVouchers` ADD COLUMN `FeeAccountId` INT NULL;",
+            "ALTER TABLE `receiptvouchers` ADD COLUMN `FeeAccountId` INT NULL;"
+        };
+        foreach (var cmd in feeAlterCmds)
+        {
+            try { await db.Database.ExecuteSqlRawAsync(cmd); } catch { }
+        }
+    }
+    finally
+    {
+        await db.Database.CloseConnectionAsync();
+    }
+}
+catch (Exception ex)
+{
+    Log.Warning(ex, "Could not run synchronous voucher fee schema check at startup.");
+}
+
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 app.Run($"http://0.0.0.0:{port}");

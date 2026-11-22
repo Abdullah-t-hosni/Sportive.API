@@ -174,14 +174,74 @@ public class PaymentAccountingService
         await _core.PostEntryAsync(JournalEntryType.PaymentVoucher, reference, _t.Get("Accounting.AutoPaymentVoucherMainDesc", order.OrderNumber), TimeHelper.GetEgyptBusinessDayDate(order.CreatedAt), lines, orderId: order.Id, customerId: order.CustomerId, source: order.Source, createdAt: order.CreatedAt);
     }
 
+    public async Task<int> ResolveBankCommissionAccountIdAsync(int? requestedFeeAccountId = null)
+    {
+        if (requestedFeeAccountId.HasValue && requestedFeeAccountId.Value > 0)
+        {
+            var customId = await _db.Accounts.AsNoTracking()
+                .Where(a => a.Id == requestedFeeAccountId.Value && a.AllowPosting && a.IsActive)
+                .Select(a => (int?)a.Id)
+                .FirstOrDefaultAsync();
+            if (customId.HasValue) return customId.Value;
+        }
+
+        var existingId = await _db.Accounts.AsNoTracking()
+            .Where(a => a.IsActive && a.AllowPosting && (
+                a.Code == "52206" ||
+                a.NameAr.Contains("عمولات بنكية") ||
+                a.NameAr.Contains("رسوم بنكية") ||
+                a.NameAr.Contains("عمولة تحويل") ||
+                (a.NameEn != null && a.NameEn.ToLower().Contains("bank commission"))
+            ))
+            .OrderByDescending(a => a.Code == "52206")
+            .Select(a => (int?)a.Id)
+            .FirstOrDefaultAsync();
+        if (existingId.HasValue) return existingId.Value;
+
+        var parent = await _db.Accounts.AsNoTracking()
+            .Where(a => a.IsActive && (a.Code == "522" || a.Code == "52" || a.Code == "5"))
+            .OrderByDescending(a => a.Code.Length)
+            .FirstOrDefaultAsync();
+
+        var newCode = await _db.Accounts.AnyAsync(a => a.Code == "52206")
+            ? $"52206-{DateTimeOffset.UtcNow.ToUnixTimeSeconds() % 1000}"
+            : "52206";
+
+        var created = new Account
+        {
+            Code = newCode,
+            NameAr = "عمولات بنكية ورسوم تحويل",
+            NameEn = "Bank & Transfer Commissions",
+            Type = AccountType.Expense,
+            Nature = AccountNature.Debit,
+            ParentId = parent?.Id,
+            Level = parent != null ? parent.Level + 1 : 4,
+            IsLeaf = true,
+            AllowPosting = true,
+            IsSystem = true,
+            IsActive = true,
+            CreatedAt = TimeHelper.GetEgyptTime()
+        };
+        _db.Accounts.Add(created);
+        await _db.SaveChangesAsync();
+        return created.Id;
+    }
+
     public async Task PostReceiptVoucherAsync(ReceiptVoucher voucher, int? orderId = null)
     {
         if (await _core.EntryExistsAsync(JournalEntryType.ReceiptVoucher, voucher.VoucherNumber)) return;
+        var feeAmt = voucher.FeeAmount > 0 && voucher.FeeAmount < voucher.Amount ? voucher.FeeAmount : 0m;
+        var netCashAmt = voucher.Amount - feeAmt;
         var lines = new List<(string code, decimal debit, decimal credit, string desc)> {
-            ($"ID:{voucher.CashAccountId}", voucher.Amount, 0, _t.Get("Accounting.ReceiptVoucherShortDesc", voucher.VoucherNumber)),
+            ($"ID:{voucher.CashAccountId}", netCashAmt, 0, _t.Get("Accounting.ReceiptVoucherShortDesc", voucher.VoucherNumber)),
             ($"ID:{voucher.FromAccountId}", 0, voucher.Amount, _t.Get("Accounting.FromAccountDesc", voucher.FromAccount?.NameAr ?? ""))
         };
-        var entry = await _core.PostEntryAsync(JournalEntryType.ReceiptVoucher, voucher.VoucherNumber, voucher.Description ?? "", voucher.VoucherDate, lines, customerId: voucher.CustomerId, orderId: orderId, source: voucher.CostCenter, employeeId: voucher.EmployeeId);
+        if (feeAmt > 0)
+        {
+            var feeAccId = await ResolveBankCommissionAccountIdAsync(voucher.FeeAccountId);
+            lines.Add(($"ID:{feeAccId}", feeAmt, 0, $"عمولة تحويل / خصم بنكي - سند {voucher.VoucherNumber}"));
+        }
+        var entry = await _core.PostEntryAsync(JournalEntryType.ReceiptVoucher, voucher.VoucherNumber, voucher.Description ?? "", voucher.VoucherDate, lines, customerId: voucher.CustomerId, orderId: orderId, source: voucher.CostCenter, employeeId: voucher.EmployeeId, branchId: voucher.BranchId);
         
         voucher.JournalEntryId = entry.Id;
         
@@ -194,10 +254,17 @@ public class PaymentAccountingService
     public async Task PostPaymentVoucherAsync(PaymentVoucher voucher)
     {
         if (await _core.EntryExistsAsync(JournalEntryType.PaymentVoucher, voucher.VoucherNumber)) return;
+        var feeAmt = voucher.FeeAmount > 0 ? voucher.FeeAmount : 0m;
+        var totalCashOut = voucher.Amount + feeAmt;
         var lines = new List<(string code, decimal debit, decimal credit, string desc)> {
             ($"ID:{voucher.ToAccountId}", voucher.Amount, 0, _t.Get("Accounting.PaymentVoucherShortDesc", voucher.VoucherNumber)),
-            ($"ID:{voucher.CashAccountId}", 0, voucher.Amount, _t.Get("Accounting.FromCashAccountDesc", voucher.CashAccount?.NameAr ?? ""))
+            ($"ID:{voucher.CashAccountId}", 0, totalCashOut, _t.Get("Accounting.FromCashAccountDesc", voucher.CashAccount?.NameAr ?? ""))
         };
+        if (feeAmt > 0)
+        {
+            var feeAccId = await ResolveBankCommissionAccountIdAsync(voucher.FeeAccountId);
+            lines.Add(($"ID:{feeAccId}", feeAmt, 0, $"عمولة تحويل / رسوم بنكية - سند {voucher.VoucherNumber}"));
+        }
         var entry = await _core.PostEntryAsync(JournalEntryType.PaymentVoucher, voucher.VoucherNumber, voucher.Description ?? "", voucher.VoucherDate, lines, supplierId: voucher.SupplierId, purchaseInvoiceId: voucher.PurchaseInvoiceId, source: voucher.CostCenter, employeeId: voucher.EmployeeId, branchId: voucher.BranchId);
         
         voucher.JournalEntryId = entry.Id;

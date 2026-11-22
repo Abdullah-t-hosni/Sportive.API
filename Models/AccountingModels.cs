@@ -167,6 +167,8 @@ public class ReceiptVoucher : BaseEntity
     public Employee? Employee        { get; set; }
     public int?     BranchId         { get; set; }
     public Branch?  Branch           { get; set; }
+    public decimal  FeeAmount        { get; set; } = 0m; // عمولة تحويل / سحب بنكي أو محفظة
+    public int?     FeeAccountId     { get; set; }
 }
 
 // ══════════════════════════════════════════════════════
@@ -199,4 +201,6 @@ public class PaymentVoucher : BaseEntity
     public Employee? Employee        { get; set; }
     public int?     BranchId         { get; set; }
     public Branch?  Branch           { get; set; }
+    public decimal  FeeAmount        { get; set; } = 0m; // عمولة تحويل / سحب بنكي أو محفظة
+    public int?     FeeAccountId     { get; set; }
 }
