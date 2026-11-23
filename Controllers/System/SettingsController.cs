@@ -328,6 +328,10 @@ public class SettingsController : ControllerBase
             info.WapilotPosInstanceId    = dto.WapilotPosInstanceId;
             info.WapilotWebInstanceId    = dto.WapilotWebInstanceId;
             info.AutoSendWhatsAppInvoices = dto.AutoSendWhatsAppInvoices;
+            if (!string.IsNullOrWhiteSpace(dto.WhatsAppStoreGatewayUrl))
+                info.WhatsAppStoreGatewayUrl = dto.WhatsAppStoreGatewayUrl.Trim();
+            if (!string.IsNullOrWhiteSpace(dto.WhatsAppPosGatewayUrl))
+                info.WhatsAppPosGatewayUrl = dto.WhatsAppPosGatewayUrl.Trim();
 
             // Bosta Courier Integration
             info.EnableBostaIntegration  = dto.EnableBostaIntegration;

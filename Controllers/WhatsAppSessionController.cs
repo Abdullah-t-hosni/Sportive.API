@@ -17,11 +17,43 @@ public class WhatsAppSessionController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly ILogger<WhatsAppSessionController> _logger;
+    private static volatile bool _schemaEnsured = false;
 
     public WhatsAppSessionController(AppDbContext db, ILogger<WhatsAppSessionController> logger)
     {
         _db = db;
         _logger = logger;
+    }
+
+    private async Task EnsureSessionTableAsync(DbConnection conn)
+    {
+        if (_schemaEnsured) return;
+        try
+        {
+            using var createCmd = conn.CreateCommand();
+            createCmd.CommandText = @"
+                CREATE TABLE IF NOT EXISTS WhatsAppSessions (
+                    SessionKey VARCHAR(100) NOT NULL PRIMARY KEY,
+                    Data LONGTEXT NULL,
+                    LidMap LONGTEXT NULL,
+                    UpdatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );";
+            await createCmd.ExecuteNonQueryAsync();
+
+            try
+            {
+                using var alterCmd = conn.CreateCommand();
+                alterCmd.CommandText = "ALTER TABLE WhatsAppSessions MODIFY COLUMN Data LONGTEXT NULL, MODIFY COLUMN LidMap LONGTEXT NULL;";
+                await alterCmd.ExecuteNonQueryAsync();
+            }
+            catch { }
+
+            _schemaEnsured = true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not auto-verify WhatsAppSessions table schema.");
+        }
     }
 
     public class SaveSessionRequest
@@ -45,6 +77,7 @@ public class WhatsAppSessionController : ControllerBase
             {
                 await conn.OpenAsync();
             }
+            await EnsureSessionTableAsync(conn);
 
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "SELECT SessionKey, Data, LidMap, UpdatedAt FROM WhatsAppSessions WHERE SessionKey = @key LIMIT 1";
@@ -105,6 +138,7 @@ public class WhatsAppSessionController : ControllerBase
             {
                 await conn.OpenAsync();
             }
+            await EnsureSessionTableAsync(conn);
 
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
