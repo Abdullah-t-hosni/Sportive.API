@@ -134,7 +134,7 @@ public class ProductService : IProductService
             var categoryIds = await GetCategoryDescendants(filter.CategoryId.Value);
             query = query.Where(p => (p.CategoryId.HasValue && categoryIds.Contains(p.CategoryId.Value)) || _db.ProductSecondaryCategories.Any(sc => sc.ProductId == p.Id && categoryIds.Contains(sc.CategoryId)));
 
-            if (string.IsNullOrWhiteSpace(filter.SortBy) || filter.SortBy.Equals("random", StringComparison.OrdinalIgnoreCase) || filter.SortBy.Equals("default", StringComparison.OrdinalIgnoreCase))
+            if (string.IsNullOrWhiteSpace(filter.SortBy) || filter.SortBy.Equals("default", StringComparison.OrdinalIgnoreCase))
             {
                 var cat = await _db.Categories.AsNoTracking().FirstOrDefaultAsync(c => c.Id == filter.CategoryId.Value);
                 if (cat != null && !string.IsNullOrWhiteSpace(cat.DefaultSortBy))
@@ -284,6 +284,55 @@ public class ProductService : IProductService
                 .Any(pi => pi.ProductId == p.Id && pi.Invoice.SupplierId == supplierId));
         }
 
+        // Seeded pseudo-random shuffle across matching products (consistent across pages for a given seed, fresh on every visit)
+        if (string.Equals(filter.SortBy, "random", StringComparison.OrdinalIgnoreCase))
+        {
+            var matchingIds = await query.Select(p => p.Id).ToListAsync();
+            var totalRandom = matchingIds.Count;
+            var randomPage = Math.Max(1, filter.Page);
+            int seed = filter.RandomSeed ?? Random.Shared.Next(1, int.MaxValue);
+
+            var pageIds = matchingIds
+                .OrderBy(id => MixProductHash(id, seed))
+                .ThenBy(id => id)
+                .Skip((randomPage - 1) * filter.PageSize)
+                .Take(filter.PageSize)
+                .ToList();
+
+            List<Product> rawRandomProducts;
+            if (pageIds.Count == 0)
+            {
+                rawRandomProducts = new List<Product>();
+            }
+            else
+            {
+                var unordered = await _db.Products
+                    .AsNoTracking()
+                    .AsSplitQuery()
+                    .Include(p => p.Category!).ThenInclude(c => c.Parent!).ThenInclude(c => c.Parent!)
+                    .Include(p => p.SecondaryCategories).ThenInclude(sc => sc.Category)
+                    .Include(p => p.Brand)
+                    .Include(p => p.Images)
+                    .Include(p => p.Variants)
+                    .Include(p => p.Unit)
+                    .Where(p => pageIds.Contains(p.Id))
+                    .ToListAsync();
+
+                var orderMap = new Dictionary<int, int>(pageIds.Count);
+                for (int i = 0; i < pageIds.Count; i++) orderMap[pageIds[i]] = i;
+
+                rawRandomProducts = unordered
+                    .OrderBy(p => orderMap.TryGetValue(p.Id, out var idx) ? idx : int.MaxValue)
+                    .ToList();
+            }
+
+            var randomItems = await MapToSummaryListAsync(rawRandomProducts, filter.Source, filter.WarehouseId, effectiveContextCategoryId);
+            return new PaginatedResult<ProductSummaryDto>(
+                randomItems, totalRandom, randomPage, filter.PageSize,
+                (int)Math.Ceiling((double)totalRandom / filter.PageSize)
+            );
+        }
+
         // Sorting
         if (filter.OnlyPublic == true)
         {
@@ -326,6 +375,20 @@ public class ProductService : IProductService
             items, total, page, filter.PageSize,
             (int)Math.Ceiling((double)total / filter.PageSize)
         );
+    }
+
+    private static uint MixProductHash(int id, int seed)
+    {
+        unchecked
+        {
+            uint h = ((uint)id + 0x9E3779B9u) ^ ((uint)seed * 0x85EBCA6Bu);
+            h ^= h >> 16;
+            h *= 0x85EBCA6Bu;
+            h ^= h >> 13;
+            h *= 0xC2B2AE35u;
+            h ^= h >> 16;
+            return h;
+        }
     }
 
     public async Task<ProductDetailDto?> GetProductByIdAsync(int id, DiscountApplyTo? source = null, int? warehouseId = null, bool rawPricing = false, int? contextCategoryId = null)

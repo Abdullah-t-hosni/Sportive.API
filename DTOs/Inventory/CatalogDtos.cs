@@ -324,6 +324,7 @@ public class ProductFilterDto
     public ProductStatus? Status { get; set; }
     public string? SortBy { get; set; } = null;
     public string? SortDir { get; set; } = null;
+    public int? RandomSeed { get; set; } = null;
     public int? SupplierId { get; set; }
     public bool? OnlyInStock { get; set; }
     public bool? OnlyPublic { get; set; }
