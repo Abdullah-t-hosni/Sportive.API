@@ -386,12 +386,14 @@ public class DataMaintenanceService : IDataMaintenanceService
                 .Where(i => invoiceEntries.Select(e => e.Reference).Contains(i.InvoiceNumber))
                 .ToDictionaryAsync(i => i.InvoiceNumber!, i => i.SupplierId);
 
+            var accountSets = await PartnerLedgerHelper.ResolvePartnerAccountSetsAsync(_db);
+
             foreach (var entry in invoiceEntries)
             {
                 if (entry.Reference != null && invoicesMap.TryGetValue(entry.Reference, out var supplierId))
                 {
                     bool entryChanged = false;
-                    foreach (var line in entry.Lines.Where(l => l.SupplierId == null))
+                    foreach (var line in entry.Lines.Where(l => l.SupplierId == null && accountSets.SupplierAccountIds.Contains(l.AccountId)))
                     {
                         line.SupplierId = supplierId;
                         updatedLines++;
@@ -422,7 +424,7 @@ public class DataMaintenanceService : IDataMaintenanceService
                 bool entryChanged = false;
                 if (supplierPaymentsMap.TryGetValue(entry.Reference, out var sId))
                 {
-                    foreach (var line in entry.Lines.Where(l => l.SupplierId == null && l.CustomerId == null))
+                    foreach (var line in entry.Lines.Where(l => l.SupplierId == null && l.CustomerId == null && accountSets.SupplierAccountIds.Contains(l.AccountId)))
                     {
                         line.SupplierId = sId;
                         updatedLines++;
@@ -431,7 +433,7 @@ public class DataMaintenanceService : IDataMaintenanceService
                 }
                 else if (receiptVouchersMap.TryGetValue(entry.Reference, out var cId) && cId != null)
                 {
-                    foreach (var line in entry.Lines.Where(l => l.CustomerId == null && l.SupplierId == null))
+                    foreach (var line in entry.Lines.Where(l => l.CustomerId == null && l.SupplierId == null && accountSets.CustomerAccountIds.Contains(l.AccountId)))
                     {
                         line.CustomerId = cId;
                         updatedLines++;

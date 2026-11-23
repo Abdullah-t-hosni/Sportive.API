@@ -136,10 +136,13 @@ public class OperationalReportsController : ControllerBase
         var customer = await _db.Customers.FirstOrDefaultAsync(c => c.Id == customerId);
         if (customer == null) return NotFound();
 
-        // ✅ REFACTORED TO LEDGER-BASED (Source of Truth)
+        var accountSets = await PartnerLedgerHelper.ResolvePartnerAccountSetsAsync(_db);
+        var custAccIds = PartnerLedgerHelper.GetCustomerAccountIdList(accountSets, customer.MainAccountId);
+
+        // ✅ REFACTORED TO LEDGER-BASED (Customer Receivable Accounts Only)
         // 1. Calculate Prior Balance
         var priorQuery = _db.JournalLines
-            .Where(l => l.CustomerId == customerId && l.JournalEntry.EntryDate < from && l.JournalEntry.Status != JournalEntryStatus.Draft);
+            .Where(l => l.CustomerId == customerId && l.JournalEntry.EntryDate < from && l.JournalEntry.Status != JournalEntryStatus.Draft && custAccIds.Contains(l.AccountId));
         
         if (branchId.HasValue)
         {
@@ -151,7 +154,7 @@ public class OperationalReportsController : ControllerBase
         // 2. ديون العملاء (عمر الدين)
         var entriesQuery = _db.JournalLines
             .Include(l => l.JournalEntry)
-            .Where(l => l.CustomerId == customerId && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status != JournalEntryStatus.Draft);
+            .Where(l => l.CustomerId == customerId && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status != JournalEntryStatus.Draft && custAccIds.Contains(l.AccountId));
 
         if (branchId.HasValue)
         {
@@ -268,9 +271,12 @@ public class OperationalReportsController : ControllerBase
         var supplier = await _db.Suppliers.FirstOrDefaultAsync(s => s.Id == supplierId);
         if (supplier == null) return NotFound();
 
-        // ✅ REFACTORED TO LEDGER-BASED
+        var accountSets = await PartnerLedgerHelper.ResolvePartnerAccountSetsAsync(_db);
+        var suppAccIds = PartnerLedgerHelper.GetSupplierAccountIdList(accountSets, supplier.MainAccountId);
+
+        // ✅ REFACTORED TO LEDGER-BASED (Supplier Payable Accounts Only)
         var priorQuery = _db.JournalLines
-            .Where(l => l.SupplierId == supplierId && l.JournalEntry.EntryDate < from && l.JournalEntry.Status != JournalEntryStatus.Draft);
+            .Where(l => l.SupplierId == supplierId && l.JournalEntry.EntryDate < from && l.JournalEntry.Status != JournalEntryStatus.Draft && suppAccIds.Contains(l.AccountId));
 
         if (branchId.HasValue)
         {
@@ -281,7 +287,7 @@ public class OperationalReportsController : ControllerBase
 
         var entriesQuery = _db.JournalLines
             .Include(l => l.JournalEntry)
-            .Where(l => l.SupplierId == supplierId && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status != JournalEntryStatus.Draft);
+            .Where(l => l.SupplierId == supplierId && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status != JournalEntryStatus.Draft && suppAccIds.Contains(l.AccountId));
 
         if (branchId.HasValue)
         {
@@ -5805,16 +5811,22 @@ public class OperationalReportsController : ControllerBase
             return BadRequest(new { message = "يجب تحديد العميل أو المورد على الأقل." });
         }
 
-        // 1. Prior Balances
+        var accountSets = await PartnerLedgerHelper.ResolvePartnerAccountSetsAsync(_db);
+        var custAccIds = customer != null ? PartnerLedgerHelper.GetCustomerAccountIdList(accountSets, customer.MainAccountId) : new List<int>();
+        var suppAccIds = supplier != null ? PartnerLedgerHelper.GetSupplierAccountIdList(accountSets, supplier.MainAccountId) : new List<int>();
+
+        // 1. Prior Balances (strictly on Receivable/Payable ledger accounts to match Detailed Statement)
         decimal priorCustBal = 0;
         if (customer != null)
         {
             var custPriorQuery = _db.JournalLines
-                .Where(l => l.CustomerId == customer.Id && l.JournalEntry.EntryDate < from && l.JournalEntry.Status != JournalEntryStatus.Draft)
-                .Where(l => l.Account != null && (l.Account.Code.StartsWith("1107") || l.AccountId == customer.MainAccountId || (l.Account.Type != AccountType.Equity && !l.Account.Code.StartsWith("3"))));
+                .Where(l => l.CustomerId == customer.Id
+                         && l.JournalEntry.EntryDate < from
+                         && l.JournalEntry.Status != JournalEntryStatus.Draft
+                         && custAccIds.Contains(l.AccountId));
             if (branchId.HasValue) custPriorQuery = custPriorQuery.Where(l => l.BranchId == branchId.Value);
 
-            var custOpening = (customer.MainAccount != null && customer.MainAccount.Code != "1107") ? customer.MainAccount.OpeningBalance : 0;
+            var custOpening = PartnerLedgerHelper.GetCustomerSubAccountOpeningBalance(customer, accountSets);
             priorCustBal = custOpening + (await custPriorQuery.SumAsync(l => (decimal?)(l.Debit - l.Credit)) ?? 0);
         }
 
@@ -5822,7 +5834,10 @@ public class OperationalReportsController : ControllerBase
         if (supplier != null)
         {
             var suppPriorQuery = _db.JournalLines
-                .Where(l => l.SupplierId == supplier.Id && l.JournalEntry.EntryDate < from && l.JournalEntry.Status != JournalEntryStatus.Draft);
+                .Where(l => l.SupplierId == supplier.Id
+                         && l.JournalEntry.EntryDate < from
+                         && l.JournalEntry.Status != JournalEntryStatus.Draft
+                         && suppAccIds.Contains(l.AccountId));
             if (branchId.HasValue) suppPriorQuery = suppPriorQuery.Where(l => l.BranchId == branchId.Value);
 
             priorSuppBal = supplier.OpeningBalance + (await suppPriorQuery.SumAsync(l => (decimal?)(l.Credit - l.Debit)) ?? 0);
@@ -5830,17 +5845,26 @@ public class OperationalReportsController : ControllerBase
 
         decimal priorNetBal = priorCustBal - priorSuppBal;
 
-        // 2. Fetch Journal Lines for both in the period
+        // 2. Fetch Journal Lines for both in the period (strictly Receivable/Payable accounts)
         var custLinesQuery = _db.JournalLines
             .Include(l => l.JournalEntry)
             .Include(l => l.Account)
-            .Where(l => customer != null && l.CustomerId == customer.Id && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status != JournalEntryStatus.Draft)
-            .Where(l => l.Account != null && (l.Account.Code.StartsWith("1107") || l.AccountId == customer.MainAccountId || (l.Account.Type != AccountType.Equity && !l.Account.Code.StartsWith("3"))));
+            .Where(l => customer != null
+                     && l.CustomerId == customer.Id
+                     && l.JournalEntry.EntryDate >= from
+                     && l.JournalEntry.EntryDate <= to
+                     && l.JournalEntry.Status != JournalEntryStatus.Draft
+                     && custAccIds.Contains(l.AccountId));
 
         var suppLinesQuery = _db.JournalLines
             .Include(l => l.JournalEntry)
             .Include(l => l.Account)
-            .Where(l => supplier != null && l.SupplierId == supplier.Id && l.JournalEntry.EntryDate >= from && l.JournalEntry.EntryDate <= to && l.JournalEntry.Status != JournalEntryStatus.Draft);
+            .Where(l => supplier != null
+                     && l.SupplierId == supplier.Id
+                     && l.JournalEntry.EntryDate >= from
+                     && l.JournalEntry.EntryDate <= to
+                     && l.JournalEntry.Status != JournalEntryStatus.Draft
+                     && suppAccIds.Contains(l.AccountId));
 
         if (branchId.HasValue)
         {
@@ -5876,9 +5900,10 @@ public class OperationalReportsController : ControllerBase
 
         decimal totalSales = 0;
         decimal totalPurchases = 0;
-        decimal totalCustomerPaid = 0;
-        decimal totalSupplierPaid = 0;
-        decimal totalSettled = 0;
+        decimal custOtherCr = 0;
+        decimal suppOtherDr = 0;
+        decimal custSettledCr = 0;
+        decimal suppSettledDr = 0;
 
         var resultLines = new List<UnifiedStatementLineDto>();
 
@@ -5913,9 +5938,9 @@ public class OperationalReportsController : ControllerBase
                 netImpact = cDr - cCr;
                 runningCust += (cDr - cCr);
 
-                if (type == JournalEntryType.SalesInvoice) totalSales += cDr;
-                else if (isSettlement) totalSettled += cCr;
-                else totalCustomerPaid += cCr;
+                totalSales += cDr;
+                if (isSettlement) custSettledCr += cCr;
+                else custOtherCr += cCr;
             }
             else
             {
@@ -5924,18 +5949,14 @@ public class OperationalReportsController : ControllerBase
                 netImpact = sDr - sCr;
                 runningSupp += (sCr - sDr);
 
-                if (type == JournalEntryType.PurchaseInvoice) totalPurchases += sCr;
-                else if (isSettlement) totalSettled += sDr;
-                else totalSupplierPaid += sDr;
+                totalPurchases += sCr;
+                if (isSettlement) suppSettledDr += sDr;
+                else suppOtherDr += sDr;
             }
 
             runningNet = runningCust - runningSupp;
 
-            var lineDate = l.JournalEntry.EntryDate;
-            if (lineDate.TimeOfDay == TimeSpan.Zero && l.JournalEntry.CreatedAt.TimeOfDay != TimeSpan.Zero)
-            {
-                lineDate = lineDate.Date.Add(l.JournalEntry.CreatedAt.TimeOfDay);
-            }
+            var lineDate = GetEffectiveDateTime(l);
 
             resultLines.Add(new UnifiedStatementLineDto(
                 lineDate,
@@ -5954,86 +5975,9 @@ public class OperationalReportsController : ControllerBase
             ));
         }
 
-        if (customer != null)
-        {
-            var custCashOrdersQuery = _db.Orders
-                .AsNoTracking()
-                .Where(o => o.CustomerId == customer.Id && o.CreatedAt >= from && o.CreatedAt <= to && o.Status != OrderStatus.Cancelled && o.TotalAmount > 0);
-
-            if (branchId.HasValue)
-            {
-                custCashOrdersQuery = custCashOrdersQuery.Where(o => o.BranchId == branchId.Value);
-            }
-
-            var custCashOrders = await custCashOrdersQuery.ToListAsync();
-            var existingUnifiedRefs = resultLines.Select(r => r.Reference).Where(r => !string.IsNullOrEmpty(r)).ToHashSet();
-
-            foreach (var co in custCashOrders)
-            {
-                if (existingUnifiedRefs.Contains(co.OrderNumber)) continue;
-
-                var paid = co.PaidAmount >= co.TotalAmount ? co.TotalAmount : co.PaidAmount;
-                var descStr = co.PaidAmount >= co.TotalAmount 
-                    ? $"فاتورة مبيعات نقدية (مسددة بالكامل) - {co.OrderNumber}"
-                    : (co.PaidAmount > 0 ? $"فاتورة مبيعات (سداد جزئي فوري) - {co.OrderNumber}" : $"فاتورة مبيعات - {co.OrderNumber}");
-
-                resultLines.Add(new UnifiedStatementLineDto(
-                    co.CreatedAt,
-                    co.OrderNumber,
-                    descStr,
-                    "Customer",
-                    "CashSale",
-                    co.TotalAmount,
-                    paid,
-                    0,
-                    0,
-                    0,
-                    runningCust,
-                    runningSupp,
-                    runningNet
-                ));
-                totalSales += co.TotalAmount;
-                totalCustomerPaid += paid;
-            }
-
-            var recalculatedResultLines = new List<UnifiedStatementLineDto>();
-            decimal runningC = priorCustBal;
-            decimal runningS = priorSuppBal;
-
-            foreach (var r in resultLines.OrderBy(x => x.Date))
-            {
-                if (r.SourceRole == "Customer")
-                {
-                    runningC += (r.CustomerDebit - r.CustomerCredit);
-                }
-                else if (r.SourceRole == "Supplier")
-                {
-                    runningS += (r.SupplierCredit - r.SupplierDebit);
-                }
-
-                decimal net = runningC - runningS;
-
-                recalculatedResultLines.Add(new UnifiedStatementLineDto(
-                    r.Date,
-                    r.Reference,
-                    r.Description,
-                    r.SourceRole,
-                    r.TransactionType,
-                    r.CustomerDebit,
-                    r.CustomerCredit,
-                    r.SupplierDebit,
-                    r.SupplierCredit,
-                    r.NetImpact,
-                    runningC,
-                    runningS,
-                    net
-                ));
-            }
-            resultLines = recalculatedResultLines;
-            runningCust = runningC;
-            runningSupp = runningS;
-            runningNet = runningC - runningS;
-        }
+        decimal totalSettled = Math.Min(custSettledCr, suppSettledDr);
+        decimal totalCustomerPaid = custOtherCr + (custSettledCr - totalSettled);
+        decimal totalSupplierPaid = suppOtherDr + (suppSettledDr - totalSettled);
 
         var netStatus = runningNet > 0.001m ? "CustomerOwes" : (runningNet < -0.001m ? "SupplierOwes" : "Balanced");
         var maxSettlement = Math.Min(Math.Max(0, runningCust), Math.Max(0, runningSupp));

@@ -543,7 +543,9 @@ public class AccountingCoreService
 
     public async Task SyncAllEntityIdsAsync()
     {
-        // 1. Fix Purchase Invoices
+        var accountSets = await PartnerLedgerHelper.ResolvePartnerAccountSetsAsync(_db);
+
+        // 1. Fix Purchase Invoices (only Payable lines, not Inventory/VAT/Expense)
         var purchaseEntries = await _db.JournalEntries
             .Where(e => e.Type == JournalEntryType.PurchaseInvoice && e.Reference != null)
             .ToListAsync();
@@ -560,7 +562,7 @@ public class AccountingCoreService
                 bool changed = false;
                 foreach (var l in lines)
                 {
-                    if (l.SupplierId == null)
+                    if (l.SupplierId == null && accountSets.SupplierAccountIds.Contains(l.AccountId))
                     {
                         l.SupplierId = inv.SupplierId;
                         changed = true;
@@ -570,7 +572,7 @@ public class AccountingCoreService
             }
         }
 
-        // 2. Fix Sales Orders
+        // 2. Fix Sales Orders (only Receivable lines for CustomerId, never 4101 Revenue / Cash / COGS / Inventory)
         var salesEntries = await _db.JournalEntries
             .Where(e => (e.Type == JournalEntryType.SalesInvoice || e.Type == JournalEntryType.ReceiptVoucher) && e.Reference != null)
             .ToListAsync();
@@ -619,7 +621,7 @@ public class AccountingCoreService
                     foreach (var l in lines)
                     {
                         bool lineChanged = false;
-                        if (l.CustomerId == null)
+                        if (l.CustomerId == null && accountSets.CustomerAccountIds.Contains(l.AccountId))
                         {
                             l.CustomerId = order.CustomerId;
                             lineChanged = true;
@@ -773,10 +775,16 @@ public class AccountingCoreService
     {
         _logger.LogInformation("[Sync] Starting high-performance bulk synchronization of entity balances.");
 
-        // 🧹 Auto-heal: Ensure all JournalLines linked to Orders inherit CustomerId if missing
-        var orphanedOrderLines = await _db.JournalLines
-            .Where(l => l.OrderId != null && l.CustomerId == null && _db.Orders.Any(o => o.Id == l.OrderId && o.CustomerId > 0))
-            .ToListAsync();
+        var accountSets = await PartnerLedgerHelper.ResolvePartnerAccountSetsAsync(_db);
+        var custAccIdsList = accountSets.CustomerAccountIds.ToList();
+        var suppAccIdsList = accountSets.SupplierAccountIds.ToList();
+
+        // 🧹 Auto-heal: Ensure JournalLines on Receivable accounts linked to Orders inherit CustomerId if missing
+        var orphanedOrderLines = custAccIdsList.Count > 0
+            ? await _db.JournalLines
+                .Where(l => l.OrderId != null && l.CustomerId == null && custAccIdsList.Contains(l.AccountId) && _db.Orders.Any(o => o.Id == l.OrderId && o.CustomerId > 0))
+                .ToListAsync()
+            : new List<JournalLine>();
 
         if (orphanedOrderLines.Any())
         {
@@ -1115,7 +1123,8 @@ public class AccountingCoreService
             .ToDictionaryAsync(x => x.SupplierId, x => x.Total);
 
         var supplierLedgerBalancesList = await _db.JournalLines
-            .Where(l => (l.SupplierId != null || (l.Account != null && l.Account.Code != null && l.Account.Code.StartsWith("2101"))) && l.JournalEntry.Status != JournalEntryStatus.Draft)
+            .Where(l => (l.SupplierId != null || suppAccIdsList.Contains(l.AccountId)) && l.JournalEntry.Status != JournalEntryStatus.Draft)
+            .Where(l => suppAccIdsList.Contains(l.AccountId))
             .GroupBy(l => new { l.SupplierId, l.AccountId })
             .Select(g => new {
                 SupplierId = g.Key.SupplierId,
@@ -1186,9 +1195,10 @@ public class AccountingCoreService
             })
             .ToDictionaryAsync(x => x.CustomerId, x => x.Total);
 
-        // Group journal lines by CustomerId or AccountId and sum debit - credit in ONE query
+        // Group journal lines by CustomerId or AccountId and sum debit - credit ONLY on Customer Receivable accounts
         var customerLedgerBalancesList = await _db.JournalLines
-            .Where(l => l.CustomerId != null || (l.Account != null && l.Account.Code != null && (l.Account.Code.StartsWith("1107") || l.Account.Code.StartsWith("1105") || l.Account.Code.StartsWith("1104"))))
+            .Where(l => l.JournalEntry.Status != JournalEntryStatus.Draft && custAccIdsList.Contains(l.AccountId))
+            .Where(l => l.CustomerId != null || custAccIdsList.Contains(l.AccountId))
             .GroupBy(l => new { l.CustomerId, l.AccountId })
             .Select(g => new {
                 CustomerId = g.Key.CustomerId,

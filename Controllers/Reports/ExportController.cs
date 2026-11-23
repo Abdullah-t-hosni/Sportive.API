@@ -617,6 +617,10 @@ public class ExportController : ControllerBase
             query = query.Where(c => c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => (decimal?)o.TotalAmount) >= minSpent.Value);
         }
 
+        var accountSets = await PartnerLedgerHelper.ResolvePartnerAccountSetsAsync(_db);
+        var custAccIds = accountSets.CustomerAccountIds.ToList();
+        var cashAccIds = accountSets.CashAndWalletAccountIds.ToList();
+
         // 7. Lean SQL Projection
         var projected = query.Select(c => new
         {
@@ -630,9 +634,11 @@ public class ExportController : ControllerBase
             HasWebsiteOrders = c.Orders.Any(o => o.Source == OrderSource.Website),
             TotalOrders = c.Orders.Count,
             TotalSpent = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => (decimal?)o.TotalAmount) ?? 0,
-            Balance = (c.MainAccount != null ? c.MainAccount.OpeningBalance : 0) +
+            Balance = ((c.MainAccount != null && c.MainAccount.Code != "1107" && c.MainAccountId != accountSets.CustomerControlAccountId && (c.MainAccount.Code != null && c.MainAccount.Code.Length > 4)) ? c.MainAccount.OpeningBalance : 0) +
                       (_db.JournalLines
-                          .Where(l => l.CustomerId == c.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
+                          .Where(l => l.CustomerId == c.Id
+                                   && l.JournalEntry.Status != JournalEntryStatus.Draft
+                                   && (custAccIds.Contains(l.AccountId) || (c.MainAccountId.HasValue && !cashAccIds.Contains(c.MainAccountId.Value) && l.AccountId == c.MainAccountId.Value)))
                           .Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0)
         });
 

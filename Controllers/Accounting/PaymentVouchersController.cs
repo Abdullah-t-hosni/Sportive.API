@@ -397,7 +397,7 @@ public class PaymentVouchersController : ControllerBase
                     Debit = feeAmt,
                     Credit = 0,
                     Description = $"عمولة تحويل بنكي - سند صرف #{voucher.VoucherNumber}",
-                    SupplierId = voucher.SupplierId,
+                    SupplierId = null, // SupplierId belongs on Payable line only, not Fee/Cash
                     EmployeeId = voucher.EmployeeId,
                     CostCenter = voucher.CostCenter,
                     BranchId = voucher.BranchId
@@ -408,7 +408,7 @@ public class PaymentVouchersController : ControllerBase
                 Debit = 0, 
                 Credit = voucher.Amount + feeAmt, 
                 Description = _t.Get("Accounting.FromAccountDesc", cashAccName),
-                SupplierId = voucher.SupplierId,
+                SupplierId = null,
                 EmployeeId = voucher.EmployeeId,
                 CostCenter = voucher.CostCenter,
                 BranchId = voucher.BranchId

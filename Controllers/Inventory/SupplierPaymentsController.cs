@@ -765,22 +765,11 @@ public class SupplierPaymentsController : ControllerBase
         if (supplier == null)
             return BadRequest(new { message = "المورد المحدد غير موجود." });
 
-        // 1. Calculate customer balance
-        var custOpening = (customer.MainAccount != null && customer.MainAccount.Code != "1107") ? customer.MainAccount.OpeningBalance : 0;
-        var custJournalNet = await _db.JournalLines
-            .Where(l => l.CustomerId == customer.Id && l.JournalEntry.Status == JournalEntryStatus.Posted)
-            .Where(l => l.Account != null && (l.Account.Code.StartsWith("1107") || l.AccountId == customer.MainAccountId || (l.Account.Type != AccountType.Equity && !l.Account.Code.StartsWith("3"))))
-            .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
-        var custBal = Math.Max(customer.Balance, custOpening + custJournalNet);
-
-        // 2. Calculate supplier balance
-        var suppOpening = supplier.OpeningBalance;
-        var suppJournalNet = await _db.JournalLines
-            .Where(l => l.SupplierId == supplier.Id && l.JournalEntry.Status == JournalEntryStatus.Posted)
-            .SumAsync(l => (decimal?)l.Credit - (decimal?)l.Debit) ?? 0;
-        var suppBal = Math.Max(supplier.Balance, suppOpening + suppJournalNet);
-
-        var maxSettlement = Math.Min(Math.Max(0, custBal), Math.Max(0, suppBal));
+        // 1-2. Compute ledger-based customer & supplier positions consistently
+        var position = await PartnerLedgerHelper.ComputePartnerPositionAsync(_db, customer, supplier);
+        var custBal = position.CustomerBalance;
+        var suppBal = position.SupplierBalance;
+        var maxSettlement = position.MaxSettlementAmount;
         if (dto.Amount > maxSettlement + 0.05m)
         {
             return BadRequest(new { message = $"مبلغ المقاصة ({dto.Amount:N2}) يتجاوز الحد الأقصى المتاح للتسوية ({maxSettlement:N2})." });

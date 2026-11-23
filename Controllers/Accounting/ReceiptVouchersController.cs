@@ -458,7 +458,7 @@ public class ReceiptVouchersController : ControllerBase
                     Debit = netCash, 
                     Credit = 0, 
                     Description = _t.Get("Accounting.ReceiptVoucher.UpdateLog", voucher.VoucherNumber),
-                    CustomerId = voucher.CustomerId,
+                    CustomerId = null, // CustomerId belongs on Receivable line only, not Cash/Wallet
                     EmployeeId = voucher.EmployeeId,
                     CostCenter = voucher.CostCenter,
                     BranchId = voucher.BranchId
@@ -472,7 +472,7 @@ public class ReceiptVouchersController : ControllerBase
                     Debit = feeAmt,
                     Credit = 0,
                     Description = $"عمولة تحصيل إلكتروني - سند قبض #{voucher.VoucherNumber}",
-                    CustomerId = voucher.CustomerId,
+                    CustomerId = null,
                     EmployeeId = voucher.EmployeeId,
                     CostCenter = voucher.CostCenter,
                     BranchId = voucher.BranchId

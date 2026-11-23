@@ -568,46 +568,12 @@ public class SuppliersController : ControllerBase
         var supplier = await _db.Suppliers.Include(s => s.MainAccount).FirstOrDefaultAsync(s => s.Id == id);
         if (supplier == null) return NotFound(new { message = "المورد غير موجود." });
 
-        var suppOpening = supplier.OpeningBalance;
-        var suppJournalNet = await _db.JournalLines
-            .Where(l => l.SupplierId == supplier.Id && l.JournalEntry.Status == JournalEntryStatus.Posted)
-            .SumAsync(l => (decimal?)l.Credit - (decimal?)l.Debit) ?? 0;
-        var suppBal = Math.Max(supplier.Balance, suppOpening + suppJournalNet);
-
         Customer? customer = null;
-        decimal custBal = 0;
-
         if (supplier.CustomerId.HasValue)
         {
             customer = await _db.Customers.Include(c => c.MainAccount).FirstOrDefaultAsync(c => c.Id == supplier.CustomerId.Value);
-            if (customer != null)
-            {
-                var custOpening = (customer.MainAccount != null && customer.MainAccount.Code != "1107") ? customer.MainAccount.OpeningBalance : 0;
-                var custJournalNet = await _db.JournalLines
-                    .Where(l => l.CustomerId == customer.Id && l.JournalEntry.Status == JournalEntryStatus.Posted)
-                    .Where(l => l.Account != null && (l.Account.Code.StartsWith("1107") || l.AccountId == customer.MainAccountId || (l.Account.Type != AccountType.Equity && !l.Account.Code.StartsWith("3"))))
-                    .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
-                custBal = Math.Max(customer.Balance, custOpening + custJournalNet);
-            }
         }
 
-        var netBal = custBal - suppBal;
-        var netStatus = netBal > 0.001m ? "CustomerOwes" : (netBal < -0.001m ? "SupplierOwes" : "Balanced");
-        var maxSettlement = Math.Min(Math.Max(0, custBal), Math.Max(0, suppBal));
-
-        return Ok(new PartnerPositionDto(
-            customer?.Id,
-            customer?.FullName,
-            customer?.Phone,
-            custBal,
-            supplier.Id,
-            supplier.Name,
-            supplier.Phone,
-            suppBal,
-            netBal,
-            netStatus,
-            maxSettlement,
-            maxSettlement > 0
-        ));
+        return Ok(await PartnerLedgerHelper.ComputePartnerPositionAsync(_db, customer, supplier));
     }
 }

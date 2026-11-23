@@ -128,6 +128,10 @@ public class CustomerService : ICustomerService
             }
         }
 
+        var accountSets = await PartnerLedgerHelper.ResolvePartnerAccountSetsAsync(_db);
+        var custAccIds = accountSets.CustomerAccountIds.ToList();
+        var cashAccIds = accountSets.CashAndWalletAccountIds.ToList();
+
         // 2. Map to a rich projection for filtering and sorting
         // We include Balance calculation directly in SQL projection
         var projectedQuery = query.Select(c => new
@@ -140,14 +144,14 @@ public class CustomerService : ICustomerService
             c.SupplierId,
             SupplierName = c.Supplier != null ? c.Supplier.Name : null,
             c.LoyaltyPointsBalance, c.LifetimePointsEarned, c.CurrentTier,
-            OpeningBalance = c.MainAccount != null ? c.MainAccount.OpeningBalance : 0,
+            OpeningBalance = (c.MainAccount != null && c.MainAccount.Code != "1107" && c.MainAccountId != accountSets.CustomerControlAccountId && (c.MainAccount.Code != null && c.MainAccount.Code.Length > 4)) ? c.MainAccount.OpeningBalance : 0,
             OrderCount = c.Orders.Count,
             OrderTotal = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => (decimal?)o.TotalAmount) ?? 0,
             HasWebsiteOrders = c.Orders.Any(o => o.Source == OrderSource.Website),
-            // Calculate Net Balance in SQL - ONLY for this Customer ID directly via IX_JournalLines_CustomerId
+            // Calculate Net Balance in SQL - ONLY on Customer receivable accounts (matches 1107 Detailed Statement)
             JournalNet = _db.JournalLines
-                .Where(l => l.CustomerId == c.Id && l.JournalEntry.Status == JournalEntryStatus.Posted)
-                .Where(l => l.Account != null && (l.Account.Code.StartsWith("1107") || l.Account.Code.StartsWith("1105") || l.Account.Code.StartsWith("1104") || (c.MainAccountId.HasValue && l.AccountId == c.MainAccountId.Value)))
+                .Where(l => l.CustomerId == c.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
+                .Where(l => custAccIds.Contains(l.AccountId) || (c.MainAccountId.HasValue && !cashAccIds.Contains(c.MainAccountId.Value) && l.AccountId == c.MainAccountId.Value))
                 .Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0
         }).Select(x => new {
             x.Id, x.FullName, x.Email, x.Phone, x.AppUserId,
@@ -333,6 +337,10 @@ public class CustomerService : ICustomerService
             custQuery = custQuery.Where(c => c.Orders.Any(o => o.Status != OrderStatus.Cancelled && o.Source == source.Value));
         }
 
+        var accountSets = await PartnerLedgerHelper.ResolvePartnerAccountSetsAsync(_db);
+        var custAccIds = accountSets.CustomerAccountIds.ToList();
+        var cashAccIds = accountSets.CashAndWalletAccountIds.ToList();
+
         var data = await custQuery
             .OrderByDescending(c => c.CreatedAt)
             .Select(c => new
@@ -344,7 +352,7 @@ public class CustomerService : ICustomerService
                 c.CategoryId,
                 CategoryName = c.Category != null ? c.Category.NameAr : null,
                 c.LoyaltyPointsBalance,
-                OpeningBalance = (c.MainAccount != null && c.MainAccount.Code != "1107") ? c.MainAccount.OpeningBalance : 0,
+                OpeningBalance = (c.MainAccount != null && c.MainAccount.Code != "1107" && c.MainAccountId != accountSets.CustomerControlAccountId && (c.MainAccount.Code != null && c.MainAccount.Code.Length > 4)) ? c.MainAccount.OpeningBalance : 0,
                 TotalOrders = c.Orders.Count(o => o.Status != OrderStatus.Cancelled 
                     && (!branchId.HasValue || o.BranchId == branchId.Value)
                     && (!source.HasValue || o.Source == source.Value)
@@ -368,8 +376,8 @@ public class CustomerService : ICustomerService
                     .OrderByDescending(o => o.CreatedAt)
                     .Select(o => (decimal?)o.TotalAmount).FirstOrDefault() ?? 0,
                 JournalNet = _db.JournalLines
-                    .Where(l => l.CustomerId == c.Id && l.JournalEntry.Status == JournalEntryStatus.Posted)
-                    .Where(l => l.Account != null && (l.Account.Code.StartsWith("1107") || l.Account.Code.StartsWith("1105") || (c.MainAccountId.HasValue && l.AccountId == c.MainAccountId.Value)))
+                    .Where(l => l.CustomerId == c.Id && l.JournalEntry.Status != JournalEntryStatus.Draft)
+                    .Where(l => custAccIds.Contains(l.AccountId) || (c.MainAccountId.HasValue && !cashAccIds.Contains(c.MainAccountId.Value) && l.AccountId == c.MainAccountId.Value))
                     .Sum(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0
             })
             .ToListAsync();
@@ -413,6 +421,8 @@ public class CustomerService : ICustomerService
             .Select(ur => ur.UserId)
             .ToListAsync();
 
+        var accountSets = await PartnerLedgerHelper.ResolvePartnerAccountSetsAsync(_db);
+
         var rawResult = await _db.Customers
             .Include(c => c.Addresses)
             .Include(c => c.Orders)
@@ -429,7 +439,7 @@ public class CustomerService : ICustomerService
                 c.SupplierId,
                 SupplierName = c.Supplier != null ? c.Supplier.Name : null,
                 c.LoyaltyPointsBalance, c.LifetimePointsEarned, c.CurrentTier,
-                OpeningBalance = c.MainAccount != null ? c.MainAccount.OpeningBalance : 0,
+                OpeningBalance = (c.MainAccount != null && c.MainAccount.Code != "1107" && c.MainAccountId != accountSets.CustomerControlAccountId && (c.MainAccount.Code != null && c.MainAccount.Code.Length > 4)) ? c.MainAccount.OpeningBalance : 0,
                 OrderCount = c.Orders.Count,
                 OrderTotal = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
                 Addresses = c.Addresses.Select(a => new AddressDto(
@@ -441,9 +451,11 @@ public class CustomerService : ICustomerService
 
         if (rawResult == null) return null;
 
+        var custAccIds = PartnerLedgerHelper.GetCustomerAccountIdList(accountSets, rawResult.MainAccountId);
+
         var balance = rawResult.OpeningBalance + await _db.JournalLines
-            .Where(l => (l.CustomerId == rawResult.Id || (l.OrderId != null && _db.Orders.Any(o => o.Id == l.OrderId && o.CustomerId == rawResult.Id))) && l.JournalEntry.Status == JournalEntryStatus.Posted)
-            .Where(l => l.Account != null && (l.Account.Code.StartsWith("1107") || l.Account.Code.StartsWith("1105") || l.Account.Code.StartsWith("1104") || (rawResult.MainAccountId.HasValue && l.AccountId == rawResult.MainAccountId.Value)))
+            .Where(l => (l.CustomerId == rawResult.Id || (l.OrderId != null && _db.Orders.Any(o => o.Id == l.OrderId && o.CustomerId == rawResult.Id))) && l.JournalEntry.Status != JournalEntryStatus.Draft)
+            .Where(l => custAccIds.Contains(l.AccountId))
             .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
 
         return new CustomerDetailDto(
@@ -484,6 +496,7 @@ public class CustomerService : ICustomerService
             .Select(ur => ur.UserId)
             .ToListAsync();
 
+        var accountSets = await PartnerLedgerHelper.ResolvePartnerAccountSetsAsync(_db);
         var emailHash = _encryptionHelper.ComputeSearchHash(email);
         var rawResult = await _db.Customers
             .Include(c => c.Addresses)
@@ -497,7 +510,7 @@ public class CustomerService : ICustomerService
                 CategoryNameAr = c.Category != null ? c.Category.NameAr : null,
                 c.FixedDiscount, c.Tags,
                 c.LoyaltyPointsBalance, c.LifetimePointsEarned, c.CurrentTier,
-                OpeningBalance = c.MainAccount != null ? c.MainAccount.OpeningBalance : 0,
+                OpeningBalance = (c.MainAccount != null && c.MainAccount.Code != "1107" && c.MainAccountId != accountSets.CustomerControlAccountId && (c.MainAccount.Code != null && c.MainAccount.Code.Length > 4)) ? c.MainAccount.OpeningBalance : 0,
                 OrderCount = c.Orders.Count,
                 OrderTotal = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
                 Addresses = c.Addresses.Select(a => new AddressDto(
@@ -509,9 +522,11 @@ public class CustomerService : ICustomerService
 
         if (rawResult == null) return null;
 
+        var custAccIds = PartnerLedgerHelper.GetCustomerAccountIdList(accountSets, rawResult.MainAccountId);
+
         var balance = rawResult.OpeningBalance + await _db.JournalLines
-            .Where(l => (l.CustomerId == rawResult.Id || (l.OrderId != null && _db.Orders.Any(o => o.Id == l.OrderId && o.CustomerId == rawResult.Id))) && l.JournalEntry.Status == JournalEntryStatus.Posted)
-            .Where(l => l.Account != null && (l.Account.Code.StartsWith("1107") || l.Account.Code.StartsWith("1105") || l.Account.Code.StartsWith("1104") || (rawResult.MainAccountId.HasValue && l.AccountId == rawResult.MainAccountId.Value)))
+            .Where(l => (l.CustomerId == rawResult.Id || (l.OrderId != null && _db.Orders.Any(o => o.Id == l.OrderId && o.CustomerId == rawResult.Id))) && l.JournalEntry.Status != JournalEntryStatus.Draft)
+            .Where(l => custAccIds.Contains(l.AccountId))
             .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
 
         return new CustomerDetailDto(
@@ -549,6 +564,8 @@ public class CustomerService : ICustomerService
             .Select(ur => ur.UserId)
             .ToListAsync();
 
+        var accountSets = await PartnerLedgerHelper.ResolvePartnerAccountSetsAsync(_db);
+
         var rawResult = await _db.Customers
             .Include(c => c.Addresses)
             .Include(c => c.Orders)
@@ -561,7 +578,7 @@ public class CustomerService : ICustomerService
                 CategoryNameAr = c.Category != null ? c.Category.NameAr : null,
                 c.FixedDiscount, c.Tags,
                 c.LoyaltyPointsBalance, c.LifetimePointsEarned, c.CurrentTier,
-                OpeningBalance = c.MainAccount != null ? c.MainAccount.OpeningBalance : 0,
+                OpeningBalance = (c.MainAccount != null && c.MainAccount.Code != "1107" && c.MainAccountId != accountSets.CustomerControlAccountId && (c.MainAccount.Code != null && c.MainAccount.Code.Length > 4)) ? c.MainAccount.OpeningBalance : 0,
                 OrderCount = c.Orders.Count,
                 OrderTotal = c.Orders.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.TotalAmount),
                 Addresses = c.Addresses.Select(a => new AddressDto(
@@ -573,9 +590,11 @@ public class CustomerService : ICustomerService
 
         if (rawResult == null) return null;
 
+        var custAccIds = PartnerLedgerHelper.GetCustomerAccountIdList(accountSets, rawResult.MainAccountId);
+
         var balance = rawResult.OpeningBalance + await _db.JournalLines
-            .Where(l => (l.CustomerId == rawResult.Id || (l.OrderId != null && _db.Orders.Any(o => o.Id == l.OrderId && o.CustomerId == rawResult.Id))) && l.JournalEntry.Status == JournalEntryStatus.Posted)
-            .Where(l => l.Account != null && (l.Account.Code.StartsWith("1107") || l.Account.Code.StartsWith("1105") || l.Account.Code.StartsWith("1104") || (rawResult.MainAccountId.HasValue && l.AccountId == rawResult.MainAccountId.Value)))
+            .Where(l => (l.CustomerId == rawResult.Id || (l.OrderId != null && _db.Orders.Any(o => o.Id == l.OrderId && o.CustomerId == rawResult.Id))) && l.JournalEntry.Status != JournalEntryStatus.Draft)
+            .Where(l => custAccIds.Contains(l.AccountId))
             .SumAsync(l => (decimal?)l.Debit - (decimal?)l.Credit) ?? 0;
 
         return new CustomerDetailDto(
