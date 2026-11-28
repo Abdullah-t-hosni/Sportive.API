@@ -1080,18 +1080,23 @@ public class ReturnExchangeRequestsController : ControllerBase
         req.AdminNotes = $"[موافقة تمهيدية - بانتظار استلام المرتجع بالمخزن {TimeHelper.GetEgyptTime():yyyy-MM-dd HH:mm}]";
 
         // تحديث حالة الطلب لـ "مرتجع لدى شركة الشحن"
-        if (req.Order != null && req.Order.Status != OrderStatus.ReturnInShipping)
+        if (req.Order != null)
         {
-            req.Order.Status = OrderStatus.ReturnInShipping;
-            req.Order.StatusHistory.Add(new OrderStatusHistory
+            var now = TimeHelper.GetEgyptTime();
+            req.Order.UpdatedAt = now;
+            if (req.Order.Status != OrderStatus.ReturnInShipping)
             {
-                OrderId = req.Order.Id,
-                Status = OrderStatus.ReturnInShipping,
-                Note = $"تم الموافقة المبدئية على المرتجع، الشحنة الآن مرتجع لدى شركة الشحن (طلب #{req.Id})",
-                ChangedByUserId = User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier) ?? "system",
-                ChangedByName = User.FindFirstValue(System.Security.Claims.ClaimTypes.Name) ?? "System",
-                CreatedAt = TimeHelper.GetEgyptTime()
-            });
+                req.Order.Status = OrderStatus.ReturnInShipping;
+                req.Order.StatusHistory.Add(new OrderStatusHistory
+                {
+                    OrderId = req.Order.Id,
+                    Status = OrderStatus.ReturnInShipping,
+                    Note = $"تم الموافقة المبدئية على المرتجع، الشحنة الآن مرتجع لدى شركة الشحن (طلب #{req.Id})",
+                    ChangedByUserId = User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier) ?? "system",
+                    ChangedByName = User.FindFirstValue(System.Security.Claims.ClaimTypes.Name) ?? "System",
+                    CreatedAt = now
+                });
+            }
         }
 
         // 3. Generate Full / Partial Accounting Entry for Sales Return in General Ledger (Courier Virtual Warehouse)
@@ -1163,6 +1168,14 @@ public class ReturnExchangeRequestsController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
+
+        try
+        {
+            await _hubContext.Clients.All.SendAsync("DashboardUpdate", new { type = "OrderUpdated", id = req.OrderId });
+            await _hubContext.Clients.All.SendAsync("DashboardUpdated", new { type = "ReturnExchangeRequest", id = req.Id });
+        }
+        catch { }
+
         return Ok(new { message = "تمت الموافقة المبدئية وتم إنشاء القيد. في انتظار وصول المنتجات للمخزن." });
     }
 
@@ -1278,7 +1291,23 @@ public class ReturnExchangeRequestsController : ControllerBase
             req.Status = ReturnExchangeStatus.ReceivedAtWarehouse;
             req.ReceivedAtWarehouseAt = TimeHelper.GetEgyptTime();
             req.AdminNotes = (req.AdminNotes ?? "") + " | [تنبيه أمان]: تم تخطي إضافة المخزون والقيود نظراً لأن الأصناف تم إرجاعها مسبقاً بالكامل.";
+            if (req.Order != null)
+            {
+                bool alreadyFullReturn = req.Order.Items.All(i => i.ReturnedQuantity >= i.Quantity);
+                var expectedStatus = alreadyFullReturn ? OrderStatus.Returned : OrderStatus.PartiallyReturned;
+                if (req.Order.Status != OrderStatus.Returned && req.Order.Status != OrderStatus.PartiallyReturned)
+                {
+                    req.Order.Status = expectedStatus;
+                }
+                req.Order.UpdatedAt = TimeHelper.GetEgyptTime();
+            }
             await _db.SaveChangesAsync();
+            try
+            {
+                await _hubContext.Clients.All.SendAsync("DashboardUpdate", new { type = "OrderUpdated", id = req.OrderId });
+                await _hubContext.Clients.All.SendAsync("DashboardUpdated", new { type = "ReturnExchangeRequest", id = req.Id });
+            }
+            catch { }
             return Ok(new { message = "تم تأكيد استلام الطلب، وتم تخطي تكرار حركات المخزون والقيود المحاسبية لأن الأصناف مسترجعة مسبقاً." });
         }
 
@@ -1289,6 +1318,7 @@ public class ReturnExchangeRequestsController : ControllerBase
         decimal returnShippingFee = chargeReturnShipping ? req.Order.DeliveryFee : 0;
 
         // 2. Check Order Return Status (Full vs Partial) & Log Status History Timeline
+        var confirmNow = TimeHelper.GetEgyptTime();
         bool isFullReturn = req.Order.Items.All(i => i.ReturnedQuantity >= i.Quantity);
         var targetStatus = isFullReturn ? OrderStatus.Returned : OrderStatus.PartiallyReturned;
 
@@ -1300,7 +1330,6 @@ public class ReturnExchangeRequestsController : ControllerBase
             var existingRtn = await _db.Orders.FirstOrDefaultAsync(o => o.OrderNumber == rtnOrderNumber);
             if (existingRtn == null)
             {
-                var now = TimeHelper.GetEgyptTime();
                 var rtnOrder = new Order
                 {
                     OrderNumber = rtnOrderNumber,
@@ -1319,8 +1348,8 @@ public class ReturnExchangeRequestsController : ControllerBase
                     ActualDeliveryCost = req.Order.ActualDeliveryCost > 0 ? req.Order.ActualDeliveryCost : req.Order.DeliveryFee,
                     BranchId = req.Order.BranchId,
                     WarehouseId = req.Order.WarehouseId,
-                    CreatedAt = now,
-                    UpdatedAt = now,
+                    CreatedAt = confirmNow,
+                    UpdatedAt = confirmNow,
                     IsSettledWithCourier = false,
                     AdminNotes = $"فاتورة تسوية مرتجع لشحنة #{req.Order.OrderNumber} (طلب استرجاع #{req.Id})"
                 };
@@ -1329,12 +1358,13 @@ public class ReturnExchangeRequestsController : ControllerBase
             else
             {
                 existingRtn.Status = targetStatus;
+                existingRtn.UpdatedAt = confirmNow;
             }
         }
-        else
-        {
-            req.Order.Status = targetStatus;
-        }
+
+        // Always update parent order status & timestamp so it moves out of ReturnInShipping into Returned / PartiallyReturned
+        req.Order.Status = targetStatus;
+        req.Order.UpdatedAt = confirmNow;
 
         req.Order.StatusHistory.Add(new OrderStatusHistory
         {
@@ -1345,7 +1375,7 @@ public class ReturnExchangeRequestsController : ControllerBase
                 : $"[مرتجع جزئي]: تم تأكيد استلام المرتجع بالمخزن (طلب استرجاع #{req.Id})",
             ChangedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "system",
             ChangedByName = User.FindFirstValue(ClaimTypes.Name) ?? "System",
-            CreatedAt = TimeHelper.GetEgyptTime()
+            CreatedAt = confirmNow
         });
 
         // 3. Generate Warehouse Receipt from Courier & Manual Refund Payment Entry
@@ -1520,6 +1550,13 @@ public class ReturnExchangeRequestsController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
+
+        try
+        {
+            await _hubContext.Clients.All.SendAsync("DashboardUpdate", new { type = "OrderUpdated", id = req.OrderId });
+            await _hubContext.Clients.All.SendAsync("DashboardUpdated", new { type = "ReturnExchangeRequest", id = req.Id });
+        }
+        catch { }
 
         return Ok(new
         {

@@ -1136,11 +1136,21 @@ public class DashboardService : IDashboardService
         if (source.HasValue) query = query.Where(o => o.Source == source.Value);
 
         // 🕒 BUSINESS DAY OFFSET: The day ends at 2 AM.
-        if (fromDate.HasValue) query = query.Where(o => o.CreatedAt >= fromDate.Value.Date.AddHours(TimeHelper.GetBusinessDayEndHour()));
+        if (fromDate.HasValue)
+        {
+            var startDate = fromDate.Value.Date.AddHours(TimeHelper.GetBusinessDayEndHour());
+            query = query.Where(o =>
+                (o.Status == OrderStatus.Returned || o.Status == OrderStatus.PartiallyReturned || o.Status == OrderStatus.ReturnInShipping)
+                    ? (o.StatusHistory.Where(h => h.Status == o.Status).Max(h => (DateTime?)h.CreatedAt) ?? o.UpdatedAt ?? o.CreatedAt) >= startDate
+                    : o.CreatedAt >= startDate);
+        }
         if (toDate.HasValue)
         {
             var endOfBusinessDay = toDate.Value.Date.AddDays(1).AddHours(TimeHelper.GetBusinessDayEndHour()).AddTicks(-1);
-            query = query.Where(o => o.CreatedAt <= endOfBusinessDay);
+            query = query.Where(o =>
+                (o.Status == OrderStatus.Returned || o.Status == OrderStatus.PartiallyReturned || o.Status == OrderStatus.ReturnInShipping)
+                    ? (o.StatusHistory.Where(h => h.Status == o.Status).Max(h => (DateTime?)h.CreatedAt) ?? o.UpdatedAt ?? o.CreatedAt) <= endOfBusinessDay
+                    : o.CreatedAt <= endOfBusinessDay);
         }
 
         var stats = await query.GroupBy(o => o.Status).Select(g => new { Status = g.Key, Count = g.Count() }).ToListAsync();
