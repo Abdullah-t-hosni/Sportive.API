@@ -98,7 +98,8 @@ public record UpdateOrderDto(
     decimal? DeliveryFee = null,
     string? ShippingAddress = null,
     string? Governorate = null,
-    string? District = null
+    string? District = null,
+    decimal? PrepaidDiscount = null
 );
 
 public record OrderPaymentDto(PaymentMethod Method, decimal Amount);

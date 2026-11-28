@@ -1715,6 +1715,7 @@ public class OrderService : IOrderService
                 // Snapshot old order state for rich change tracking in audit history
                 decimal snapshotOldTotal = order.TotalAmount;
                 decimal snapshotOldDiscount = order.DiscountAmount;
+                decimal snapshotOldPrepaidDiscount = order.PrepaidDiscount;
                 decimal snapshotOldDeliveryFee = order.DeliveryFee;
                 PaymentMethod snapshotOldPaymentMethod = order.PaymentMethod;
                 string? snapshotOldCity = order.DeliveryAddress?.City;
@@ -2070,18 +2071,34 @@ public class OrderService : IOrderService
                     }
                 }
 
-                if (order.Source != OrderSource.Website)
-                {
-                    order.PrepaidDiscount = 0;
-                }
-
-                order.TotalAmount = Math.Max(0, order.SubTotal + order.DeliveryFee - order.DiscountAmount - order.TemporalDiscount - order.PrepaidDiscount);
-
-                // 6. UPDATE PAYMENTS
+                // 6. UPDATE PAYMENT METHOD & PREPAID DISCOUNT BEFORE FINAL TOTAL
                 if (dto.PaymentMethod.HasValue)
                 {
                     order.PaymentMethod = dto.PaymentMethod.Value;
                 }
+
+                if (order.Source != OrderSource.Website || isCostSale)
+                {
+                    order.PrepaidDiscount = 0;
+                }
+                else if (dto.PrepaidDiscount.HasValue)
+                {
+                    order.PrepaidDiscount = Math.Max(0, Math.Round(dto.PrepaidDiscount.Value, 2));
+                }
+                else if (store != null && store.EnablePrepaidDiscount && store.PrepaidDiscountPercentage > 0 &&
+                         (order.PaymentMethod == PaymentMethod.Vodafone || order.PaymentMethod == PaymentMethod.InstaPay))
+                {
+                    decimal netItemsSubtotal = Math.Max(0, order.SubTotal - order.DiscountAmount - order.TemporalDiscount - order.LoyaltyDiscountAmount);
+                    order.PrepaidDiscount = netItemsSubtotal > 0
+                        ? Math.Round(netItemsSubtotal * (store.PrepaidDiscountPercentage / 100m), 2)
+                        : 0;
+                }
+                else
+                {
+                    order.PrepaidDiscount = 0;
+                }
+
+                order.TotalAmount = Math.Max(0, order.SubTotal + order.DeliveryFee - order.DiscountAmount - order.TemporalDiscount - order.LoyaltyDiscountAmount - order.PrepaidDiscount);
 
                 if (dto.Payments != null && dto.Payments.Any())
                 {
@@ -2152,6 +2169,11 @@ public class OrderService : IOrderService
                 if (Math.Abs(order.DiscountAmount - snapshotOldDiscount) > 0.01m)
                 {
                     diffLines.Add($"الخصم: من {snapshotOldDiscount:G29} إلى {order.DiscountAmount:G29} ج.م");
+                }
+
+                if (Math.Abs(order.PrepaidDiscount - snapshotOldPrepaidDiscount) > 0.01m)
+                {
+                    diffLines.Add($"خصم الدفع الإلكتروني: من {snapshotOldPrepaidDiscount:G29} إلى {order.PrepaidDiscount:G29} ج.م");
                 }
 
                 if (Math.Abs(order.TotalAmount - snapshotOldTotal) > 0.01m)
